@@ -1,0 +1,16 @@
+version: '3'
+
+services:
+  wisecrow-scylla:
+    image: scylladb/scylla
+    container_name: wisecrow-scylla
+
+  wisecrow-scylla2:
+    image: scylladb/scylla
+    container_name: wisecrow-scylla2
+    command: --seeds=wisecrow-scylla
+
+  wisecrow-scylla3:
+    image: scylladb/scylla
+    container_name: wisecrow-scylla3
+    command: --seeds=wisecrow-scylla
