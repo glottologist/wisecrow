@@ -19,7 +19,7 @@ jobs:
         with:
           nix_conf: experimental-features = nix-command flakes
       - name: Build
-        run: nix build .#${{ matrix.language }}App --print-build-logs
+        run: nix build .#${{ matrix.language }}CmdApp --print-build-logs
       - name: List artefacts
         uses: Rishabh510/Path-lister-action@master
         with:

@@ -18,7 +18,7 @@ pkgs.rustPlatform.buildRustPackage rec {
   cargoBinName = name;
 
   # The package manager needs to know the SHA-256 hash of your dependencies
-  cargoSha256 = "gI7V5H8w4+IXC5C9vCojyUZ9qDzqlWRUH1DfJlo2l1g=";
+  cargoSha256 = "ZY2NSSgXFRMf7Z4uMaI9AJddGph88aHEqaE//txVgbc=";
 
   meta = with pkgs.stdenv.lib; {
     homepage = homepage;

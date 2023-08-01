@@ -1,4 +1,4 @@
 (executable
- (public_name mixer)
+ (public_name wisecrow)
  (name main)
- (libraries mixer))
+ (libraries wisecrow))

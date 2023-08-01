@@ -1,4 +1,4 @@
-# Revision history for mixer
+# Revision history for wisecrow
 
 ## 0.0.1 -- YYYY-mm-dd
 

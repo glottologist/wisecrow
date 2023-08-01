@@ -24,20 +24,12 @@
         buildF = path: pkgs.callPackage path {inherit name ver homepage description license maintainers nix-filter;};
       in rec {
         packages = {
-          elixirCmdApp = buildF ./cmd/elixir;
           haskellCmdApp = buildF ./cmd/haskell;
           ocamlCmdApp = buildF ./cmd/ocaml;
           rustCmdApp = buildF ./cmd/rust;
         };
 
         devShells = {
-          elixir = pkgs.mkShell {
-            buildInputs = with pkgs; [
-              elixir
-              erlang
-              mix2nix
-            ];
-          };
 
           haskell = pkgs.mkShell {
             buildInputs = with pkgs; [
