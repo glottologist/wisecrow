@@ -9,7 +9,7 @@ jobs:
   build:
     strategy:
       matrix:
-        language: [elixir, haskell, ocaml, rust]
+        language: [haskell, ocaml, rust]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
