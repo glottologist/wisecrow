@@ -1,0 +1,35 @@
+name: Build
+
+# Runs on pushes targeting things that look like the default branch
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        language: [elixir, haskell, ocaml, rust]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v21
+        with:
+          nix_conf: experimental-features = nix-command flakes
+      - name: Build
+        run: nix build .#${{ matrix.language }}App --print-build-logs
+      - name: List artefacts
+        uses: Rishabh510/Path-lister-action@master
+        with:
+          path: "./result"
+      - name: Adjust permissions
+        run: |
+          chown -R `id -u`:`id -g` ./result
+          chmod -R a+rwx ./result
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: wisecrow ${{ matrix.language }}
+          path: ./result/bin/wisecrow

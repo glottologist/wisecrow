@@ -1,0 +1,5 @@
+# dune init project mixer
+# OCAMLPARAM: unset
+# Shared cache: disabled
+# Workspace root: /home/jason/development/glottologist/mixer/src/ocaml/mixer
+# Auto-detected concurrency: 12
