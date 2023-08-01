@@ -1,3 +1,3 @@
-# Summary
+# Wisecrow Documentation
 
-- [Chapter 1](./chapter_1.md)
+- [Getting Started](./1_getting_started.md.md)

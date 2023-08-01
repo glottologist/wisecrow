@@ -1,6 +1,23 @@
 [book]
 authors = ["Jason Ridgway-Taylor"]
 language = "en"
-multilingual = false
+multilingual = true
 src = "src"
 title = "WiseCrow Documentation"
+
+[output.html]
+mathjax-support = true
+git-repository-url = "https://github.com/glottologist/wisecrow"
+
+[output.html.playground]
+editable = true
+line-numbers = true
+
+[output.html.search]
+limit-results = 20
+use-boolean-and = true
+boost-title = 2
+boost-hierarchy = 2
+boost-paragraph = 1
+expand = true
+heading-split-level = 2
