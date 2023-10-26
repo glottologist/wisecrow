@@ -22,6 +22,7 @@
         license = pkgs.lib.licenses.mit;
         maintainers = [maintainers.glottologist];
         buildF = path: pkgs.callPackage path {inherit name ver homepage description license maintainers nix-filter;};
+        runScylla = pkgs.callPackage {inherit pkgs;};
       in rec {
         packages = {
           haskellCmdApp = buildF ./cmd/haskell;
@@ -30,9 +31,9 @@
         };
 
         devShells = {
-
           haskell = pkgs.mkShell {
             buildInputs = with pkgs; [
+              runScylla
               ghc
               cabal-install
               cabal2nix
@@ -40,6 +41,7 @@
           };
           ocaml = pkgs.mkShell {
             buildInputs = with pkgs; [
+              runScylla
               opam2nix
               ocaml
               ocamlPackages.opam
@@ -48,12 +50,25 @@
             ];
           };
           rust = pkgs.mkShell {
-            buildInputs = [pkgs.rustc pkgs.cargo];
+            buildInputs = [
+              runScylla.dockerComposeEnvironmentpkgs
+              pkgs.rustc
+              pkgs.cargo
+            ];
+          };
+
+          docker-scylla = pkgs.mkShell {
+            buildInputs = [pkgs.docker-compose];
+
+            shellHook = ''
+              echo "Starting Docker Compose..."
+              docker-compose up -d
+            '';
           };
         };
 
-        defaultPackage = packages.ocamlApp;
-        defaultDevShell = devShells.ocaml;
+        defaultPackage = packages.rustCmdApp;
+        defaultDevShell = devShells.rust;
       }
     );
 }

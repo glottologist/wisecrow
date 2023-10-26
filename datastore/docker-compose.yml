@@ -1,16 +1,52 @@
 version: '3'
 
 services:
-  wisecrow-scylla:
-    image: scylladb/scylla
-    container_name: wisecrow-scylla
+  # ScyllaDB Nodes
+  scylla_node1:
+    image: scylladb/scylla:latest
+    container_name: scylla_node1
+    environment:
+      - SCYLLA_SEEDS=scylla_node1
+    volumes:
+      - node1_data:/var/lib/scylla
 
-  wisecrow-scylla2:
-    image: scylladb/scylla
-    container_name: wisecrow-scylla2
-    command: --seeds=wisecrow-scylla
+  scylla_node2:
+    image: scylladb/scylla:latest
+    container_name: scylla_node2
+    environment:
+      - SCYLLA_SEEDS=scylla_node1
+    volumes:
+      - node2_data:/var/lib/scylla
 
-  wisecrow-scylla3:
-    image: scylladb/scylla
-    container_name: wisecrow-scylla3
-    command: --seeds=wisecrow-scylla
+  scylla_node3:
+    image: scylladb/scylla:latest
+    container_name: scylla_node3
+    environment:
+      - SCYLLA_SEEDS=scylla_node1
+    volumes:
+      - node3_data:/var/lib/scylla
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:v2.31.1
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:8.3.2
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+# Define volumes
+volumes:
+  node1_data:
+  node2_data:
+  node3_data:
+  grafana_data:
