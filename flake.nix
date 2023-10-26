@@ -58,11 +58,11 @@
           };
 
           docker-scylla = pkgs.mkShell {
-            buildInputs = [pkgs.docker-compose];
+            buildInputs = [pkgs.podman-compose];
 
             shellHook = ''
-              echo "Starting Docker Compose..."
-              docker-compose up -d
+              echo "Starting Podman Compose..."
+              podman-compose -f ./datastore/docker-compose.yml up -d
             '';
           };
         };
