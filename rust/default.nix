@@ -1,6 +1,6 @@
 {pkgs ? import <nixpkgs> {}}: let
   lib = pkgs.lib;
-  common = import ./../../common.nix {inherit pkgs;};
+  common = import ../common.nix {inherit pkgs;};
 in
   pkgs.rustPlatform.buildRustPackage rec {
     inherit (common) name ver;
@@ -10,13 +10,21 @@ in
     # Specify the binary that will be installed
     cargoBinName = name;
 
-    buildInputs = [pkgs.openssl];
+    nativeBuildInputs = with pkgs; [
+      pkg-config
+    ];
+
+    buildInputs = with pkgs; [
+      openssl
+      openssl.dev
+      openssh
+    ];
 
     cargoLock = {
       lockFile = ./Cargo.lock;
     };
 
-    # The package manager needs to know the SHA-256 hash of your dependencies
+    # Temporary fake hash, replace with real one after first build
     cargoSha256 = pkgs.lib.fakeSha256;
 
     meta = with pkgs.stdenv.lib; {
