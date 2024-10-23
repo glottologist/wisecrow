@@ -57,48 +57,14 @@
         DB_ADDR = "${DB_HOST}:${toString DB_PORT}";
       in rec {
         packages = rec {
-          rust = pkgs.callPackage ./src/rust/default.nix {inherit pkgs;};
-          ocaml = pkgs.callPackage ./src/ocaml/default.nix {inherit pkgs;};
-          haskell = pkgs.callPackage ./src/haskell/default.nix {inherit pkgs;};
-          golang = pkgs.callPackage ./src/golang/wisecrow/default.nix {inherit pkgs;};
+          rust = pkgs.callPackage ./rust/default.nix {inherit pkgs;};
           default = self'.packages.rust;
         };
         apps = {
           rustApp = flake-utils.lib.mkApp {drv = self'.packages.${system}.rust;};
-          ocamlApp = flake-utils.lib.mkApp {drv = self'.packages.${system}.ocaml;};
-          haskellApp = flake-utils.lib.mkApp {drv = self'.packages.${system}.haskell;};
-          golangApp = flake-utils.lib.mkApp {drv = self'.packages.${system}.golang;};
         };
 
         devenv.shells.default = devenv.shells.rust;
-        devenv.shells.db = {
-          devenv.root = let
-            devenvRootFileContent = builtins.readFile devenv-root.outPath;
-          in
-            pkgs.lib.mkIf (devenvRootFileContent != "") devenvRootFileContent;
-          name = "Wisecrow shell for Postgres";
-          env.POSTGRES_DB = POSTGRES_DB;
-          env.POSTGRES_USER = POSTGRES_USER;
-          env.POSTGRES_PASSWORD = POSTGRES_PASSWORD;
-          env.DB_ADDR = DB_ADDR;
-          services.postgres = {
-            enable = true;
-            listen_addresses = "${DB_HOST}";
-            port = DB_PORT;
-            initialDatabases = [{name = "${POSTGRES_DB}";}];
-            initialScript = ''
-              CREATE ROLE ${POSTGRES_USER} WITH LOGIN PASSWORD '${POSTGRES_PASSWORD}';
-              GRANT ALL PRIVILEGES ON DATABASE ${POSTGRES_DB} TO ${POSTGRES_USER};
-              \c ${POSTGRES_DB}
-              GRANT ALL PRIVILEGES ON SCHEMA public TO ${POSTGRES_USER};
-
-            '';
-            settings = {
-              log_connections = true;
-              log_statement = "all";
-            };
-          };
-        };
         devenv.shells.rust = {
           devenv.root = let
             devenvRootFileContent = builtins.readFile devenv-root.outPath;
@@ -107,6 +73,10 @@
           name = "Wisecrow shell for Rust";
           env.GREET = "devenv for the Rust flavour of Wisecrow";
           env.PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
+          env.POSTGRES_DB = POSTGRES_DB;
+          env.POSTGRES_USER = POSTGRES_USER;
+          env.POSTGRES_PASSWORD = POSTGRES_PASSWORD;
+          env.DB_ADDR = DB_ADDR;
           packages = with pkgs; [
             git
             podman
@@ -116,6 +86,7 @@
             mdbook-i18n-helpers
             mdbook-mermaid
             openssh
+            openssl
             pkg-config
           ];
           enterShell = ''
@@ -136,13 +107,6 @@
             nix.enable = true;
           };
           scripts = {
-            podup.exec = ''
-              podman-compose -f ./datastore/docker-compose.yml up -d
-            '';
-            poddown.exec = ''
-              podman-compose -f ./datastore/docker-compose.yml down
-            '';
-
             nextest.exec = ''
               cargo nextest run
             '';
@@ -157,8 +121,25 @@
             '';
 
             watch.exec = ''
-              cargo watch -c -q -w ./src -x build
+              cargo watch -c -q -w ./rust/src -x build
             '';
+          };
+          services.postgres = {
+            enable = true;
+            listen_addresses = "${DB_HOST}";
+            port = DB_PORT;
+            initialDatabases = [{name = "${POSTGRES_DB}";}];
+            initialScript = ''
+              CREATE ROLE ${POSTGRES_USER} WITH LOGIN PASSWORD '${POSTGRES_PASSWORD}';
+              GRANT ALL PRIVILEGES ON DATABASE ${POSTGRES_DB} TO ${POSTGRES_USER};
+              \c ${POSTGRES_DB}
+              GRANT ALL PRIVILEGES ON SCHEMA public TO ${POSTGRES_USER};
+
+            '';
+            settings = {
+              log_connections = true;
+              log_statement = "all";
+            };
           };
           dotenv.enable = true;
           difftastic.enable = true;
@@ -171,127 +152,7 @@
               rustfmt.enable = true;
               nil.enable = true;
             };
-            settings.rust.cargoManifestPath = "./src/rust/Cargo.toml";
-          };
-        };
-        devenv.shells.haskell = {
-          name = "Wisecrow shell for Haskell";
-          env.GREET = "devenv for the Haskell flavour of Wisecrow";
-          packages = with pkgs; [
-            git
-            podman
-            podman-tui
-            podman-compose
-            mdbook
-            mdbook-i18n-helpers
-            mdbook-mermaid
-          ];
-          scripts = {
-            podup.exec = ''
-              podman-compose -f ./datastore/docker-compose.yml up -d
-            '';
-            poddown.exec = ''
-              podman-compose -f ./datastore/docker-compose.yml down
-            '';
-          };
-          enterShell = ''
-            nix --version
-            ghc --version
-            mdbook --version
-            podman-compose -f ./datastore/docker-compose.yml up -d
-          '';
-          languages = {
-            haskell.enable = true;
-            nix.enable = true;
-          };
-          dotenv.enable = true;
-          difftastic.enable = true;
-          pre-commit.hooks = {
-            commitizen.enable = true;
-            ormolu.enable = true;
-            hlint.enable = true;
-            cabal2nix.enable = true;
-            nil.enable = true;
-          };
-        };
-        devenv.shells.ocaml = {
-          name = "Wisecrow shell for Ocaml";
-          env.GREET = "devenv for the Ocaml flavour of Wisecrow";
-          packages = with pkgs; [
-            git
-            podman
-            podman-tui
-            podman-compose
-            mdbook
-            mdbook-i18n-helpers
-            mdbook-mermaid
-          ];
-          scripts = {
-            podup.exec = ''
-              podman-compose -f ./datastore/docker-compose.yml up -d
-            '';
-            poddown.exec = ''
-              podman-compose -f ./datastore/docker-compose.yml down
-            '';
-          };
-          enterShell = ''
-            nix --version
-            ocaml --version
-            opam --version
-            dune --version
-            mdbook --version
-            podman-compose -f ./datastore/docker-compose.yml up -d
-          '';
-          languages = {
-            ocaml.enable = true;
-            nix.enable = true;
-          };
-          dotenv.enable = true;
-          difftastic.enable = true;
-          pre-commit.hooks = {
-            commitizen.enable = true;
-            ocp-indent.enable = true;
-            opam-lint.enable = true;
-            dune-fmt.enable = true;
-            nil.enable = true;
-          };
-        };
-        devenv.shells.go = {
-          name = "Wisecrow shell for Go";
-          env.GREET = "devenv for the Go flavour of Wisecrow";
-          packages = with pkgs; [
-            git
-            podman
-            podman-tui
-            podman-compose
-            mdbook
-            mdbook-i18n-helpers
-            mdbook-mermaid
-          ];
-          scripts = {
-            podup.exec = ''
-              podman-compose -f ./datastore/docker-compose.yml up -d
-            '';
-            poddown.exec = ''
-              podman-compose -f ./datastore/docker-compose.yml down
-            '';
-          };
-          enterShell = ''
-            nix --version
-            go version
-            mdbook --version
-            podman-compose -f ./datastore/docker-compose.yml up -d
-          '';
-          languages = {
-            go.enable = true;
-            nix.enable = true;
-          };
-          dotenv.enable = true;
-          difftastic.enable = true;
-          pre-commit.hooks = {
-            commitizen.enable = true;
-            gofmt.enable = true;
-            nil.enable = true;
+            settings.rust.cargoManifestPath = "./rust/Cargo.toml";
           };
         };
       };

@@ -1,4 +1,0 @@
-(executable
- (public_name wisecrow)
- (name main)
- (libraries wisecrow))
