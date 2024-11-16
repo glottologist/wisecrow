@@ -29,21 +29,15 @@ mod tests {
     use clap::Parser;
 
     #[test]
-    fn test_server_command() {
-        let args = Cli::parse_from(&["nildrop", "server", "--port", "8080"]);
-
-        match args.command {
-            Command::Server(server_args) => {
-                assert_eq!(server_args.port, 8080);
-            }
-            Command::Upload(_) => todo!(),
-            Command::ListIdentifierTypes => todo!(),
-        }
-    }
-
-    #[test]
-    fn test_server_command_with_alias() {
-        let args = Cli::parse_from(&["wisecrow", "d", "native_lang", "en", "foreign_lang", "fr"]);
+    fn test_download_command_with_alias() {
+        let args = Cli::parse_from(&[
+            "wisecrow",
+            "d",
+            "--native-lang",
+            "en",
+            "--foreign-lang",
+            "fr",
+        ]);
 
         match args.command {
             Command::Download(download_args) => {

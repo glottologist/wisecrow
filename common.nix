@@ -3,7 +3,7 @@
 in {
   name = "wisecrow";
   ver = "0.1.0";
-  homepage = "https://github.com/NillionNetwork/wisecrow";
+  homepage = "https://github.com/glottologist/wisecrow";
   description = "Wisecrow Language Learning";
   license = lib.licences.agpl3Plus;
   maintainers = with lib.maintainers; [

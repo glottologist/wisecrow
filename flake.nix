@@ -18,11 +18,9 @@
 
   nixConfig = {
     extra-substituters = [
-      "https://tweag-jupyter.cachix.org"
       "https://devenv.cachix.org"
     ];
     extra-trusted-public-keys = [
-      "tweag-jupyter.cachix.org-1:UtNH4Zs6hVUFpFBTLaA4ejYavPo5EFFqgd7G7FxGW9g="
       "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw="
     ];
   };
@@ -107,8 +105,8 @@
             nix.enable = true;
           };
           scripts = {
-            nextest.exec = ''
-              cargo nextest run
+            ntest.exec = ''
+              cargo nextest run --all --nocapture
             '';
             audit.exec = ''
               cargo audit
