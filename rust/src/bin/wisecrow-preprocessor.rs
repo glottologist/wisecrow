@@ -1,6 +1,10 @@
 use clap::Parser;
 use tracing::info;
-use wisecrow::cli::{Cli, Command};
+use wisecrow::{
+    cli::{Cli, Command},
+    downloader::Downloader,
+    Langs,
+};
 
 /// Main asynchronous entry point
 #[tokio::main]
@@ -19,6 +23,12 @@ async fn main() -> anyhow::Result<()> {
                 "Downloading language files for {} to {}",
                 download_args.native_lang, download_args.foreign_lang
             );
+            let langs = Langs::new(download_args.native_lang, download_args.foreign_lang);
+            let downloader = Downloader::new(langs).expect("Unable to define languages");
+            let _ = downloader
+                .download()
+                .await
+                .expect("Unable to download language files");
         }
     }
     Ok(())
