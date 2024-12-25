@@ -47,9 +47,9 @@
         system,
         ...
       }: let
-        POSTGRES_DB = "wisecrow";
-        POSTGRES_USER = "wisecrow";
-        POSTGRES_PASSWORD = "wisecrow";
+        DB_NAME = "wisecrow";
+        DB_USER = "wisecrow";
+        DB_PASSWORD = "wisecrow";
         DB_HOST = "127.0.0.1";
         DB_PORT = 5432;
         DB_ADDR = "${DB_HOST}:${toString DB_PORT}";
@@ -71,10 +71,10 @@
           name = "Wisecrow shell for Rust";
           env.GREET = "devenv for the Rust flavour of Wisecrow";
           env.PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
-          env.POSTGRES_DB = POSTGRES_DB;
-          env.POSTGRES_USER = POSTGRES_USER;
-          env.POSTGRES_PASSWORD = POSTGRES_PASSWORD;
-          env.DB_ADDR = DB_ADDR;
+          env.WISECROW__DB_ADDRESS = DB_ADDR;
+          env.WISECROW__DB_NAME = DB_NAME;
+          env.WISECROW__DB_USER = DB_USER;
+          env.WISECROW__DB_PASSWORD = DB_PASSWORD;
           packages = with pkgs; [
             git
             podman
@@ -126,12 +126,12 @@
             enable = true;
             listen_addresses = "${DB_HOST}";
             port = DB_PORT;
-            initialDatabases = [{name = "${POSTGRES_DB}";}];
+            initialDatabases = [{name = "${DB_NAME}";}];
             initialScript = ''
-              CREATE ROLE ${POSTGRES_USER} WITH LOGIN PASSWORD '${POSTGRES_PASSWORD}';
-              GRANT ALL PRIVILEGES ON DATABASE ${POSTGRES_DB} TO ${POSTGRES_USER};
-              \c ${POSTGRES_DB}
-              GRANT ALL PRIVILEGES ON SCHEMA public TO ${POSTGRES_USER};
+              CREATE ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';
+              GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO $DB_USER};
+              \c ${DB_NAME}
+              GRANT ALL PRIVILEGES ON SCHEMA public TO ${DB_USER};
 
             '';
             settings = {

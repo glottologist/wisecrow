@@ -1,7 +1,10 @@
 pub mod cli;
+pub mod config;
 pub mod downloader;
 pub mod errors;
 pub mod files;
+pub mod processing;
+
 use derive_more::Display;
 
 #[derive(Debug, Display)]

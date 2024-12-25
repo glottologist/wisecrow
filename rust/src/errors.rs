@@ -15,4 +15,8 @@ pub enum WisecrowError {
     UnableToCreateFile(#[from] std::io::Error),
     #[error("Unable to construct progress bar style: {0}")]
     UnableToConstructProgressBarStyle(#[from] TemplateError),
+    #[error("Persistence migration error: {0}")]
+    PersistenceMigrationError(#[from] sqlx::migrate::MigrateError),
+    #[error("Persistence connection error: {0}")]
+    PersistenceConnectionError(#[from] sqlx::Error),
 }
