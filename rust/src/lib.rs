@@ -3,17 +3,17 @@ pub mod config;
 pub mod downloader;
 pub mod errors;
 pub mod files;
-pub mod processing;
+pub mod ingesting;
 
 use derive_more::Display;
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, Clone)]
 pub struct Native(String);
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, Clone)]
 pub struct Foreign(String);
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, Clone)]
 #[display("Native {} Foreign {}", native, foreign)]
 pub struct Langs {
     native: Native,

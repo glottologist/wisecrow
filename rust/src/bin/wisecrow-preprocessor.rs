@@ -1,11 +1,19 @@
+use anyhow::Error;
 use clap::Parser;
 use config::{Config as ConfigLoader, Environment};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{migrate::MigrateError, PgPool};
 use std::str::FromStr;
 use thiserror::Error;
-use tracing::info;
+use tokio::{
+    select,
+    signal::unix::{signal, SignalKind},
+    task::JoinHandle,
+};
+use tracing::{error, info, info_span, Instrument};
 use wisecrow::config::Config;
+use wisecrow::files::LanguageFiles;
+use wisecrow::ingesting::Ingester;
 use wisecrow::{
     cli::{Cli, Command},
     downloader::Downloader,
@@ -29,9 +37,33 @@ async fn assure_db(database_url: String) -> Result<PgPool, WisecrowError> {
     Ok(pool)
 }
 
+fn send_shutdown_message(signal_type: &str) {
+    info!("Received {} | Wisecrow shutting down 👋", signal_type);
+}
+
+async fn run_until_signal(handles: Vec<JoinHandle<()>>) -> anyhow::Result<()> {
+    let mut term_signal = signal(SignalKind::terminate())?;
+    let mut interrupt_signal = signal(SignalKind::interrupt())?;
+    let mut hangup_signal = signal(SignalKind::hangup())?;
+
+    select! {
+        _ = tokio::signal::ctrl_c() => send_shutdown_message("Ctrl+C"),
+        _ = interrupt_signal.recv() => send_shutdown_message("interrupt"),
+        _ = hangup_signal.recv() => send_shutdown_message("hang"),
+        _ = term_signal.recv() => send_shutdown_message("terminate"),
+    };
+
+    info!("Exiting chain processes");
+
+    for handle in handles {
+        handle.abort();
+    }
+    Ok(())
+}
+
 /// Main asynchronous entry point
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), Error> {
     // Initialize tracing subscriber for logging
     tracing_subscriber::fmt::init();
 
@@ -54,17 +86,24 @@ async fn main() -> anyhow::Result<()> {
 
     // Match on the command provided via CLI
     match cli.command {
-        Command::Download(download_args) => {
+        Command::Ingest(ingest_args) => {
             info!(
-                "Downloading language files for {} to {}",
-                download_args.native_lang, download_args.foreign_lang
+                "Ingesting language files for {} to {}",
+                ingest_args.native_lang, ingest_args.foreign_lang
             );
-            let langs = Langs::new(download_args.native_lang, download_args.foreign_lang);
-            let downloader = Downloader::new(langs).expect("Unable to define languages");
-            let _ = downloader
-                .download()
+            let langs = Langs::new(ingest_args.native_lang, ingest_args.foreign_lang);
+            let language_files = LanguageFiles::new(&langs)?;
+            let mut handles: Vec<JoinHandle<()>> = Vec::new();
+
+            for file in language_files.files.iter() {
+                handles.push(Ingester::spawn(langs.clone(), file.clone()).await);
+            }
+            if let Err(e) = run_until_signal(handles)
+                .instrument(info_span!(parent: None, "wisecrow.signal_handlers"))
                 .await
-                .expect("Unable to download language files");
+            {
+                error!("Failed to run node: {e}");
+            }
         }
     }
     Ok(())

@@ -1,5 +1,4 @@
 use clap::{Args, Parser, Subcommand};
-use std::path::PathBuf;
 
 #[derive(Parser)]
 #[clap(author, version, about = "Wisecrow", long_about = "Wisecrow language")]
@@ -10,7 +9,7 @@ pub struct Cli {
 }
 
 #[derive(Args)]
-pub struct DownloadArgs {
+pub struct IngestArgs {
     #[arg(short, long)]
     pub native_lang: String,
     #[arg(short, long)]
@@ -19,8 +18,8 @@ pub struct DownloadArgs {
 
 #[derive(Subcommand)]
 pub enum Command {
-    #[command(aliases = ["d"])]
-    Download(DownloadArgs),
+    #[command(aliases = ["i"])]
+    Ingest(IngestArgs),
 }
 
 #[cfg(test)]
@@ -32,7 +31,7 @@ mod tests {
     fn test_download_command_with_alias() {
         let args = Cli::parse_from(&[
             "wisecrow",
-            "d",
+            "i",
             "--native-lang",
             "en",
             "--foreign-lang",

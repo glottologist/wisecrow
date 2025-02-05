@@ -3,7 +3,7 @@ use crate::Langs;
 use derive_more::Display;
 use thiserror::Error;
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, Clone)]
 pub enum LanguageFileType {
     #[display("Frequency")]
     Frequency,
@@ -15,7 +15,7 @@ pub enum LanguageFileType {
     Translation,
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, Clone)]
 pub enum Compression {
     #[display("None")]
     None,
@@ -24,7 +24,7 @@ pub enum Compression {
     #[display("ZipCompressed")]
     ZipCompressed,
 }
-#[derive(Debug, Display)]
+#[derive(Debug, Display, Clone)]
 #[display(
     "{} file at {} (URL: {}{}) (FILE: {})",
     lang_file_type,
