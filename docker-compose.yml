@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: wisecrow-db
+    environment:
+      POSTGRES_DB: wisecrow
+      POSTGRES_USER: wisecrow
+      POSTGRES_PASSWORD: wisecrow
+    ports:
+      - "5432:5432"
+    volumes:
+      - wisecrow-data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wisecrow -d wisecrow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  wisecrow-data:

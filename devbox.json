@@ -1,0 +1,133 @@
+{
+  "name": "Wisecrow Devbox",
+  "description": "Wisecrow development environment",
+  "packages": [
+    "rustc@latest",
+    "cargo@latest",
+    "rust-analyzer@latest",
+    "rustfmt@latest",
+    "clippy@latest",
+    "postgresql_15@latest",
+    "sqlx-cli@latest",
+    "git@latest",
+    "curl@latest",
+    "jq@latest",
+    "ripgrep@latest",
+    "fd@latest",
+    "bat@latest",
+    "delta@latest",
+    "hyperfine@latest",
+    "tokei@latest",
+    "cargo-watch@latest",
+    "cargo-nextest@latest",
+    "cargo-audit@latest",
+    "cargo-outdated@latest",
+    "cargo-tree@latest",
+    "cargo-expand@latest",
+    "cargo-bloat@latest",
+    "bacon@latest",
+    "valgrind@latest",
+    "heaptrack@latest",
+    "gdb@latest",
+    "lldb@latest"
+  ],
+  "shell": {
+    "init_hook": [
+      "echo 'Welcome to Wisecrow development environment!'",
+      "echo 'Rust version: '$(rustc --version)",
+      "echo 'Cargo version: '$(cargo --version)",
+      "echo ''",
+      "echo 'Available commands:'",
+      "echo '  cargo build          - Build the project'",
+      "echo '  cargo test           - Run tests'",
+      "echo '  cargo clippy         - Run linting'",
+      "echo '  cargo watch -x test  - Watch for changes and run tests'",
+      "echo '  cargo nextest run    - Run tests with nextest (faster)'",
+      "echo '  cargo audit          - Security audit of dependencies'",
+      "echo '  cargo outdated       - Check for outdated dependencies'",
+      "echo '  cargo bloat          - Analyze binary size'",
+      "echo '  sqlx migrate run     - Apply database migrations'",
+      "echo '  tokei                - Count lines of code'",
+      "echo ''",
+      "echo 'Database:'",
+      "echo '  pg_ctl start -D $PGDATA     - Start PostgreSQL'",
+      "echo '  pg_ctl stop -D $PGDATA      - Stop PostgreSQL'",
+      "echo '  createdb wisecrow_dev       - Create development database'",
+      "echo '  psql wisecrow_dev           - Connect to database'",
+      "echo ''",
+      "echo 'Tip: Set environment variables in .env file'",
+      "echo '     WISECROW__DB_URL=postgres://user:password@localhost/wisecrow_dev'",
+      "echo ''"
+    ],
+    "scripts": {
+      "setup-db": [
+        "echo 'Setting up PostgreSQL for development...'",
+        "export PGDATA=$PWD/.devbox/postgresql",
+        "if [ ! -d \"$PGDATA\" ]; then",
+        "  initdb $PGDATA",
+        "  echo \"host all all 127.0.0.1/32 trust\" >> $PGDATA/pg_hba.conf",
+        "  echo \"listen_addresses = 'localhost'\" >> $PGDATA/postgresql.conf",
+        "  echo \"port = 5432\" >> $PGDATA/postgresql.conf",
+        "fi",
+        "pg_ctl start -D $PGDATA -l $PGDATA/logfile",
+        "sleep 2",
+        "createdb wisecrow_dev 2>/dev/null || echo 'Database wisecrow_dev already exists'",
+        "createdb wisecrow_test 2>/dev/null || echo 'Database wisecrow_test already exists'",
+        "echo 'PostgreSQL setup complete!'",
+        "echo 'Development DB: postgresql://localhost/wisecrow_dev'",
+        "echo 'Test DB: postgresql://localhost/wisecrow_test'"
+      ],
+      "start-db": [
+        "export PGDATA=$PWD/.devbox/postgresql",
+        "pg_ctl start -D $PGDATA -l $PGDATA/logfile",
+        "echo 'PostgreSQL started'"
+      ],
+      "stop-db": [
+        "export PGDATA=$PWD/.devbox/postgresql",
+        "pg_ctl stop -D $PGDATA",
+        "echo 'PostgreSQL stopped'"
+      ],
+      "migrate": [
+        "export DATABASE_URL=postgresql://localhost/wisecrow_dev",
+        "sqlx migrate run",
+        "echo 'Database migrations applied'"
+      ],
+      "test-full": [
+        "echo 'Running full test suite...'",
+        "cargo clippy -- -D warnings",
+        "cargo test",
+        "cargo nextest run",
+        "echo 'All tests passed!'"
+      ],
+      "dev": [
+        "cargo watch -x 'clippy -- -D warnings' -x test -x run"
+      ],
+      "benchmark": [
+        "cargo bench"
+      ],
+      "profile": [
+        "cargo build --release",
+        "echo 'Run with: valgrind --tool=callgrind ./target/release/wisecrow'"
+      ],
+      "security-audit": [
+        "cargo audit",
+        "cargo outdated"
+      ],
+      "clean-all": [
+        "cargo clean",
+        "rm -f *.xml *.tmx *.zip *.gz",
+        "echo 'Cleaned build artifacts and downloaded files'"
+      ]
+    }
+  },
+  "env": {
+    "RUST_BACKTRACE": "1",
+    "RUST_LOG": "wisecrow=debug,info",
+    "PGDATA": "$PWD/.devbox/postgresql",
+    "DATABASE_URL": "postgresql://localhost/wisecrow_dev",
+    "WISECROW__DB_URL": "postgresql://localhost/wisecrow_dev"
+  },
+  "nixpkgs": {
+    "commit": "af9e00071d0971eb292fd5abef334e66eda3cb69"
+  }
+}

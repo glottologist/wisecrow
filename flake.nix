@@ -55,7 +55,7 @@
         DB_ADDR = "${DB_HOST}:${toString DB_PORT}";
       in rec {
         packages = rec {
-          rust = pkgs.callPackage ./rust/default.nix {inherit pkgs;};
+          rust = pkgs.callPackage ./default.nix {inherit pkgs;};
           default = self'.packages.rust;
         };
         apps = {
@@ -115,11 +115,11 @@
               cargo modules structure --lib
             '';
             bin.exec = ''
-              cargo modules structure --bin acp
+              cargo modules structure --bin wisecrow
             '';
 
             watch.exec = ''
-              cargo watch -c -q -w ./rust/src -x build
+              cargo watch -c -q -w ./src -x build
             '';
           };
           services.postgres = {
@@ -129,7 +129,7 @@
             initialDatabases = [{name = "${DB_NAME}";}];
             initialScript = ''
               CREATE ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';
-              GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO $DB_USER};
+              GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};
               \c ${DB_NAME}
               GRANT ALL PRIVILEGES ON SCHEMA public TO ${DB_USER};
 
@@ -150,7 +150,7 @@
               rustfmt.enable = true;
               nil.enable = true;
             };
-            settings.rust.cargoManifestPath = "./rust/Cargo.toml";
+            settings.rust.cargoManifestPath = "./Cargo.toml";
           };
         };
       };
