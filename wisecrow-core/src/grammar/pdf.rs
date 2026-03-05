@@ -196,38 +196,44 @@ fn split_example(line: &str) -> (String, Option<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn section_header_detected() {
-        assert!(is_section_header("Present Tense"));
-        assert!(is_section_header("Chapter 1"));
-        assert!(is_section_header("Verbs of Motion"));
-        assert!(!is_section_header(
-            "This is a long sentence that explains grammar rules in detail."
-        ));
-        assert!(!is_section_header("The cat sat on the mat"));
+    #[rstest]
+    #[case("Present Tense", true)]
+    #[case("Chapter 1", true)]
+    #[case("Verbs of Motion", true)]
+    #[case(
+        "This is a long sentence that explains grammar rules in detail.",
+        false
+    )]
+    #[case("The cat sat on the mat", false)]
+    fn section_header_detected(#[case] input: &str, #[case] expected: bool) {
+        assert_eq!(is_section_header(input), expected);
     }
 
-    #[test]
-    fn numbered_rule_detected() {
-        assert!(is_numbered_rule("1. Use the present tense"));
-        assert!(is_numbered_rule("12) Another rule"));
-        assert!(!is_numbered_rule("Not a rule"));
+    #[rstest]
+    #[case("1. Use the present tense", true)]
+    #[case("12) Another rule", true)]
+    #[case("Not a rule", false)]
+    fn numbered_rule_detected(#[case] input: &str, #[case] expected: bool) {
+        assert_eq!(is_numbered_rule(input), expected);
     }
 
-    #[test]
-    fn bulleted_rule_detected() {
-        assert!(is_bulleted_rule("- A rule"));
-        assert!(is_bulleted_rule("• Another rule"));
-        assert!(!is_bulleted_rule("Not a rule"));
+    #[rstest]
+    #[case("- A rule", true)]
+    #[case("• Another rule", true)]
+    #[case("Not a rule", false)]
+    fn bulleted_rule_detected(#[case] input: &str, #[case] expected: bool) {
+        assert_eq!(is_bulleted_rule(input), expected);
     }
 
-    #[test]
-    fn example_sentence_detected() {
-        assert!(is_example_sentence("\"Hola, mundo\""));
-        assert!(is_example_sentence("e.g. Hola"));
-        assert!(is_example_sentence("Example: Hello"));
-        assert!(!is_example_sentence("This is a normal line"));
+    #[rstest]
+    #[case("\"Hola, mundo\"", true)]
+    #[case("e.g. Hola", true)]
+    #[case("Example: Hello", true)]
+    #[case("This is a normal line", false)]
+    fn example_sentence_detected(#[case] input: &str, #[case] expected: bool) {
+        assert_eq!(is_example_sentence(input), expected);
     }
 
     #[test]

@@ -4,6 +4,10 @@ use sqlx::PgPool;
 
 use crate::errors::WisecrowError;
 
+pub(crate) const CARD_SELECT_COLUMNS: &str =
+    "c.id, c.translation_id, t.from_phrase, t.to_phrase, t.frequency, \
+     c.stability, c.difficulty, c.state, c.due, c.reps, c.lapses";
+
 pub(crate) type CardRow = (
     i32,
     i32,
@@ -192,6 +196,27 @@ impl CardManager {
         Ok(ids)
     }
 
+    /// Fetches a single card by ID, including its translation data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails or the card does not exist.
+    pub async fn get_card_by_id(pool: &PgPool, card_id: i32) -> Result<CardState, WisecrowError> {
+        let query = format!(
+            "SELECT {CARD_SELECT_COLUMNS} \
+             FROM cards c \
+             JOIN translations t ON c.translation_id = t.id \
+             WHERE c.id = $1"
+        );
+        let row = sqlx::query_as::<_, CardRow>(&query)
+            .bind(card_id)
+            .fetch_optional(pool)
+            .await?;
+
+        row.map(CardState::from_row)
+            .ok_or_else(|| WisecrowError::InvalidInput(format!("Card with id {card_id} not found")))
+    }
+
     /// Returns cards due for review, prioritised by state then due date.
     ///
     /// Priority: Relearning > Learning > New > Review. Within each state,
@@ -206,30 +231,30 @@ impl CardManager {
         foreign_lang: &str,
         limit: u32,
     ) -> Result<Vec<CardState>, WisecrowError> {
-        let rows = sqlx::query_as::<_, CardRow>(
-            "SELECT c.id, c.translation_id, t.from_phrase, t.to_phrase, t.frequency,
-                    c.stability, c.difficulty, c.state, c.due, c.reps, c.lapses
-             FROM cards c
-             JOIN translations t ON c.translation_id = t.id
-             JOIN languages fl ON t.from_language_id = fl.id
-             JOIN languages tl ON t.to_language_id = tl.id
-             WHERE fl.code = $1 AND tl.code = $2 AND c.due <= NOW()
-             ORDER BY
-                CASE c.state
-                    WHEN 3 THEN 0
-                    WHEN 1 THEN 1
-                    WHEN 0 THEN 2
-                    WHEN 2 THEN 3
-                    ELSE 4
-                END,
-                c.due ASC
-             LIMIT $3",
-        )
-        .bind(native_lang)
-        .bind(foreign_lang)
-        .bind(i64::from(limit))
-        .fetch_all(pool)
-        .await?;
+        let query = format!(
+            "SELECT {CARD_SELECT_COLUMNS} \
+             FROM cards c \
+             JOIN translations t ON c.translation_id = t.id \
+             JOIN languages fl ON t.from_language_id = fl.id \
+             JOIN languages tl ON t.to_language_id = tl.id \
+             WHERE fl.code = $1 AND tl.code = $2 AND c.due <= NOW() \
+             ORDER BY \
+                CASE c.state \
+                    WHEN 3 THEN 0 \
+                    WHEN 1 THEN 1 \
+                    WHEN 0 THEN 2 \
+                    WHEN 2 THEN 3 \
+                    ELSE 4 \
+                END, \
+                c.due ASC \
+             LIMIT $3"
+        );
+        let rows = sqlx::query_as::<_, CardRow>(&query)
+            .bind(native_lang)
+            .bind(foreign_lang)
+            .bind(i64::from(limit))
+            .fetch_all(pool)
+            .await?;
 
         Ok(rows.into_iter().map(CardState::from_row).collect())
     }
@@ -308,18 +333,20 @@ impl CardManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+    use rstest::rstest;
 
-    #[test]
-    fn card_status_roundtrip() {
-        for (db_val, expected) in [
-            (0i16, CardStatus::New),
-            (1, CardStatus::Learning),
-            (2, CardStatus::Review),
-            (3, CardStatus::Relearning),
-        ] {
+    proptest! {
+        #[test]
+        fn card_status_roundtrip(db_val in 0i16..=3) {
             let status = CardStatus::from_db(db_val);
-            assert_eq!(status, expected);
-            assert_eq!(status.to_db(), db_val);
+            prop_assert_eq!(status.to_db(), db_val);
+        }
+
+        #[test]
+        fn review_rating_roundtrip(db_val in 1i16..=4) {
+            let rating = ReviewRating::from_db(db_val).unwrap();
+            prop_assert_eq!(rating.to_db(), db_val);
         }
     }
 
@@ -329,39 +356,27 @@ mod tests {
     }
 
     #[test]
-    fn review_rating_roundtrip() {
-        for (db_val, expected) in [
-            (1i16, ReviewRating::Again),
-            (2, ReviewRating::Hard),
-            (3, ReviewRating::Good),
-            (4, ReviewRating::Easy),
-        ] {
-            let rating = ReviewRating::from_db(db_val).unwrap();
-            assert_eq!(rating, expected);
-            assert_eq!(rating.to_db(), db_val);
-        }
-    }
-
-    #[test]
     fn unknown_rating_returns_none() {
         assert!(ReviewRating::from_db(0).is_none());
         assert!(ReviewRating::from_db(5).is_none());
     }
 
-    #[test]
-    fn fsrs_rating_conversion() {
-        assert_eq!(Rating::from(ReviewRating::Again), Rating::Again);
-        assert_eq!(Rating::from(ReviewRating::Hard), Rating::Hard);
-        assert_eq!(Rating::from(ReviewRating::Good), Rating::Good);
-        assert_eq!(Rating::from(ReviewRating::Easy), Rating::Easy);
+    #[rstest]
+    #[case(ReviewRating::Again, Rating::Again)]
+    #[case(ReviewRating::Hard, Rating::Hard)]
+    #[case(ReviewRating::Good, Rating::Good)]
+    #[case(ReviewRating::Easy, Rating::Easy)]
+    fn fsrs_rating_conversion(#[case] input: ReviewRating, #[case] expected: Rating) {
+        assert_eq!(Rating::from(input), expected);
     }
 
-    #[test]
-    fn fsrs_state_conversion() {
-        assert_eq!(CardStatus::from(State::New), CardStatus::New);
-        assert_eq!(CardStatus::from(State::Learning), CardStatus::Learning);
-        assert_eq!(CardStatus::from(State::Review), CardStatus::Review);
-        assert_eq!(CardStatus::from(State::Relearning), CardStatus::Relearning);
+    #[rstest]
+    #[case(State::New, CardStatus::New)]
+    #[case(State::Learning, CardStatus::Learning)]
+    #[case(State::Review, CardStatus::Review)]
+    #[case(State::Relearning, CardStatus::Relearning)]
+    fn fsrs_state_conversion(#[case] input: State, #[case] expected: CardStatus) {
+        assert_eq!(CardStatus::from(input), expected);
     }
 
     #[test]

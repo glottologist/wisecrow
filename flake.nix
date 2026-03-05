@@ -77,6 +77,7 @@
           env.WISECROW__DB_PASSWORD = DB_PASSWORD;
           packages = with pkgs; [
             git
+            lld
             podman
             podman-tui
             podman-compose
@@ -93,6 +94,7 @@
             cargo install cargo-audit
             cargo install cargo-nextest
             cargo install cargo-expand
+            cargo install dioxus-cli
             git --version
             nix --version
             rustc --version
@@ -102,6 +104,7 @@
           languages = {
             rust.enable = true;
             rust.channel = "nightly";
+            rust.targets = ["wasm32-unknown-unknown"];
             nix.enable = true;
           };
           scripts = {
@@ -112,10 +115,13 @@
               cargo audit
             '';
             lib.exec = ''
-              cargo modules structure --lib
+              cargo modules structure --lib -p wisecrow-core
             '';
             bin.exec = ''
-              cargo modules structure --bin wisecrow
+              cargo modules structure --bin wisecrow -p wisecrow-core
+            '';
+            dx-serve.exec = ''
+              cd wisecrow-web && dx serve
             '';
 
             watch.exec = ''

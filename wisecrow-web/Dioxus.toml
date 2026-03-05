@@ -1,0 +1,19 @@
+[application]
+name = "wisecrow-web"
+default_platform = "fullstack"
+out_dir = "dist"
+asset_dir = "assets"
+
+[web.app]
+title = "Wisecrow"
+
+[web.watcher]
+reload_html = true
+watch_path = ["src", "assets"]
+
+[web.resource]
+style = ["/style.css"]
+script = []
+
+[web.resource.dev]
+script = []

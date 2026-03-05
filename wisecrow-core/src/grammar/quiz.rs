@@ -50,6 +50,7 @@ impl QuizGenerator {
         }
 
         let mut quizzes = Vec::new();
+        let question = QUESTION_TEXT.to_owned();
 
         for (idx, &rule) in all_rules.iter().enumerate() {
             let distractors: Vec<String> = all_rules
@@ -68,7 +69,7 @@ impl QuizGenerator {
             options.extend(distractors);
 
             quizzes.push(MultipleChoiceQuiz {
-                question: QUESTION_TEXT.to_owned(),
+                question: question.clone(), // clone: reusing pre-allocated question string
                 options,
                 correct_index: 0,
             });
@@ -143,6 +144,7 @@ pub fn shuffle_options(quiz: &MultipleChoiceQuiz, seed: usize) -> MultipleChoice
 mod tests {
     use super::*;
     use crate::grammar::pdf::ExampleSentence;
+    use proptest::prelude::*;
 
     #[test]
     fn cloze_removes_longest_word() {
@@ -212,20 +214,21 @@ mod tests {
         }
     }
 
-    #[test]
-    fn shuffle_preserves_correct_answer() {
-        let quiz = MultipleChoiceQuiz {
-            question: "Test?".to_owned(),
-            options: vec![
-                "A".to_owned(),
-                "B".to_owned(),
-                "C".to_owned(),
-                "D".to_owned(),
-            ],
-            correct_index: 0,
-        };
-
-        let shuffled = shuffle_options(&quiz, 42);
-        assert_eq!(shuffled.options[shuffled.correct_index], "A");
+    proptest! {
+        #[test]
+        fn shuffle_preserves_correct_answer(seed in 0usize..10000) {
+            let quiz = MultipleChoiceQuiz {
+                question: "Test?".to_owned(),
+                options: vec![
+                    "A".to_owned(),
+                    "B".to_owned(),
+                    "C".to_owned(),
+                    "D".to_owned(),
+                ],
+                correct_index: 0,
+            };
+            let shuffled = shuffle_options(&quiz, seed);
+            prop_assert_eq!(&shuffled.options[shuffled.correct_index], "A");
+        }
     }
 }

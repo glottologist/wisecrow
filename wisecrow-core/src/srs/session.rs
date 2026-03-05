@@ -67,15 +67,17 @@ impl SessionManager {
         .fetch_one(pool)
         .await?;
 
-        for (position, card) in all_cards.iter().enumerate() {
-            let pos = i32::try_from(position).unwrap_or(i32::MAX);
+        if !all_cards.is_empty() {
+            let card_ids: Vec<i32> = all_cards.iter().map(|c| c.card_id).collect();
+            let positions: Vec<i32> =
+                (0..i32::try_from(all_cards.len()).unwrap_or(i32::MAX)).collect();
             sqlx::query(
                 "INSERT INTO session_cards (session_id, card_id, position)
-                 VALUES ($1, $2, $3)",
+                 SELECT $1, unnest($2::int[]), unnest($3::int[])",
             )
             .bind(session_id)
-            .bind(card.card_id)
-            .bind(pos)
+            .bind(&card_ids)
+            .bind(&positions)
             .execute(pool)
             .await?;
         }
@@ -201,18 +203,19 @@ impl SessionManager {
         pool: &PgPool,
         session_id: i32,
     ) -> Result<Vec<CardState>, WisecrowError> {
-        let rows = sqlx::query_as::<_, super::scheduler::CardRow>(
-            "SELECT c.id, c.translation_id, t.from_phrase, t.to_phrase, t.frequency,
-                    c.stability, c.difficulty, c.state, c.due, c.reps, c.lapses
-             FROM session_cards sc
-             JOIN cards c ON sc.card_id = c.id
-             JOIN translations t ON c.translation_id = t.id
-             WHERE sc.session_id = $1
+        let query = format!(
+            "SELECT {} \
+             FROM session_cards sc \
+             JOIN cards c ON sc.card_id = c.id \
+             JOIN translations t ON c.translation_id = t.id \
+             WHERE sc.session_id = $1 \
              ORDER BY sc.position",
-        )
-        .bind(session_id)
-        .fetch_all(pool)
-        .await?;
+            super::scheduler::CARD_SELECT_COLUMNS
+        );
+        let rows = sqlx::query_as::<_, super::scheduler::CardRow>(&query)
+            .bind(session_id)
+            .fetch_all(pool)
+            .await?;
 
         Ok(rows.into_iter().map(CardState::from_row).collect())
     }

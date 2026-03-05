@@ -121,35 +121,19 @@ impl FrequencyUpdater {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+    use rstest::rstest;
 
-    #[test]
-    fn parse_standard_format() {
-        let text = "hello 12345\nworld 6789\n";
-        let map = FrequencyUpdater::parse_frequency_text(text);
-        assert_eq!(map.get("hello"), Some(&12345));
-        assert_eq!(map.get("world"), Some(&6789));
-    }
-
-    #[test]
-    fn parse_skips_empty_lines() {
-        let text = "\nhello 100\n\n\nworld 200\n";
-        let map = FrequencyUpdater::parse_frequency_text(text);
-        assert_eq!(map.len(), 2);
-    }
-
-    #[test]
-    fn parse_skips_malformed_lines() {
-        let text = "hello 100\nbadline\nworld 200\nnumber abc\n";
-        let map = FrequencyUpdater::parse_frequency_text(text);
-        assert_eq!(map.len(), 2);
-    }
-
-    #[test]
-    fn parse_multi_word_phrase() {
-        let text = "ice cream 500\nhello world 100\n";
-        let map = FrequencyUpdater::parse_frequency_text(text);
-        assert_eq!(map.get("ice cream"), Some(&500));
-        assert_eq!(map.get("hello world"), Some(&100));
+    #[rstest]
+    #[case("hello 12345\nworld 6789\n", &[("hello", 12345), ("world", 6789)])]
+    #[case("\nhello 100\n\n\nworld 200\n", &[("hello", 100), ("world", 200)])]
+    #[case("hello 100\nbadline\nworld 200\nnumber abc\n", &[("hello", 100), ("world", 200)])]
+    #[case("ice cream 500\nhello world 100\n", &[("ice cream", 500), ("hello world", 100)])]
+    fn parse_frequency_text_cases(#[case] input: &str, #[case] expected: &[(&str, i32)]) {
+        let map = FrequencyUpdater::parse_frequency_text(input);
+        assert_eq!(map.len(), expected.len());
+        for (word, count) in expected {
+            assert_eq!(map.get(*word), Some(count));
+        }
     }
 
     #[test]

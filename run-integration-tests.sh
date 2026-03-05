@@ -38,6 +38,7 @@ done
 
 echo "Running integration tests..."
 TEST_DATABASE_URL="${TEST_URL}" CC=cc cargo nextest run \
+    -p wisecrow-core \
     --run-ignored ignored-only \
     --test-threads=1 \
     "$@"

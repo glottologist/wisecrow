@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod config;
 pub mod downloader;
+pub mod dto_convert;
 pub mod errors;
 pub mod files;
 pub mod frequency;

@@ -1,0 +1,30 @@
+[package]
+name = "wisecrow-web"
+version = "0.1.0"
+edition = "2021"
+description = "Dioxus fullstack web UI for Wisecrow"
+
+[dependencies]
+wisecrow-dto = { path = "../wisecrow-dto" }
+dioxus = { version = "0.7", features = ["router", "fullstack"] }
+serde = { version = "1.0", features = ["derive"] }
+tracing = "0.1"
+base64 = { version = "0.22", optional = true }
+reqwest = { version = "0.12.5", default-features = false, features = ["rustls-tls"], optional = true }
+
+# Server-only dependencies
+wisecrow-core = { path = "../wisecrow-core", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "migrate", "chrono"], optional = true }
+dotenv = { version = "0.15", optional = true }
+config = { version = "0.14", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+gloo-timers = { version = "0.3", features = ["futures"] }
+
+[features]
+default = []
+server = ["dioxus/server", "dep:wisecrow-core", "dep:tokio", "dep:sqlx", "dep:dotenv", "dep:config"]
+web = ["dioxus/web"]
+audio = ["server", "wisecrow-core/audio", "dep:base64"]
+images = ["server", "wisecrow-core/images", "dep:base64", "dep:reqwest"]

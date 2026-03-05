@@ -114,6 +114,7 @@ impl MediaCache {
 
         let count = rows.len();
 
+        let mut ids_to_delete: Vec<i32> = Vec::with_capacity(count);
         for (id, path) in &rows {
             let file = Path::new(path);
             if file.exists() {
@@ -121,8 +122,12 @@ impl MediaCache {
                     tracing::warn!("Failed to remove cached file {}: {e}", file.display());
                 }
             }
-            sqlx::query("DELETE FROM media_cache WHERE id = $1")
-                .bind(id)
+            ids_to_delete.push(*id);
+        }
+
+        if !ids_to_delete.is_empty() {
+            sqlx::query("DELETE FROM media_cache WHERE id = ANY($1)")
+                .bind(&ids_to_delete)
                 .execute(&self.pool)
                 .await?;
         }
