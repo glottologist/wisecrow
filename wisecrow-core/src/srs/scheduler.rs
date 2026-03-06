@@ -311,6 +311,7 @@ impl CardManager {
         .bind(new_state.to_db())
         .bind(now)
         .bind(new_card.due)
+        .bind(card.card_id)
         .execute(pool)
         .await?;
 

@@ -25,12 +25,19 @@ impl VocabularyQuery {
         limit: u32,
     ) -> Result<Vec<VocabularyEntry>, WisecrowError> {
         let rows = sqlx::query_as::<_, (i32, String, String, i32)>(
-            "SELECT t.id, t.from_phrase, t.to_phrase, t.frequency
-             FROM translations t
-             JOIN languages fl ON t.from_language_id = fl.id
-             JOIN languages tl ON t.to_language_id = tl.id
-             WHERE fl.code = $1 AND tl.code = $2
-             ORDER BY t.frequency DESC
+            "SELECT id, from_phrase, to_phrase, frequency FROM (
+               SELECT DISTINCT ON (t.from_phrase)
+                      t.id, t.from_phrase, t.to_phrase, t.frequency
+               FROM translations t
+               JOIN languages fl ON t.from_language_id = fl.id
+               JOIN languages tl ON t.to_language_id = tl.id
+               WHERE fl.code = $1 AND tl.code = $2
+                 AND t.frequency > 1
+                 AND LENGTH(t.from_phrase) BETWEEN 2 AND 200
+                 AND LENGTH(t.to_phrase) BETWEEN 2 AND 200
+               ORDER BY t.from_phrase, t.frequency DESC
+             ) best
+             ORDER BY best.frequency DESC
              LIMIT $3",
         )
         .bind(native_lang)
@@ -63,13 +70,20 @@ impl VocabularyQuery {
         limit: u32,
     ) -> Result<Vec<VocabularyEntry>, WisecrowError> {
         let rows = sqlx::query_as::<_, (i32, String, String, i32)>(
-            "SELECT t.id, t.from_phrase, t.to_phrase, t.frequency
-             FROM translations t
-             JOIN languages fl ON t.from_language_id = fl.id
-             JOIN languages tl ON t.to_language_id = tl.id
-             LEFT JOIN cards c ON c.translation_id = t.id
-             WHERE fl.code = $1 AND tl.code = $2 AND c.id IS NULL
-             ORDER BY t.frequency DESC
+            "SELECT id, from_phrase, to_phrase, frequency FROM (
+               SELECT DISTINCT ON (t.from_phrase)
+                      t.id, t.from_phrase, t.to_phrase, t.frequency
+               FROM translations t
+               JOIN languages fl ON t.from_language_id = fl.id
+               JOIN languages tl ON t.to_language_id = tl.id
+               LEFT JOIN cards c ON c.translation_id = t.id
+               WHERE fl.code = $1 AND tl.code = $2 AND c.id IS NULL
+                 AND t.frequency > 1
+                 AND LENGTH(t.from_phrase) BETWEEN 2 AND 200
+                 AND LENGTH(t.to_phrase) BETWEEN 2 AND 200
+               ORDER BY t.from_phrase, t.frequency DESC
+             ) best
+             ORDER BY best.frequency DESC
              LIMIT $3",
         )
         .bind(native_lang)

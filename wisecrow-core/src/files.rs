@@ -97,8 +97,13 @@ impl LanguageFiles {
         let base = Url::parse(corpus.url_root())?;
         let label = corpus.label();
 
-        let tmx_url = base.join(&format!("tmx/{native}-{foreign}.tmx.gz"))?;
-        let xml_url = base.join(&format!("xml/{native}-{foreign}.xml.gz"))?;
+        let (lo, hi) = if native < foreign {
+            (native, foreign)
+        } else {
+            (foreign, native)
+        };
+        let tmx_url = base.join(&format!("tmx/{lo}-{hi}.tmx.gz"))?;
+        let xml_url = base.join(&format!("xml/{lo}-{hi}.xml.gz"))?;
 
         Ok(vec![
             LanguageFileInfo {

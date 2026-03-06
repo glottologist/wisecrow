@@ -45,7 +45,8 @@ impl Downloader {
     /// constructed (e.g., TLS initialisation failure).
     pub fn new(config: DownloadConfig) -> Result<Self, WisecrowError> {
         let client = Client::builder()
-            .timeout(Duration::from_secs(config.timeout_seconds))
+            .connect_timeout(Duration::from_secs(30))
+            .read_timeout(Duration::from_secs(config.timeout_seconds))
             .build()?;
         Ok(Self { config, client })
     }

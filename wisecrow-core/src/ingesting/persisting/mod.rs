@@ -48,15 +48,21 @@ impl DatabasePersister {
             return Ok(());
         }
 
-        let sources: Vec<&str> = batch.iter().map(|p| p.source_text.as_str()).collect();
-        let targets: Vec<&str> = batch.iter().map(|p| p.target_text.as_str()).collect();
+        let mut seen = std::collections::HashSet::new();
+        let deduped: Vec<&TranslationPair> = batch
+            .iter()
+            .filter(|p| seen.insert((&p.source_text, &p.target_text)))
+            .collect();
+
+        let sources: Vec<&str> = deduped.iter().map(|p| p.source_text.as_str()).collect();
+        let targets: Vec<&str> = deduped.iter().map(|p| p.target_text.as_str()).collect();
 
         let mut tx = self.pool.begin().await?;
         sqlx::query(
             "INSERT INTO translations (from_language_id, from_phrase, to_language_id, to_phrase)
              SELECT $1, phrase, $3, target_phrase
              FROM unnest($2::text[], $4::text[]) AS t(phrase, target_phrase)
-             ON CONFLICT (from_language_id, from_phrase, to_language_id)
+             ON CONFLICT (from_language_id, from_phrase, to_language_id, to_phrase)
              DO UPDATE SET frequency = translations.frequency + 1",
         )
         .bind(from_lang_id)
