@@ -12,7 +12,7 @@ use tokio::{
 use tracing::{error, info};
 use wisecrow::{
     cli::{
-        is_supported_language, Cli, Command, LanguageArgs, LearnArgs, QuizArgs,
+        is_supported_language, Cli, Command, DownloadAllArgs, LanguageArgs, LearnArgs, QuizArgs,
         SUPPORTED_LANGUAGE_INFO,
     },
     config::Config,
@@ -154,6 +154,85 @@ async fn handle_download(args: LanguageArgs) -> Result<(), Error> {
     run_until_done_or_signal(handles).await
 }
 
+async fn handle_download_all(args: DownloadAllArgs) -> Result<(), Error> {
+    if !is_supported_language(&args.native_lang) {
+        return Err(WisecrowError::InvalidInput(format!(
+            "Unsupported native language: {}",
+            args.native_lang
+        ))
+        .into());
+    }
+
+    let root = std::path::Path::new(&args.output_dir);
+    std::fs::create_dir_all(root)?;
+    let corpora = parse_corpora(args.corpus.as_deref())?;
+    let download_config = DownloadConfig {
+        max_file_size_mb: args.max_file_size_mb,
+        unpack: args.unpack,
+        ..Default::default()
+    };
+
+    let foreign_codes: Vec<&str> = SUPPORTED_LANGUAGE_INFO
+        .iter()
+        .map(|(code, _)| *code)
+        .filter(|code| *code != args.native_lang)
+        .collect();
+
+    let total = foreign_codes.len();
+    info!(
+        "Downloading corpora for {} language pairs from {}",
+        total, args.native_lang
+    );
+
+    for (idx, foreign) in foreign_codes.iter().enumerate() {
+        let pair_dir = root.join(format!("{}-{foreign}", args.native_lang));
+        if let Err(e) = std::fs::create_dir_all(&pair_dir) {
+            error!("Failed to create directory {}: {e}", pair_dir.display());
+            continue;
+        }
+
+        let langs = Langs::new(&args.native_lang, foreign);
+        let files = match LanguageFiles::new(&langs, corpora.as_deref()) {
+            Ok(f) => f,
+            Err(e) => {
+                error!(
+                    "Failed to build file list for {}-{foreign}: {e}",
+                    args.native_lang
+                );
+                continue;
+            }
+        };
+
+        info!(
+            "[{}/{}] Downloading {} files for {}-{foreign}",
+            idx.saturating_add(1),
+            total,
+            files.files.len(),
+            args.native_lang,
+        );
+
+        let mut handles = Vec::new();
+        for file in files.files {
+            let cfg = download_config;
+            let dir = pair_dir.clone();
+            handles.push(tokio::spawn(async move {
+                if let Err(e) = Ingester::download_to_dir(&cfg, &file, &dir).await {
+                    error!("Download failed for {}: {e:?}", file.file_name);
+                }
+            }));
+        }
+
+        for handle in handles {
+            if let Err(e) = handle.await {
+                error!("Task panicked: {e}");
+            }
+        }
+    }
+
+    info!("Download-all complete");
+    Ok(())
+}
+
 async fn handle_ingest(args: LanguageArgs) -> Result<(), Error> {
     let job = prepare_job(args)?;
     let (_config, pool) = load_config_and_pool().await?;
@@ -180,6 +259,7 @@ async fn main() -> Result<(), Error> {
 
     match cli.command {
         Command::Download(args) => handle_download(args).await?,
+        Command::DownloadAll(args) => handle_download_all(args).await?,
         Command::Ingest(args) => handle_ingest(args).await?,
         Command::Learn(args) => handle_learn(args).await?,
         Command::ListLanguages => {

@@ -39,6 +39,20 @@ impl Ingester {
         downloader.download(file).await
     }
 
+    /// Downloads `file` to the given directory without ingesting it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the download fails or the directory cannot be used.
+    pub async fn download_to_dir(
+        config: &DownloadConfig,
+        file: &LanguageFileInfo,
+        output_dir: &std::path::Path,
+    ) -> Result<String, WisecrowError> {
+        let downloader = Downloader::new(*config)?;
+        downloader.download_to(file, Some(output_dir)).await
+    }
+
     /// Downloads and ingests `file`.
     ///
     /// # Errors

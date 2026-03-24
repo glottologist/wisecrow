@@ -115,9 +115,17 @@ impl Downloader {
     /// Returns an error if all retry attempts fail, the server returns a
     /// non-success status, or the response body exceeds `max_file_size_mb`.
     pub async fn download(&self, file: &LanguageFileInfo) -> Result<String, WisecrowError> {
+        self.download_to(file, None).await
+    }
+
+    pub async fn download_to(
+        &self,
+        file: &LanguageFileInfo,
+        output_dir: Option<&Path>,
+    ) -> Result<String, WisecrowError> {
         let mut last_err = None;
         for attempt in 0..=self.config.max_retries {
-            match self.try_download(file).await {
+            match self.try_download(file, output_dir).await {
                 Ok(path) => return Ok(path),
                 Err(e) => {
                     if attempt < self.config.max_retries {
@@ -132,16 +140,25 @@ impl Downloader {
                 }
             }
         }
-        if let Err(e) = std::fs::remove_file(&file.file_name) {
-            tracing::warn!(
-                "Failed to clean up partial download {}: {e}",
-                file.file_name
-            );
+        let file_path = Self::resolve_path(&file.file_name, output_dir);
+        if let Err(e) = std::fs::remove_file(&file_path) {
+            tracing::warn!("Failed to clean up partial download {file_path}: {e}");
         }
         Err(last_err.unwrap_or(WisecrowError::DownloadRetriesExhausted))
     }
 
-    async fn try_download(&self, file: &LanguageFileInfo) -> Result<String, WisecrowError> {
+    fn resolve_path(name: &str, output_dir: Option<&Path>) -> String {
+        match output_dir {
+            Some(dir) => dir.join(name).to_string_lossy().into_owned(),
+            None => name.to_owned(),
+        }
+    }
+
+    async fn try_download(
+        &self,
+        file: &LanguageFileInfo,
+        output_dir: Option<&Path>,
+    ) -> Result<String, WisecrowError> {
         tracing::info!(
             "Downloading {} from {}",
             file.file_name,
@@ -168,11 +185,12 @@ impl Downloader {
             .progress_chars("#>-");
         progress_bar.set_style(style);
 
-        self.stream_to_file(&file.file_name, response, &progress_bar)
+        let file_path = Self::resolve_path(&file.file_name, output_dir);
+        self.stream_to_file(&file_path, response, &progress_bar)
             .await?;
         progress_bar.finish_with_message("Download completed!");
 
-        self.decompress_if_needed(file)
+        self.decompress_if_needed(file, output_dir)
     }
 
     fn check_file_size(&self, content_length: Option<u64>) -> Result<(), WisecrowError> {
@@ -223,15 +241,21 @@ impl Downloader {
         Ok(())
     }
 
-    fn decompress_if_needed(&self, file: &LanguageFileInfo) -> Result<String, WisecrowError> {
-        let output_path = file.decompressed_name();
+    fn decompress_if_needed(
+        &self,
+        file: &LanguageFileInfo,
+        output_dir: Option<&Path>,
+    ) -> Result<String, WisecrowError> {
+        let compressed_path = Self::resolve_path(&file.file_name, output_dir);
+        let decompressed_name = file.decompressed_name();
+        let output_path = Self::resolve_path(&decompressed_name, output_dir);
         if self.config.unpack {
             match file.compressed {
                 Compression::GzCompressed => {
-                    Self::decompress_gz(&file.file_name, &output_path)?;
+                    Self::decompress_gz(&compressed_path, &output_path)?;
                 }
                 Compression::ZipCompressed => {
-                    Self::unzip(&file.file_name, &output_path)?;
+                    Self::unzip(&compressed_path, &output_path)?;
                 }
             }
         }

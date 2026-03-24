@@ -151,10 +151,26 @@ pub struct QuizArgs {
     pub num_questions: u32,
 }
 
+#[derive(Args)]
+pub struct DownloadAllArgs {
+    #[arg(short, long)]
+    pub native_lang: String,
+    #[arg(short, long)]
+    pub output_dir: String,
+    #[arg(long, value_delimiter = ' ', num_args = 1..)]
+    pub corpus: Option<Vec<String>>,
+    #[arg(long, default_value = "102400")]
+    pub max_file_size_mb: u64,
+    #[arg(long, default_value = "true")]
+    pub unpack: bool,
+}
+
 #[derive(Subcommand)]
 pub enum Command {
     #[command(aliases = ["d"])]
     Download(LanguageArgs),
+    #[command(aliases = ["da"])]
+    DownloadAll(DownloadAllArgs),
     #[command(aliases = ["i"])]
     Ingest(LanguageArgs),
     #[command(aliases = ["r"])]
@@ -175,6 +191,7 @@ mod tests {
         matches!(
             (cmd, name),
             (Command::Download(_), "Download")
+                | (Command::DownloadAll(_), "DownloadAll")
                 | (Command::Ingest(_), "Ingest")
                 | (Command::Learn(_), "Learn")
                 | (Command::ListLanguages, "ListLanguages")
