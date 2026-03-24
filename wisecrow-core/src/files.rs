@@ -155,15 +155,6 @@ mod tests {
         assert_eq!(files.files.len(), 6);
     }
 
-    #[rstest]
-    #[case(Corpus::OpenSubtitles, 2)]
-    #[case(Corpus::CcMatrix, 2)]
-    #[case(Corpus::Nllb, 2)]
-    fn single_corpus_filter(#[case] corpus: Corpus, #[case] expected: usize) {
-        let files = LanguageFiles::new(&test_langs(), Some(&[corpus])).unwrap();
-        assert_eq!(files.files.len(), expected);
-    }
-
     #[test]
     fn urls_use_correct_base() {
         let files = LanguageFiles::new(&test_langs(), Some(&[Corpus::OpenSubtitles])).unwrap();

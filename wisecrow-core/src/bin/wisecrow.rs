@@ -26,10 +26,12 @@ use wisecrow::{
     Langs,
 };
 
+const MAX_DB_CONNECTIONS: u32 = 5;
+
 async fn assure_db(database_url: &str) -> Result<PgPool, WisecrowError> {
     let connect_options = PgConnectOptions::from_str(database_url)?;
     let pool = PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(MAX_DB_CONNECTIONS)
         .connect_with(connect_options)
         .await
         .map_err(WisecrowError::PersistenceConnectionError)?;

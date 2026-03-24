@@ -3,10 +3,12 @@ use reqwest::Client;
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::time::Duration;
+use url::Url;
 
 const HERMIT_DAVE_BASE: &str =
-    "https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018";
+    "https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/";
 const BATCH_SIZE: usize = 1000;
+const MAX_LANG_CODE_LENGTH: usize = 10;
 
 pub struct FrequencyUpdater;
 
@@ -21,9 +23,21 @@ impl FrequencyUpdater {
         pool: &PgPool,
         lang_code: &str,
     ) -> Result<usize, WisecrowError> {
-        let url = format!("{HERMIT_DAVE_BASE}/{lang_code}/{lang_code}_50k.txt");
+        if lang_code.is_empty()
+            || lang_code.len() > MAX_LANG_CODE_LENGTH
+            || !lang_code.chars().all(|c| c.is_ascii_alphanumeric())
+        {
+            return Err(WisecrowError::InvalidInput(format!(
+                "Invalid language code: {lang_code}"
+            )));
+        }
+        let base =
+            Url::parse(HERMIT_DAVE_BASE).map_err(|e| WisecrowError::InvalidInput(e.to_string()))?;
+        let url = base
+            .join(&format!("{lang_code}/{lang_code}_50k.txt"))
+            .map_err(|e| WisecrowError::InvalidInput(e.to_string()))?;
         let client = Client::builder().timeout(Duration::from_secs(60)).build()?;
-        let response = client.get(&url).send().await?;
+        let response = client.get(url).send().await?;
 
         if !response.status().is_success() {
             return Err(WisecrowError::InvalidInput(format!(

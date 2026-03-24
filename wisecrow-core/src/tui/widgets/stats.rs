@@ -65,10 +65,7 @@ impl Widget for StatsWidget {
             ]),
             Line::from(vec![
                 Span::raw("Streak:   "),
-                Span::styled(
-                    format!("{}", self.streak),
-                    Style::default().fg(Color::Green),
-                ),
+                Span::styled(self.streak.to_string(), Style::default().fg(Color::Green)),
             ]),
             Line::from(vec![
                 Span::raw("Speed:    "),

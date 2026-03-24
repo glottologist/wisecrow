@@ -10,21 +10,11 @@ use wisecrow::config::Config;
 
 static POOL: OnceLock<PgPool> = OnceLock::new();
 
-/// Returns a reference to the shared database pool, initializing on first call.
-///
-/// # Errors
-///
-/// Returns an error if the pool has not been initialized.
 pub fn pool() -> Result<&'static PgPool, dioxus::prelude::ServerFnError> {
     POOL.get()
         .ok_or_else(|| dioxus::prelude::ServerFnError::new("Database pool not initialized"))
 }
 
-/// Initializes the database pool from environment configuration.
-///
-/// # Errors
-///
-/// Returns an error if config loading, DB connection, or migration fails.
 pub async fn init_pool() -> Result<(), Box<dyn std::error::Error>> {
     use config::Environment;
     use sqlx::postgres::{PgConnectOptions, PgPoolOptions};

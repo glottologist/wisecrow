@@ -48,7 +48,6 @@ pub fn QuizPage() -> Element {
                 } else {
                     form {
                         class: "bg-gray-800 rounded-xl p-6 space-y-4",
-                        // PDF upload via file input
                         input {
                             r#type: "file",
                             accept: ".pdf",
@@ -142,8 +141,11 @@ pub fn QuizPage() -> Element {
                 QuizItemDto::Cloze(q) => rsx! {
                     cloze::ClozeQuestion {
                         quiz: q.clone(),
-                        on_answer: move |_correct: bool| {
+                        on_answer: move |correct: bool| {
                             total_answered.set(total_answered().saturating_add(1));
+                            if correct {
+                                correct_count.set(correct_count().saturating_add(1));
+                            }
                         },
                         on_next: move |_| {
                             current_index.set(idx.saturating_add(1));

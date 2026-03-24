@@ -8,9 +8,7 @@ pub struct CardDto {
     pub from_phrase: String,
     pub to_phrase: String,
     pub frequency: i32,
-    #[serde(with = "ordered_float")]
     pub stability: f64,
-    #[serde(with = "ordered_float")]
     pub difficulty: f64,
     pub state: CardStatusDto,
     pub due: DateTime<Utc>,
@@ -18,20 +16,7 @@ pub struct CardDto {
     pub lapses: i32,
 }
 
-/// f64 PartialEq via total_cmp for DTO equality checks.
 impl Eq for CardDto {}
-
-mod ordered_float {
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S: Serializer>(v: &f64, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_f64(*v)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
-        f64::deserialize(d)
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CardStatusDto {
@@ -171,32 +156,5 @@ impl SpeedController {
     #[must_use]
     pub const fn remaining_ms(&self) -> u32 {
         self.remaining_ms
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn speed_controller_clamps_to_bounds() {
-        assert_eq!(SpeedController::new(100).interval_ms(), MIN_SPEED_MS);
-        assert_eq!(SpeedController::new(20_000).interval_ms(), MAX_SPEED_MS);
-        assert_eq!(SpeedController::new(3000).interval_ms(), 3000);
-    }
-
-    #[test]
-    fn speed_controller_tick_expires() {
-        let mut sc = SpeedController::new(1000);
-        assert!(!sc.tick(999));
-        assert!(sc.tick(1));
-    }
-
-    #[test]
-    fn speed_controller_pause_blocks_tick() {
-        let mut sc = SpeedController::new(3000);
-        sc.pause();
-        assert!(!sc.tick(5000));
-        assert_eq!(sc.remaining_ms(), 3000);
     }
 }

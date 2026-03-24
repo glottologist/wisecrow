@@ -73,11 +73,7 @@ async fn get_audio_data(
 }
 
 #[cfg(not(feature = "images"))]
-async fn get_image_data(
-    _translation_id: i32,
-    _word: String,
-    _unsplash_api_key: String,
-) -> Result<String, ServerFnError> {
+async fn get_image_data(_translation_id: i32, _word: String) -> Result<String, ServerFnError> {
     Err(ServerFnError::new("images feature not enabled"))
 }
 
@@ -192,7 +188,9 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
                     class: "bg-emerald-600 hover:bg-emerald-500 rounded px-6 py-3 font-semibold transition",
                     onclick: move |_| {
                         async move {
-                            let _ = complete_session(session_id).await;
+                            if let Err(e) = complete_session(session_id).await {
+                                tracing::error!("Failed to complete session: {e}");
+                            }
                         }
                     },
                     "Finish"
@@ -234,11 +232,7 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
                             if let Ok(url) = get_audio_data(translation_id, phrase, lang).await {
                                 audio_url.set(Some(url));
                             }
-                            if let Ok(url) = get_image_data(
-                                translation_id,
-                                word,
-                                String::new(),
-                            ).await {
+                            if let Ok(url) = get_image_data(translation_id, word).await {
                                 image_url.set(Some(url));
                             }
                         });
@@ -284,7 +278,9 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
                             if let Some(sess) = session() {
                                 let sid = sess.id;
                                 spawn(async move {
-                                    let _ = pause_session(sid).await;
+                                    if let Err(e) = pause_session(sid).await {
+                                        tracing::error!("Failed to pause session: {e}");
+                                    }
                                 });
                             }
                         }

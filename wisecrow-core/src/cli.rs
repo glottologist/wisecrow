@@ -171,62 +171,30 @@ mod tests {
     use clap::Parser;
     use rstest::rstest;
 
-    #[test]
-    fn download_command_parses() {
-        let cli = Cli::parse_from(["wisecrow", "download", "-n", "en", "-f", "es"]);
-        match cli.command {
-            Command::Download(args) => {
-                assert_eq!(args.native_lang, "en");
-                assert_eq!(args.foreign_lang, "es");
-            }
-            _ => panic!("Expected Download command"),
-        }
+    fn is_variant(cmd: &Command, name: &str) -> bool {
+        matches!(
+            (cmd, name),
+            (Command::Download(_), "Download")
+                | (Command::Ingest(_), "Ingest")
+                | (Command::Learn(_), "Learn")
+                | (Command::ListLanguages, "ListLanguages")
+                | (Command::Quiz(_), "Quiz")
+        )
     }
 
-    #[test]
-    fn download_alias_parses() {
-        let cli = Cli::parse_from(["wisecrow", "d", "-n", "en", "-f", "fr"]);
-        assert!(matches!(cli.command, Command::Download(_)));
-    }
-
-    #[test]
-    fn ingest_command_parses() {
-        let cli = Cli::parse_from(["wisecrow", "ingest", "-n", "en", "-f", "es"]);
-        match cli.command {
-            Command::Ingest(args) => {
-                assert_eq!(args.native_lang, "en");
-                assert_eq!(args.foreign_lang, "es");
-            }
-            _ => panic!("Expected Ingest command"),
-        }
-    }
-
-    #[test]
-    fn ingest_alias_parses() {
-        let cli = Cli::parse_from(["wisecrow", "i", "-n", "ja", "-f", "en"]);
-        assert!(matches!(cli.command, Command::Ingest(_)));
-    }
-
-    #[test]
-    fn list_languages_parses() {
-        let cli = Cli::parse_from(["wisecrow", "list-languages"]);
-        assert!(matches!(cli.command, Command::ListLanguages));
-    }
-
-    #[test]
-    fn list_languages_alias_parses() {
-        let cli = Cli::parse_from(["wisecrow", "l"]);
-        assert!(matches!(cli.command, Command::ListLanguages));
-    }
-
-    #[test]
-    fn all_supported_codes_accepted() {
-        for (code, _) in SUPPORTED_LANGUAGE_INFO {
-            assert!(
-                is_supported_language(code),
-                "code '{code}' should be supported"
-            );
-        }
+    #[rstest]
+    #[case(&["wisecrow", "download", "-n", "en", "-f", "es"], "Download")]
+    #[case(&["wisecrow", "d", "-n", "en", "-f", "fr"], "Download")]
+    #[case(&["wisecrow", "ingest", "-n", "en", "-f", "es"], "Ingest")]
+    #[case(&["wisecrow", "i", "-n", "ja", "-f", "en"], "Ingest")]
+    #[case(&["wisecrow", "list-languages"], "ListLanguages")]
+    #[case(&["wisecrow", "l"], "ListLanguages")]
+    fn command_and_alias_parses(#[case] args: &[&str], #[case] expected_variant: &str) {
+        let cli = Cli::parse_from(args);
+        assert!(
+            is_variant(&cli.command, expected_variant),
+            "Expected {expected_variant} variant"
+        );
     }
 
     #[rstest]

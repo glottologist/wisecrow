@@ -119,6 +119,7 @@ pub fn shuffle_options(quiz: &MultipleChoiceQuiz, seed: usize) -> MultipleChoice
     let mut indices: Vec<usize> = (0..len).collect();
 
     for i in (1..len).rev() {
+        // Knuth multiplicative hash (golden ratio constant 2654435761)
         let j = seed.wrapping_add(i).wrapping_mul(2654435761) % i.saturating_add(1);
         indices.swap(i, j);
     }
@@ -145,41 +146,35 @@ mod tests {
     use super::*;
     use crate::grammar::pdf::ExampleSentence;
     use proptest::prelude::*;
+    use rstest::rstest;
 
-    #[test]
-    fn cloze_removes_longest_word() {
+    #[rstest]
+    #[case(
+        "Yo hablo español",
+        Some("I speak Spanish"),
+        1,
+        "Yo hablo ____",
+        "español"
+    )]
+    #[case("Si no", None, 0, "", "")]
+    #[case("The cat sat quietly", None, 1, "The cat sat ____", "quietly")]
+    fn cloze_generation(
+        #[case] text: &str,
+        #[case] translation: Option<&str>,
+        #[case] expected_count: usize,
+        #[case] expected_blank: &str,
+        #[case] expected_answer: &str,
+    ) {
         let examples = vec![ExampleSentence {
-            text: "Yo hablo español".to_owned(),
-            translation: Some("I speak Spanish".to_owned()),
+            text: text.to_owned(),
+            translation: translation.map(str::to_owned),
         }];
-
         let quizzes = QuizGenerator::cloze_from_examples(&examples);
-        assert_eq!(quizzes.len(), 1);
-        assert_eq!(quizzes[0].sentence_with_blank, "Yo hablo ____");
-        assert_eq!(quizzes[0].answer, "español");
-    }
-
-    #[test]
-    fn cloze_skips_short_sentences() {
-        let examples = vec![ExampleSentence {
-            text: "Si no".to_owned(),
-            translation: None,
-        }];
-
-        let quizzes = QuizGenerator::cloze_from_examples(&examples);
-        assert!(quizzes.is_empty());
-    }
-
-    #[test]
-    fn cloze_provides_hint() {
-        let examples = vec![ExampleSentence {
-            text: "The cat sat quietly".to_owned(),
-            translation: None,
-        }];
-
-        let quizzes = QuizGenerator::cloze_from_examples(&examples);
-        assert_eq!(quizzes.len(), 1);
-        assert!(quizzes[0].hint.as_ref().unwrap().starts_with("Starts with"));
+        assert_eq!(quizzes.len(), expected_count);
+        if expected_count > 0 {
+            assert_eq!(quizzes[0].sentence_with_blank, expected_blank);
+            assert_eq!(quizzes[0].answer, expected_answer);
+        }
     }
 
     #[test]

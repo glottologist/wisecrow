@@ -178,13 +178,19 @@ mod tests {
 
     #[test]
     fn voice_names_are_neural() {
+        let mut checked = 0usize;
         for (code, _) in crate::cli::SUPPORTED_LANGUAGE_INFO {
             if let Some(voice) = voice_for_language(code) {
                 assert!(
                     voice.contains("Neural"),
                     "Voice for {code} should be Neural: {voice}"
                 );
+                checked = checked.saturating_add(1);
             }
         }
+        assert!(
+            checked >= 10,
+            "Expected at least 10 language voices, found {checked}"
+        );
     }
 }

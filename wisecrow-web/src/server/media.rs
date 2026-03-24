@@ -2,11 +2,6 @@ use dioxus::prelude::*;
 
 use super::pool;
 
-/// Returns base64-encoded MP3 audio for a card's foreign phrase.
-///
-/// Generates TTS audio via wisecrow-core's media cache, falling back
-/// to direct generation if uncached. Returns a data URI suitable for
-/// an HTML `<audio>` element's `src` attribute.
 #[cfg(feature = "audio")]
 #[server]
 pub async fn get_audio_data(
@@ -38,20 +33,22 @@ pub async fn get_audio_data(
     Ok(format!("data:audio/mpeg;base64,{encoded}"))
 }
 
-/// Returns base64-encoded JPEG image for a vocabulary word.
-///
-/// Fetches from Unsplash via wisecrow-core's media cache. Returns a data
-/// URI suitable for an HTML `<img>` element's `src` attribute.
 #[cfg(feature = "images")]
 #[server]
-pub async fn get_image_data(
-    translation_id: i32,
-    word: String,
-    unsplash_api_key: String,
-) -> Result<String, ServerFnError> {
+pub async fn get_image_data(translation_id: i32, word: String) -> Result<String, ServerFnError> {
     use wisecrow::media::cache::MediaCache;
     use wisecrow::media::images::fetch_image;
     use wisecrow::media::MediaType;
+
+    let api_key = {
+        let settings = config::Config::builder()
+            .add_source(config::Environment::default())
+            .build()
+            .map_err(|e| ServerFnError::new(format!("Config error: {e}")))?;
+        settings
+            .get_string("UNSPLASH_API_KEY")
+            .map_err(|_| ServerFnError::new("UNSPLASH_API_KEY not configured"))?
+    };
 
     let db = pool()?;
     let client = reqwest::Client::new();
@@ -60,7 +57,7 @@ pub async fn get_image_data(
 
     let path = cache
         .get_or_fetch(translation_id, MediaType::Image, || {
-            fetch_image(&client, &word, &unsplash_api_key)
+            fetch_image(&client, &word, &api_key)
         })
         .await
         .map_err(|e| ServerFnError::new(format!("Image fetch failed: {e}")))?;

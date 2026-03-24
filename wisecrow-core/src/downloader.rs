@@ -4,13 +4,15 @@ use flate2::read::GzDecoder;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
 use std::fs::File;
-use std::io::{self, BufReader, BufWriter, Write};
+use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::path::Path;
 use std::time::Duration;
 use url::Url;
 use zip::read::ZipArchive;
 
 const MAX_FILE_SIZE_OVERFLOW_MSG: &str = "max_file_size_mb overflow";
+const CONNECT_TIMEOUT_SECS: u64 = 30;
+const MAX_DECOMPRESSED_BYTES: u64 = 1_073_741_824; // 1 GiB
 
 #[derive(Clone, Copy)]
 pub struct DownloadConfig {
@@ -45,7 +47,7 @@ impl Downloader {
     /// constructed (e.g., TLS initialisation failure).
     pub fn new(config: DownloadConfig) -> Result<Self, WisecrowError> {
         let client = Client::builder()
-            .connect_timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
             .read_timeout(Duration::from_secs(config.timeout_seconds))
             .build()?;
         Ok(Self { config, client })
@@ -69,8 +71,6 @@ impl Downloader {
 
             let outpath = canonical_root.join(&name);
 
-            // Verify the resolved path stays inside the extraction root even after
-            // symlink resolution, guarding against zip-slip attacks.
             if !outpath.starts_with(&canonical_root) {
                 tracing::warn!("Skipping path that escapes extraction root: {name}");
                 continue;
@@ -91,10 +91,19 @@ impl Downloader {
 
     fn decompress_gz(input_path: &str, output_path: &str) -> io::Result<()> {
         let input_file = File::open(input_path)?;
-        let mut decoder = GzDecoder::new(BufReader::new(input_file));
+        let decoder = GzDecoder::new(BufReader::new(input_file));
+        let mut limited = decoder.take(MAX_DECOMPRESSED_BYTES.saturating_add(1));
         let output_file = File::create(output_path)?;
         let mut buffered_output = BufWriter::new(output_file);
-        io::copy(&mut decoder, &mut buffered_output)?;
+        let written = io::copy(&mut limited, &mut buffered_output)?;
+        if written > MAX_DECOMPRESSED_BYTES {
+            drop(buffered_output);
+            std::fs::remove_file(output_path).ok();
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Decompressed output exceeds size limit",
+            ));
+        }
         std::fs::remove_file(input_path)
     }
 

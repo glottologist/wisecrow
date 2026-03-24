@@ -1,5 +1,5 @@
 use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use sqlx::PgPool;
 
@@ -61,7 +61,9 @@ impl MediaCache {
 
         if let Some((cached_path,)) = db_row {
             let cached = PathBuf::from(&cached_path);
-            if cached.exists() {
+            if !cached.starts_with(&self.cache_dir) {
+                tracing::warn!("Cached path outside cache directory: {}", cached.display());
+            } else if cached.exists() {
                 return Ok(cached);
             }
         }
@@ -87,52 +89,6 @@ impl MediaCache {
         .await?;
 
         Ok(file_path)
-    }
-
-    /// Removes all cached media for a language pair.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database query or file deletion fails.
-    pub async fn clear(
-        &self,
-        native_lang: &str,
-        foreign_lang: &str,
-    ) -> Result<usize, WisecrowError> {
-        let rows = sqlx::query_as::<_, (i32, String)>(
-            "SELECT mc.id, mc.file_path
-             FROM media_cache mc
-             JOIN translations t ON mc.translation_id = t.id
-             JOIN languages fl ON t.from_language_id = fl.id
-             JOIN languages tl ON t.to_language_id = tl.id
-             WHERE fl.code = $1 AND tl.code = $2",
-        )
-        .bind(native_lang)
-        .bind(foreign_lang)
-        .fetch_all(&self.pool)
-        .await?;
-
-        let count = rows.len();
-
-        let mut ids_to_delete: Vec<i32> = Vec::with_capacity(count);
-        for (id, path) in &rows {
-            let file = Path::new(path);
-            if file.exists() {
-                if let Err(e) = tokio::fs::remove_file(file).await {
-                    tracing::warn!("Failed to remove cached file {}: {e}", file.display());
-                }
-            }
-            ids_to_delete.push(*id);
-        }
-
-        if !ids_to_delete.is_empty() {
-            sqlx::query("DELETE FROM media_cache WHERE id = ANY($1)")
-                .bind(&ids_to_delete)
-                .execute(&self.pool)
-                .await?;
-        }
-
-        Ok(count)
     }
 
     fn file_path(&self, translation_id: i32, media_type: MediaType) -> PathBuf {

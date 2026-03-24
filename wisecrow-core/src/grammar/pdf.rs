@@ -2,6 +2,11 @@ use std::path::Path;
 
 use crate::errors::WisecrowError;
 
+const BULLET_PREFIXES: &[&str] = &["- ", "• ", "* ", "– "];
+const MIN_RULE_LINE_LENGTH: usize = 10;
+const MAX_HEADER_LENGTH: usize = 100;
+const MAX_HEADER_WORDS: usize = 8;
+
 #[derive(Debug, Clone)]
 pub struct GrammarContent {
     pub sections: Vec<GrammarSection>,
@@ -80,7 +85,7 @@ fn parse_sections(text: &str) -> Vec<GrammarSection> {
             if !rule.is_empty() {
                 current_rules.push(rule);
             }
-        } else if trimmed.len() > 10 {
+        } else if trimmed.len() > MIN_RULE_LINE_LENGTH {
             current_rules.push(trimmed.to_owned());
         }
     }
@@ -97,7 +102,7 @@ fn parse_sections(text: &str) -> Vec<GrammarSection> {
 }
 
 fn is_section_header(line: &str) -> bool {
-    if line.len() > 100 {
+    if line.len() > MAX_HEADER_LENGTH {
         return false;
     }
     if line.starts_with("Chapter ")
@@ -108,10 +113,9 @@ fn is_section_header(line: &str) -> bool {
         return true;
     }
     let words: Vec<&str> = line.split_whitespace().collect();
-    if words.len() > 8 || words.is_empty() {
+    if words.len() > MAX_HEADER_WORDS || words.is_empty() {
         return false;
     }
-    // Title case heuristic: all words start with uppercase (except short prepositions)
     let short_prepositions = [
         "a", "an", "the", "in", "on", "of", "for", "and", "to", "with",
     ];
@@ -144,8 +148,6 @@ fn is_numbered_rule(line: &str) -> bool {
     false
 }
 
-const BULLET_PREFIXES: &[&str] = &["- ", "• ", "* ", "– "];
-
 fn is_bulleted_rule(line: &str) -> bool {
     BULLET_PREFIXES.iter().any(|p| line.starts_with(p))
 }
@@ -158,12 +160,12 @@ fn strip_prefix(line: &str) -> String {
     }
     if let Some(pos) = line.find(". ") {
         if pos < 5 && line[..pos].chars().all(|c| c.is_ascii_digit()) {
-            return line[pos.saturating_add(2)..].trim().to_owned();
+            return line.get(pos + 2..).unwrap_or("").trim().to_owned();
         }
     }
     if let Some(pos) = line.find(") ") {
         if pos < 5 && line[..pos].chars().all(|c| c.is_ascii_digit()) {
-            return line[pos.saturating_add(2)..].trim().to_owned();
+            return line.get(pos + 2..).unwrap_or("").trim().to_owned();
         }
     }
     line.to_owned()
@@ -196,6 +198,7 @@ fn split_example(line: &str) -> (String, Option<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use rstest::rstest;
 
     #[rstest]
@@ -236,30 +239,26 @@ mod tests {
         assert_eq!(is_example_sentence(input), expected);
     }
 
-    #[test]
-    fn split_example_with_translation() {
-        let (text, trans) = split_example("\"Hola — Hello\"");
-        assert_eq!(text, "Hola");
-        assert_eq!(trans.unwrap(), "Hello");
+    #[rstest]
+    #[case("\"Hola — Hello\"", "Hola", Some("Hello"))]
+    #[case("\"Hola, mundo\"", "Hola, mundo", None)]
+    fn split_example_cases(
+        #[case] input: &str,
+        #[case] expected_text: &str,
+        #[case] expected_trans: Option<&str>,
+    ) {
+        let (text, trans) = split_example(input);
+        assert_eq!(text, expected_text);
+        assert_eq!(trans.as_deref(), expected_trans);
     }
 
-    #[test]
-    fn split_example_without_translation() {
-        let (text, trans) = split_example("\"Hola, mundo\"");
-        assert_eq!(text, "Hola, mundo");
-        assert!(trans.is_none());
-    }
-
-    #[test]
-    fn strip_numbered_prefix() {
-        assert_eq!(strip_prefix("1. Use the present"), "Use the present");
-        assert_eq!(strip_prefix("12) Another rule"), "Another rule");
-    }
-
-    #[test]
-    fn strip_bullet_prefix() {
-        assert_eq!(strip_prefix("- A rule"), "A rule");
-        assert_eq!(strip_prefix("• Another rule"), "Another rule");
+    #[rstest]
+    #[case("1. Use the present", "Use the present")]
+    #[case("12) Another rule", "Another rule")]
+    #[case("- A rule", "A rule")]
+    #[case("• Another rule", "Another rule")]
+    fn strip_prefix_cases(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(strip_prefix(input), expected);
     }
 
     #[test]
@@ -271,5 +270,22 @@ mod tests {
         assert_eq!(sections[0].rules.len(), 2);
         assert_eq!(sections[0].examples.len(), 1);
         assert_eq!(sections[1].title.as_deref(), Some("Past Tense"));
+    }
+
+    proptest! {
+        #[test]
+        fn parse_sections_never_panics(text in "\\PC{0,500}") {
+            let _ = parse_sections(&text);
+        }
+
+        #[test]
+        fn strip_prefix_never_panics(line in "\\PC{0,100}") {
+            let _ = strip_prefix(&line);
+        }
+
+        #[test]
+        fn is_section_header_never_panics(line in "\\PC{0,200}") {
+            let _ = is_section_header(&line);
+        }
     }
 }

@@ -66,8 +66,8 @@ pub fn Home() -> Element {
 
                 Link {
                     to: Route::LearnPage {
-                        native: native().to_string(),
-                        foreign: foreign().to_string(),
+                        native: native(),
+                        foreign: foreign(),
                     },
                     class: "block w-full text-center bg-emerald-600 hover:bg-emerald-500 rounded px-4 py-3 font-semibold transition",
                     "Start Session"
