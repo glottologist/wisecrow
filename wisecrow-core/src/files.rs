@@ -143,6 +143,7 @@ impl LanguageFiles {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use rstest::rstest;
 
     fn test_langs() -> crate::Langs {
@@ -172,5 +173,37 @@ mod tests {
     #[case("invalid", false)]
     fn corpus_try_from(#[case] input: &str, #[case] is_ok: bool) {
         assert_eq!(Corpus::try_from(input).is_ok(), is_ok);
+    }
+
+    #[rstest]
+    #[case("corpus.tmx.gz", Compression::GzCompressed, "corpus.tmx")]
+    #[case("corpus.xml.gz", Compression::GzCompressed, "corpus.xml")]
+    #[case("archive.zip", Compression::ZipCompressed, "archive")]
+    #[case("no_suffix", Compression::GzCompressed, "no_suffix")]
+    fn decompressed_name_cases(
+        #[case] file_name: &str,
+        #[case] compression: Compression,
+        #[case] expected: &str,
+    ) {
+        let info = LanguageFileInfo {
+            file_name: file_name.to_owned(),
+            compressed: compression,
+            target_location: "https://example.com".to_owned(),
+            corpus: Corpus::OpenSubtitles,
+        };
+        assert_eq!(info.decompressed_name(), expected);
+    }
+
+    proptest! {
+        #[test]
+        fn corpus_try_from_arbitrary(s in "\\PC{0,30}") {
+            let result = Corpus::try_from(s.as_str());
+            match s.as_str() {
+                "open_subtitles" => prop_assert_eq!(result.unwrap(), Corpus::OpenSubtitles),
+                "cc_matrix" => prop_assert_eq!(result.unwrap(), Corpus::CcMatrix),
+                "nllb" => prop_assert_eq!(result.unwrap(), Corpus::Nllb),
+                _ => prop_assert!(result.is_err()),
+            }
+        }
     }
 }

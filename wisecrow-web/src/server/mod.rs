@@ -10,9 +10,23 @@ use wisecrow::config::Config;
 
 static POOL: OnceLock<PgPool> = OnceLock::new();
 
+const MAX_LANG_CODE_LEN: usize = 10;
+
 pub fn pool() -> Result<&'static PgPool, dioxus::prelude::ServerFnError> {
     POOL.get()
         .ok_or_else(|| dioxus::prelude::ServerFnError::new("Database pool not initialized"))
+}
+
+pub fn validate_lang(code: &str) -> Result<(), dioxus::prelude::ServerFnError> {
+    if code.is_empty()
+        || code.len() > MAX_LANG_CODE_LEN
+        || !code.chars().all(|c| c.is_ascii_alphanumeric())
+    {
+        return Err(dioxus::prelude::ServerFnError::new(format!(
+            "Invalid language code: {code}"
+        )));
+    }
+    Ok(())
 }
 
 pub async fn init_pool() -> Result<(), Box<dyn std::error::Error>> {
@@ -20,7 +34,7 @@ pub async fn init_pool() -> Result<(), Box<dyn std::error::Error>> {
     use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
     use std::str::FromStr;
 
-    if let Err(e) = dotenv::dotenv() {
+    if let Err(e) = dotenvy::dotenv() {
         tracing::debug!("No .env file loaded: {e}");
     }
 

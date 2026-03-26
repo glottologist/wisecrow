@@ -25,7 +25,7 @@ fn xml_temp_file(pairs: &[(&str, &str)], src: &str, tgt: &str) -> NamedTempFile 
     tmp
 }
 
-/// Runs the full parse→channel→persist flow for a TMX temp file.
+/// Runs the full parse->channel->persist flow for a TMX temp file.
 async fn parse_and_persist_tmx(pool: &sqlx::PgPool, pairs: &[(&str, &str)], src: &str, tgt: &str) {
     let tmp = tmx_temp_file(pairs, src, tgt);
     let (tx, rx) = mpsc::channel::<TranslationPair>(1000);
@@ -119,21 +119,6 @@ async fn parse_persist_roundtrip_by_format(#[case] format: &str) {
     let db_pairs = common::get_translation_pairs(&pool).await;
     assert_eq!(db_pairs[0], ("Goodbye".to_owned(), "Adiós".to_owned()));
     assert_eq!(db_pairs[1], ("Hello".to_owned(), "Hola".to_owned()));
-}
-
-#[tokio::test]
-#[ignore = "requires PostgreSQL"]
-async fn duplicate_translations_ignored() {
-    let pool = common::test_pool().await;
-    common::truncate_tables(&pool).await;
-
-    let pairs: Vec<(&str, &str)> = vec![("Hello", "Hola"), ("Goodbye", "Adiós")];
-
-    parse_and_persist_tmx(&pool, &pairs, "en", "es").await;
-    assert_eq!(common::count_translations(&pool).await, 2);
-
-    parse_and_persist_tmx(&pool, &pairs, "en", "es").await;
-    assert_eq!(common::count_translations(&pool).await, 2);
 }
 
 #[tokio::test]

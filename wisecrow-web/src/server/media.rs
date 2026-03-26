@@ -2,6 +2,9 @@ use dioxus::prelude::*;
 
 use super::pool;
 
+const MAX_IMAGE_BYTES: u64 = 5 * 1024 * 1024;
+const MAX_AUDIO_BYTES: u64 = 10 * 1024 * 1024;
+
 #[cfg(feature = "audio")]
 #[server]
 pub async fn get_audio_data(
@@ -23,6 +26,13 @@ pub async fn get_audio_data(
         })
         .await
         .map_err(|e| ServerFnError::new(format!("Audio generation failed: {e}")))?;
+
+    let metadata = tokio::fs::metadata(&path)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to read audio metadata: {e}")))?;
+    if metadata.len() > MAX_AUDIO_BYTES {
+        return Err(ServerFnError::new("Audio exceeds maximum size of 10 MB"));
+    }
 
     let bytes = tokio::fs::read(&path)
         .await
@@ -61,6 +71,13 @@ pub async fn get_image_data(translation_id: i32, word: String) -> Result<String,
         })
         .await
         .map_err(|e| ServerFnError::new(format!("Image fetch failed: {e}")))?;
+
+    let metadata = tokio::fs::metadata(&path)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to read image metadata: {e}")))?;
+    if metadata.len() > MAX_IMAGE_BYTES {
+        return Err(ServerFnError::new("Image exceeds maximum size of 5 MB"));
+    }
 
     let bytes = tokio::fs::read(&path)
         .await

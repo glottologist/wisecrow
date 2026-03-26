@@ -42,11 +42,11 @@ impl Widget for StatsWidget {
         let inner = block.inner(area);
         block.render(area, buf);
 
-        let pct = if self.total_cards > 0 {
-            (self.cards_seen * 100) / self.total_cards
-        } else {
-            0
-        };
+        let pct = self
+            .cards_seen
+            .saturating_mul(100)
+            .checked_div(self.total_cards)
+            .unwrap_or(0);
 
         let status = if self.paused { "PAUSED" } else { "ACTIVE" };
         let status_color = if self.paused {

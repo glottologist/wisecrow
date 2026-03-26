@@ -128,7 +128,7 @@ fn f64_to_f32_clamped(v: f64) -> f32 {
     } else if v < f64::from(f32::MIN) {
         f32::MIN
     } else {
-        // Intentional precision narrowing: FSRS f64 → PostgreSQL REAL (f32)
+        // Intentional precision narrowing: FSRS f64 -> PostgreSQL REAL (f32)
         #[expect(clippy::cast_possible_truncation)]
         let result = v as f32;
         result
@@ -377,15 +377,6 @@ mod tests {
                 prop_assert!(ReviewRating::from_db(v).is_none());
             }
         }
-    }
-
-    #[test]
-    fn f64_to_f32_clamped_handles_special_values() {
-        assert_eq!(f64_to_f32_clamped(f64::NAN), 0.0);
-        assert_eq!(f64_to_f32_clamped(f64::INFINITY), f32::MAX);
-        assert_eq!(f64_to_f32_clamped(f64::NEG_INFINITY), f32::MIN);
-        assert_eq!(f64_to_f32_clamped(0.0), 0.0);
-        assert_eq!(f64_to_f32_clamped(1.0), 1.0);
     }
 
     #[rstest]

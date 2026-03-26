@@ -27,10 +27,10 @@ anyhow = "1.0.86"
 chrono = { version = ">=0.4,<0.4.44", features = ["serde"] }
 clap = { version = "4.5.4", features = ["derive"] }
 config = { version = "0.14.0" }
-crossterm = "0.29"
+crossterm = "0.28"
 derive_more = { version = "1.0.0", features = ["display"] }
 dirs = "5"
-dotenv = "0.15.0"
+dotenvy = "0.15"
 flate2 = "1.0.35"
 image = { version = "0.25", optional = true }
 indicatif = "0.17.8"
@@ -45,7 +45,7 @@ rs-fsrs = "1.2"
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1"
 sqlx = { version = "0.7.4", features = ["postgres", "runtime-tokio-rustls", "migrate", "chrono"] }
-thiserror = "1.0.61"
+thiserror = "2"
 tokio = { version = "1.37.0", features = ["full"] }
 tracing = { version = "0.1.40" }
 tracing-subscriber = "0.3.18"

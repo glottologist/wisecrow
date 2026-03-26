@@ -99,10 +99,7 @@ impl Downloader {
         if written > MAX_DECOMPRESSED_BYTES {
             drop(buffered_output);
             std::fs::remove_file(output_path).ok();
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Decompressed output exceeds size limit",
-            ));
+            return Err(io::Error::other("Decompressed output exceeds size limit"));
         }
         std::fs::remove_file(input_path)
     }

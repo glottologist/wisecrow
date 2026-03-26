@@ -3,6 +3,7 @@ pub use wisecrow_dto::SpeedController;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use rstest::rstest;
 
     #[rstest]
@@ -93,5 +94,29 @@ mod tests {
             sc.tick(tick_ms);
         }
         assert!((sc.remaining_fraction() - expected).abs() < f64::EPSILON);
+    }
+
+    proptest! {
+        #[test]
+        fn speed_controller_serde_roundtrip(interval in 100u32..20000) {
+            let sc = SpeedController::new(interval);
+            let json = serde_json::to_string(&sc).unwrap();
+            let decoded: SpeedController = serde_json::from_str(&json).unwrap();
+            prop_assert_eq!(sc.interval_ms(), decoded.interval_ms());
+            prop_assert_eq!(sc.remaining_ms(), decoded.remaining_ms());
+            prop_assert_eq!(sc.is_paused(), decoded.is_paused());
+        }
+
+        #[test]
+        fn remaining_fraction_always_bounded(
+            interval in 500u32..=10000u32,
+            elapsed in 0u32..=20000u32,
+        ) {
+            let mut sc = SpeedController::new(interval);
+            sc.tick(elapsed);
+            let f = sc.remaining_fraction();
+            prop_assert!(f >= 0.0);
+            prop_assert!(f <= 1.0);
+        }
     }
 }

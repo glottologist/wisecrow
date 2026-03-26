@@ -31,11 +31,8 @@ impl FrequencyUpdater {
                 "Invalid language code: {lang_code}"
             )));
         }
-        let base =
-            Url::parse(HERMIT_DAVE_BASE).map_err(|e| WisecrowError::InvalidInput(e.to_string()))?;
-        let url = base
-            .join(&format!("{lang_code}/{lang_code}_50k.txt"))
-            .map_err(|e| WisecrowError::InvalidInput(e.to_string()))?;
+        let base = Url::parse(HERMIT_DAVE_BASE)?;
+        let url = base.join(&format!("{lang_code}/{lang_code}_50k.txt"))?;
         let client = Client::builder().timeout(Duration::from_secs(60)).build()?;
         let response = client.get(url).send().await?;
 

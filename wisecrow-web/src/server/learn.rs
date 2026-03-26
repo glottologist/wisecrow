@@ -6,7 +6,7 @@ use wisecrow::srs::scheduler::{CardManager, ReviewRating};
 use wisecrow::srs::session::SessionManager;
 use wisecrow_dto::{CardDto, LanguageInfo, ReviewRatingDto, SessionDto};
 
-use super::pool;
+use super::{pool, validate_lang};
 
 #[server]
 pub async fn list_languages() -> Result<Vec<LanguageInfo>, ServerFnError> {
@@ -23,6 +23,8 @@ pub async fn create_session(
     deck_size: u32,
     speed_ms: u32,
 ) -> Result<SessionDto, ServerFnError> {
+    validate_lang(&native)?;
+    validate_lang(&foreign)?;
     let db = pool()?;
     let session = SessionManager::create(db, &native, &foreign, deck_size, speed_ms)
         .await
@@ -35,6 +37,8 @@ pub async fn resume_session(
     native: String,
     foreign: String,
 ) -> Result<Option<SessionDto>, ServerFnError> {
+    validate_lang(&native)?;
+    validate_lang(&foreign)?;
     let db = pool()?;
     let session = SessionManager::resume(db, &native, &foreign)
         .await

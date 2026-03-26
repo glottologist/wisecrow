@@ -140,7 +140,7 @@ pub fn QuizPage() -> Element {
             match &all_items[idx] {
                 QuizItemDto::Cloze(q) => rsx! {
                     cloze::ClozeQuestion {
-                        quiz: q.clone(),
+                        quiz: q.clone(), // clone: Dioxus component props require owned values
                         on_answer: move |correct: bool| {
                             total_answered.set(total_answered().saturating_add(1));
                             if correct {
@@ -154,7 +154,7 @@ pub fn QuizPage() -> Element {
                 },
                 QuizItemDto::MultipleChoice(q) => rsx! {
                     multiple_choice::McQuestion {
-                        quiz: q.clone(),
+                        quiz: q.clone(), // clone: Dioxus component props require owned values
                         on_answer: move |correct: bool| {
                             total_answered.set(total_answered().saturating_add(1));
                             if correct {

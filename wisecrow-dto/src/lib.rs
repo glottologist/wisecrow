@@ -16,8 +16,6 @@ pub struct CardDto {
     pub lapses: i32,
 }
 
-impl Eq for CardDto {}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CardStatusDto {
     New,

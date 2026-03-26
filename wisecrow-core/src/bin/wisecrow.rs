@@ -163,8 +163,10 @@ async fn handle_download_all(args: DownloadAllArgs) -> Result<(), Error> {
         .into());
     }
 
-    let root = std::path::Path::new(&args.output_dir);
-    std::fs::create_dir_all(root)?;
+    std::fs::create_dir_all(&args.output_dir)?;
+    let root = std::path::Path::new(&args.output_dir)
+        .canonicalize()
+        .map_err(|e| WisecrowError::InvalidInput(format!("Invalid output directory: {e}")))?;
     let corpora = parse_corpora(args.corpus.as_deref())?;
     let download_config = DownloadConfig {
         max_file_size_mb: args.max_file_size_mb,
@@ -191,7 +193,7 @@ async fn handle_download_all(args: DownloadAllArgs) -> Result<(), Error> {
             continue;
         }
 
-        let langs = Langs::new(&args.native_lang, foreign);
+        let langs = Langs::new(&args.native_lang, *foreign);
         let files = match LanguageFiles::new(&langs, corpora.as_deref()) {
             Ok(f) => f,
             Err(e) => {
@@ -252,7 +254,7 @@ async fn handle_ingest(args: LanguageArgs) -> Result<(), Error> {
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     tracing_subscriber::fmt::init();
-    if let Err(e) = dotenv::dotenv() {
+    if let Err(e) = dotenvy::dotenv() {
         tracing::debug!("No .env file loaded: {e}");
     }
     let cli = Cli::parse();
@@ -327,12 +329,11 @@ async fn handle_learn(args: LearnArgs) -> Result<(), Error> {
 }
 
 fn handle_quiz(args: QuizArgs) -> Result<(), Error> {
-    let path = std::path::Path::new(&args.pdf_path);
-    if !path.exists() {
-        return Err(
-            WisecrowError::InvalidInput(format!("PDF file not found: {}", args.pdf_path)).into(),
-        );
-    }
-    quiz::run_quiz(path, args.num_questions)?;
+    let path = std::path::Path::new(&args.pdf_path)
+        .canonicalize()
+        .map_err(|_| {
+            WisecrowError::InvalidInput(format!("PDF file not found: {}", args.pdf_path))
+        })?;
+    quiz::run_quiz(&path, args.num_questions)?;
     Ok(())
 }

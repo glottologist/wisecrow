@@ -93,6 +93,7 @@ pub fn load_image_for_display(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn resize_preserves_valid_image() {
@@ -111,5 +112,12 @@ mod tests {
     fn resize_rejects_invalid_data() {
         let result = resize_image(b"not an image");
         assert!(result.is_err());
+    }
+
+    proptest! {
+        #[test]
+        fn resize_image_never_panics(data in proptest::collection::vec(any::<u8>(), 0..1000)) {
+            let _ = resize_image(&data);
+        }
     }
 }

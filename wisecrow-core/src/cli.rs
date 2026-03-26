@@ -185,6 +185,7 @@ pub enum Command {
 mod tests {
     use super::*;
     use clap::Parser;
+    use proptest::prelude::*;
     use rstest::rstest;
 
     fn is_variant(cmd: &Command, name: &str) -> bool {
@@ -223,33 +224,40 @@ mod tests {
         assert!(!is_supported_language(code));
     }
 
-    #[test]
-    fn corpus_filter_parses() {
-        let cli = Cli::parse_from([
-            "wisecrow",
-            "download",
-            "-n",
-            "en",
-            "-f",
-            "es",
-            "--corpus",
-            "cc_matrix nllb",
-        ]);
-        if let Command::Download(args) = cli.command {
-            let corpus = args.corpus.unwrap();
-            assert_eq!(corpus, vec!["cc_matrix", "nllb"]);
+    #[rstest]
+    #[case(
+        &["wisecrow", "download", "-n", "en", "-f", "es", "--corpus", "cc_matrix nllb"],
+        Some(vec!["cc_matrix", "nllb"]),
+        102_400
+    )]
+    #[case(
+        &["wisecrow", "download", "-n", "en", "-f", "es"],
+        None,
+        102_400
+    )]
+    fn download_field_defaults(
+        #[case] args: &[&str],
+        #[case] expected_corpus: Option<Vec<&str>>,
+        #[case] expected_max_size: u64,
+    ) {
+        let cli = Cli::parse_from(args);
+        if let Command::Download(cmd_args) = cli.command {
+            let corpus_strs: Option<Vec<&str>> = cmd_args
+                .corpus
+                .as_ref()
+                .map(|v| v.iter().map(String::as_str).collect());
+            assert_eq!(corpus_strs, expected_corpus);
+            assert_eq!(cmd_args.max_file_size_mb, expected_max_size);
         } else {
             panic!("Expected Download command");
         }
     }
 
-    #[test]
-    fn default_max_file_size() {
-        let cli = Cli::parse_from(["wisecrow", "download", "-n", "en", "-f", "es"]);
-        if let Command::Download(args) = cli.command {
-            assert_eq!(args.max_file_size_mb, 102_400);
-        } else {
-            panic!("Expected Download command");
+    proptest! {
+        #[test]
+        fn arbitrary_string_matches_iff_known(s in "\\PC{0,10}") {
+            let is_known = SUPPORTED_LANGUAGE_INFO.iter().any(|(c, _)| *c == s);
+            prop_assert_eq!(is_supported_language(&s), is_known);
         }
     }
 }

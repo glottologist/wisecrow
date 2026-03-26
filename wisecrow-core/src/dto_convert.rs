@@ -92,10 +92,12 @@ pub fn language_info(code: &str, name: &str) -> LanguageInfo {
 /// Converts cloze and multiple-choice quizzes into a unified DTO list.
 #[must_use]
 pub fn quizzes_to_dto(cloze: &[ClozeQuiz], mc: &[MultipleChoiceQuiz]) -> Vec<QuizItemDto> {
-    let mut items: Vec<QuizItemDto> = mc
-        .iter()
-        .map(|q| QuizItemDto::MultipleChoice(MultipleChoiceQuizDto::from(q)))
-        .collect();
+    let mut items = Vec::with_capacity(mc.len().saturating_add(cloze.len()));
+
+    items.extend(
+        mc.iter()
+            .map(|q| QuizItemDto::MultipleChoice(MultipleChoiceQuizDto::from(q))),
+    );
 
     items.extend(
         cloze

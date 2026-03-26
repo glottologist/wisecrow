@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::errors::WisecrowError;
 
-const BULLET_PREFIXES: &[&str] = &["- ", "• ", "* ", "– "];
+const BULLET_PREFIXES: &[&str] = &["- ", "\u{2022} ", "* ", "\u{2013} "];
 const MIN_RULE_LINE_LENGTH: usize = 10;
 const MAX_HEADER_LENGTH: usize = 100;
 const MAX_HEADER_WORDS: usize = 8;
@@ -183,7 +183,7 @@ fn split_example(line: &str) -> (String, Option<String>) {
         .or_else(|| cleaned.strip_prefix("E.g. "))
         .unwrap_or(cleaned);
 
-    if let Some((text, translation)) = cleaned.split_once(" — ") {
+    if let Some((text, translation)) = cleaned.split_once(" \u{2014} ") {
         return (text.trim().to_owned(), Some(translation.trim().to_owned()));
     }
     if let Some((text, translation)) = cleaned.split_once(" - ") {
@@ -224,7 +224,7 @@ mod tests {
 
     #[rstest]
     #[case("- A rule", true)]
-    #[case("• Another rule", true)]
+    #[case("\u{2022} Another rule", true)]
     #[case("Not a rule", false)]
     fn bulleted_rule_detected(#[case] input: &str, #[case] expected: bool) {
         assert_eq!(is_bulleted_rule(input), expected);
@@ -235,13 +235,17 @@ mod tests {
     #[case("e.g. Hola", true)]
     #[case("Example: Hello", true)]
     #[case("This is a normal line", false)]
+    #[case("\u{201C}quoted curly\u{201D}", true)]
+    #[case("E.g. something here", true)]
+    #[case("Ex: another example", true)]
     fn example_sentence_detected(#[case] input: &str, #[case] expected: bool) {
         assert_eq!(is_example_sentence(input), expected);
     }
 
     #[rstest]
-    #[case("\"Hola — Hello\"", "Hola", Some("Hello"))]
+    #[case("\"Hola \u{2014} Hello\"", "Hola", Some("Hello"))]
     #[case("\"Hola, mundo\"", "Hola, mundo", None)]
+    #[case("\"text part - translation part\"", "text part", "translation part")]
     fn split_example_cases(
         #[case] input: &str,
         #[case] expected_text: &str,
@@ -256,14 +260,14 @@ mod tests {
     #[case("1. Use the present", "Use the present")]
     #[case("12) Another rule", "Another rule")]
     #[case("- A rule", "A rule")]
-    #[case("• Another rule", "Another rule")]
+    #[case("\u{2022} Another rule", "Another rule")]
     fn strip_prefix_cases(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(strip_prefix(input), expected);
     }
 
     #[test]
     fn parse_sections_from_text() {
-        let text = "Present Tense\n\n1. Regular verbs end in -ar, -er, -ir\n2. Conjugate by removing the ending\n\n\"Yo hablo — I speak\"\n\nPast Tense\n\n1. Add -é, -aste, -ó endings\n";
+        let text = "Present Tense\n\n1. Regular verbs end in -ar, -er, -ir\n2. Conjugate by removing the ending\n\n\"Yo hablo \u{2014} I speak\"\n\nPast Tense\n\n1. Add -\u{e9}, -aste, -\u{f3} endings\n";
         let sections = parse_sections(text);
         assert_eq!(sections.len(), 2);
         assert_eq!(sections[0].title.as_deref(), Some("Present Tense"));

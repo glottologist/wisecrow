@@ -16,15 +16,16 @@ reqwest = { version = "0.12.5", default-features = false, features = ["rustls-tl
 wisecrow-core = { path = "../wisecrow-core", optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
 sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "migrate", "chrono"], optional = true }
-dotenv = { version = "0.15", optional = true }
+dotenvy = { version = "0.15", optional = true }
 config = { version = "0.14", optional = true }
+tempfile = { version = "3", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 gloo-timers = { version = "0.3", features = ["futures"] }
 
 [features]
 default = []
-server = ["dioxus/server", "dep:wisecrow-core", "dep:tokio", "dep:sqlx", "dep:dotenv", "dep:config"]
+server = ["dioxus/server", "dep:wisecrow-core", "dep:tokio", "dep:sqlx", "dep:dotenvy", "dep:config", "dep:tempfile"]
 web = ["dioxus/web"]
 audio = ["server", "wisecrow-core/audio", "dep:base64"]
 images = ["server", "wisecrow-core/images", "dep:base64", "dep:reqwest"]

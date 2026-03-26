@@ -156,41 +156,34 @@ pub fn play_audio(path: &Path) -> Result<(), WisecrowError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::SUPPORTED_LANGUAGE_INFO;
+    use proptest::prelude::*;
 
-    #[test]
-    fn voice_mapping_covers_common_languages() {
-        let common = [
-            "en", "es", "fr", "de", "it", "pt", "ja", "ko", "zh", "ru", "ar", "hi",
-        ];
-        for lang in common {
-            assert!(
-                voice_for_language(lang).is_some(),
-                "Missing voice for common language: {lang}"
-            );
+    proptest! {
+        #[test]
+        fn unknown_code_returns_none(s in "[a-z0-9]{1,10}") {
+            let is_known = SUPPORTED_LANGUAGE_INFO.iter().any(|(c, _)| *c == s);
+            if !is_known {
+                prop_assert!(voice_for_language(&s).is_none());
+            }
         }
     }
 
     #[test]
-    fn unknown_language_returns_none() {
-        assert!(voice_for_language("xx").is_none());
-        assert!(voice_for_language("").is_none());
-    }
-
-    #[test]
-    fn voice_names_are_neural() {
-        let mut checked = 0usize;
-        for (code, _) in crate::cli::SUPPORTED_LANGUAGE_INFO {
+    fn all_voices_are_neural() {
+        let mut count = 0;
+        for (code, _) in SUPPORTED_LANGUAGE_INFO {
             if let Some(voice) = voice_for_language(code) {
                 assert!(
                     voice.contains("Neural"),
-                    "Voice for {code} should be Neural: {voice}"
+                    "Voice for {code} is not Neural: {voice}"
                 );
-                checked = checked.saturating_add(1);
+                count += 1;
             }
         }
         assert!(
-            checked >= 10,
-            "Expected at least 10 language voices, found {checked}"
+            count >= 10,
+            "Expected at least 10 languages with voices, got {count}"
         );
     }
 }

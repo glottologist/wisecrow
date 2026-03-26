@@ -150,11 +150,11 @@ mod tests {
 
     #[rstest]
     #[case(
-        "Yo hablo español",
+        "Yo hablo espa\u{f1}ol",
         Some("I speak Spanish"),
         1,
         "Yo hablo ____",
-        "español"
+        "espa\u{f1}ol"
     )]
     #[case("Si no", None, 0, "", "")]
     #[case("The cat sat quietly", None, 1, "The cat sat ____", "quietly")]
@@ -207,6 +207,20 @@ mod tests {
             assert!(!quiz.options.is_empty());
             assert!(quiz.correct_index < quiz.options.len());
         }
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    fn shuffle_with_few_options_is_identity(#[case] n: usize) {
+        let options: Vec<String> = (0..n).map(|i| format!("opt{i}")).collect();
+        let quiz = MultipleChoiceQuiz {
+            question: "test".to_owned(),
+            options: options.clone(), // clone: need original for comparison
+            correct_index: 0,
+        };
+        let result = shuffle_options(&quiz, 42);
+        assert_eq!(result.options, options);
     }
 
     proptest! {

@@ -18,12 +18,12 @@ pub async fn generate_quiz(
         )));
     }
 
-    let unique_id = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let tmp_dir = std::env::temp_dir();
-    let tmp_path = tmp_dir.join(format!("wisecrow-quiz-{unique_id}.pdf"));
+    let tmp_file = tempfile::Builder::new()
+        .prefix("wisecrow-quiz-")
+        .suffix(".pdf")
+        .tempfile()
+        .map_err(|e| ServerFnError::new(format!("Failed to create temp file: {e}")))?;
+    let tmp_path = tmp_file.path().to_owned();
 
     tokio::fs::write(&tmp_path, &pdf_bytes)
         .await
@@ -32,9 +32,7 @@ pub async fn generate_quiz(
     let content = wisecrow::grammar::pdf::extract(&tmp_path)
         .map_err(|e| ServerFnError::new(format!("PDF extraction failed: {e}")))?;
 
-    if let Err(e) = tokio::fs::remove_file(&tmp_path).await {
-        tracing::debug!("Temp file cleanup failed: {e}");
-    }
+    drop(tmp_file);
 
     let cloze_quizzes = QuizGenerator::cloze_from_examples(
         &content
