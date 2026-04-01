@@ -6,6 +6,7 @@ pub struct ClozeQuiz {
     pub sentence_with_blank: String,
     pub answer: String,
     pub hint: Option<String>,
+    pub rule_id: Option<i32>,
 }
 
 #[derive(Debug, Clone)]
@@ -13,6 +14,7 @@ pub struct MultipleChoiceQuiz {
     pub question: String,
     pub options: Vec<String>,
     pub correct_index: usize,
+    pub rule_id: Option<i32>,
 }
 
 pub struct QuizGenerator;
@@ -72,6 +74,7 @@ impl QuizGenerator {
                 question: question.clone(), // clone: reusing pre-allocated question string
                 options,
                 correct_index: 0,
+                rule_id: None,
             });
         }
 
@@ -103,6 +106,7 @@ impl QuizGenerator {
             sentence_with_blank: blanked.join(" "),
             answer: (*target_word).to_owned(),
             hint: Some(format!("Starts with '{first_char}'")),
+            rule_id: None,
         })
     }
 }
@@ -138,6 +142,7 @@ pub fn shuffle_options(quiz: &MultipleChoiceQuiz, seed: usize) -> MultipleChoice
         question: quiz.question.clone(), // clone: building new owned struct
         options,
         correct_index,
+        rule_id: quiz.rule_id,
     }
 }
 
@@ -218,6 +223,7 @@ mod tests {
             question: "test".to_owned(),
             options: options.clone(), // clone: need original for comparison
             correct_index: 0,
+            rule_id: None,
         };
         let result = shuffle_options(&quiz, 42);
         assert_eq!(result.options, options);
@@ -235,6 +241,7 @@ mod tests {
                     "D".to_owned(),
                 ],
                 correct_index: 0,
+                rule_id: None,
             };
             let shuffled = shuffle_options(&quiz, seed);
             prop_assert_eq!(&shuffled.options[shuffled.correct_index], "A");

@@ -12,8 +12,9 @@ use tokio::{
 use tracing::{error, info};
 use wisecrow::{
     cli::{
-        is_supported_language, Cli, Command, DownloadAllArgs, LanguageArgs, LearnArgs, QuizArgs,
-        SUPPORTED_LANGUAGE_INFO,
+        is_supported_language, Cli, Command, DownloadAllArgs, GenerateExercisesArgs,
+        ImportGrammarArgs, ImportPdfArgs, LanguageArgs, LearnArgs, NbackArgs, PrefetchMediaArgs,
+        QuizArgs, SeedGrammarArgs, SyncArgs, SUPPORTED_LANGUAGE_INFO,
     },
     config::Config,
     downloader::DownloadConfig,
@@ -115,6 +116,14 @@ fn validate_languages(native: &str, foreign: &str) -> Result<(), WisecrowError> 
 fn parse_corpora(args: Option<&[String]>) -> Result<Option<Vec<Corpus>>, WisecrowError> {
     args.map(|v| v.iter().map(|s| Corpus::try_from(s.as_str())).collect())
         .transpose()
+}
+
+fn resolve_language_name(code: &str) -> Result<&'static str, WisecrowError> {
+    SUPPORTED_LANGUAGE_INFO
+        .iter()
+        .find(|(c, _)| *c == code)
+        .map(|(_, n)| *n)
+        .ok_or_else(|| WisecrowError::InvalidInput(format!("Unknown language: {code}")))
 }
 
 struct PreparedJob {
@@ -251,6 +260,126 @@ async fn handle_ingest(args: LanguageArgs) -> Result<(), Error> {
     run_until_done_or_signal(handles).await
 }
 
+async fn handle_seed_grammar(args: SeedGrammarArgs) -> Result<(), Error> {
+    let (config, pool) = load_config_and_pool().await?;
+    let provider = wisecrow::llm::create_provider(&config)?;
+    let lang_name = resolve_language_name(&args.lang)?;
+    let level_refs: Vec<&str> = args.levels.iter().map(String::as_str).collect();
+
+    let count = wisecrow::grammar::seeder::seed_grammar(
+        &pool,
+        provider.as_ref(),
+        &args.lang,
+        lang_name,
+        &level_refs,
+    )
+    .await?;
+
+    info!("Seeded {count} grammar rules");
+    Ok(())
+}
+
+async fn handle_import_grammar(args: ImportGrammarArgs) -> Result<(), Error> {
+    let (_config, pool) = load_config_and_pool().await?;
+    let lang_name = resolve_language_name(&args.lang)?;
+
+    let persister = wisecrow::ingesting::persisting::DatabasePersister::new(
+        pool.clone(), // clone: PgPool is Arc-based
+    );
+    let language_id = persister.ensure_language(&args.lang, lang_name).await?;
+
+    let path = std::path::Path::new(&args.file)
+        .canonicalize()
+        .map_err(|_| WisecrowError::InvalidInput(format!("File not found: {}", args.file)))?;
+
+    let count = wisecrow::grammar::rules::import_from_json(&pool, language_id, &path).await?;
+    info!("Imported {count} grammar rules from {}", args.file);
+    Ok(())
+}
+
+async fn handle_import_pdf(args: ImportPdfArgs) -> Result<(), Error> {
+    let (_config, pool) = load_config_and_pool().await?;
+    let lang_name = resolve_language_name(&args.lang)?;
+
+    let persister = wisecrow::ingesting::persisting::DatabasePersister::new(
+        pool.clone(), // clone: PgPool is Arc-based
+    );
+    let language_id = persister.ensure_language(&args.lang, lang_name).await?;
+
+    let path = std::path::Path::new(&args.file)
+        .canonicalize()
+        .map_err(|_| WisecrowError::InvalidInput(format!("File not found: {}", args.file)))?;
+
+    let count =
+        wisecrow::grammar::rules::import_from_pdf(&pool, language_id, &args.level, &path).await?;
+    info!("Imported {count} grammar rules from PDF {}", args.file);
+    Ok(())
+}
+
+async fn handle_sync(args: SyncArgs) -> Result<(), Error> {
+    let (_config, pool) = load_config_and_pool().await?;
+    wisecrow::sync::run_sync(&pool, &args.remote, args.api_key.as_deref()).await?;
+    Ok(())
+}
+
+async fn handle_generate_exercises(args: GenerateExercisesArgs) -> Result<(), Error> {
+    let (config, pool) = load_config_and_pool().await?;
+    let provider = wisecrow::llm::create_provider(&config)?;
+
+    let (cloze, mc) = wisecrow::grammar::ai_exercises::generate_exercises(
+        &pool,
+        provider.as_ref(),
+        &args.lang,
+        &args.level,
+        args.count,
+    )
+    .await?;
+
+    info!(
+        "Generated {} cloze and {} multiple-choice exercises",
+        cloze.len(),
+        mc.len()
+    );
+
+    for (i, q) in cloze.iter().enumerate() {
+        println!(
+            "Cloze {}: {} [Answer: {}]",
+            i.saturating_add(1),
+            q.sentence_with_blank,
+            q.answer
+        );
+    }
+    for (i, q) in mc.iter().enumerate() {
+        println!(
+            "MC {}: {} [Correct: {}]",
+            i.saturating_add(1),
+            q.question,
+            q.options[q.correct_index]
+        );
+    }
+
+    Ok(())
+}
+
+async fn handle_prefetch_media(args: PrefetchMediaArgs) -> Result<(), Error> {
+    validate_languages(&args.native_lang, &args.foreign_lang)?;
+    let (config, pool) = load_config_and_pool().await?;
+
+    let api_key = config.unsplash_api_key.as_ref().map(|k| k.expose());
+    let count = wisecrow::media::prefetch::prefetch_media(
+        &pool,
+        &args.native_lang,
+        &args.foreign_lang,
+        args.audio,
+        args.images,
+        api_key,
+    )
+    .await?;
+
+    info!("Prefetched {count} media items");
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     tracing_subscriber::fmt::init();
@@ -262,8 +391,12 @@ async fn main() -> Result<(), Error> {
     match cli.command {
         Command::Download(args) => handle_download(args).await?,
         Command::DownloadAll(args) => handle_download_all(args).await?,
+        Command::GenerateExercises(args) => handle_generate_exercises(args).await?,
+        Command::ImportGrammar(args) => handle_import_grammar(args).await?,
+        Command::ImportPdf(args) => handle_import_pdf(args).await?,
         Command::Ingest(args) => handle_ingest(args).await?,
         Command::Learn(args) => handle_learn(args).await?,
+        Command::Nback(args) => handle_nback(args).await?,
         Command::ListLanguages => {
             println!("{:<10} Language", "Code");
             println!("{}", "-".repeat(40));
@@ -271,8 +404,137 @@ async fn main() -> Result<(), Error> {
                 println!("{code:<10} {name}");
             }
         }
+        Command::PrefetchMedia(args) => handle_prefetch_media(args).await?,
         Command::Quiz(args) => handle_quiz(args)?,
+        Command::SeedGrammar(args) => handle_seed_grammar(args).await?,
+        Command::Sync(args) => handle_sync(args).await?,
     }
+    Ok(())
+}
+
+async fn handle_nback(args: NbackArgs) -> Result<(), Error> {
+    validate_languages(&args.native_lang, &args.foreign_lang)?;
+    let (_config, pool) = load_config_and_pool().await?;
+
+    let mode: wisecrow::dnb::DnbMode = args.mode.parse()?;
+    let config = wisecrow::dnb::DnbConfig {
+        mode,
+        n_level: args.n_level,
+        interval_ms: 4000,
+    };
+
+    let vocab = wisecrow::dnb::session::DnbSessionRepository::load_vocab(
+        &pool,
+        &args.native_lang,
+        &args.foreign_lang,
+        100,
+    )
+    .await?;
+
+    if vocab.len() < 8 {
+        info!(
+            "Not enough vocabulary ({} items, need 8+). Ingest data first.",
+            vocab.len()
+        );
+        return Ok(());
+    }
+
+    let session_id = wisecrow::dnb::session::DnbSessionRepository::create_session(
+        &pool,
+        args.user_id,
+        &args.native_lang,
+        &args.foreign_lang,
+        mode,
+        &wisecrow::dnb::scoring::AdaptationState::new(args.n_level, 4000),
+    )
+    .await?;
+
+    let seed = u64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+            % u128::from(u64::MAX),
+    )
+    .unwrap_or(42);
+
+    let mut engine = wisecrow::dnb::DnbEngine::new(vocab, &config, seed)?;
+
+    info!(
+        "Starting {mode} n-back (N={}) session {}",
+        args.n_level, session_id
+    );
+
+    let mut trial_count = 0u32;
+    loop {
+        let trial = engine.next_trial();
+        trial_count = trial_count.saturating_add(1);
+
+        println!(
+            "\nTrial {} (N={}) [{} ms]",
+            trial.trial_number, trial.n_level, trial.interval_ms
+        );
+        println!("  Audio: {}", trial.audio_vocab.to_phrase);
+        println!("  Visual: {}", trial.visual_vocab.from_phrase);
+        if trial.audio_match {
+            println!("  [AUDIO MATCH]");
+        }
+        if trial.visual_match {
+            println!("  [VISUAL MATCH]");
+        }
+
+        let response = wisecrow::dnb::TrialResponse {
+            audio_response: None,
+            visual_response: None,
+            response_time_ms: None,
+        };
+
+        engine.record_response(response);
+
+        if let Some(last) = engine.completed_trials().last() {
+            wisecrow::dnb::session::DnbSessionRepository::save_trial(&pool, session_id, last)
+                .await?;
+        }
+
+        if engine.should_terminate() || trial_count >= 50 {
+            break;
+        }
+    }
+
+    let state = engine.state();
+    let audio_acc = wisecrow::dnb::scoring::channel_accuracy(
+        engine.completed_trials(),
+        wisecrow::dnb::scoring::Channel::Audio,
+        engine.completed_trials().len(),
+    );
+    let visual_acc = wisecrow::dnb::scoring::channel_accuracy(
+        engine.completed_trials(),
+        wisecrow::dnb::scoring::Channel::Visual,
+        engine.completed_trials().len(),
+    );
+
+    wisecrow::dnb::session::DnbSessionRepository::complete_session(
+        &pool,
+        session_id,
+        state,
+        trial_count,
+        #[expect(clippy::cast_possible_truncation)]
+        Some(audio_acc as f32),
+        #[expect(clippy::cast_possible_truncation)]
+        Some(visual_acc as f32),
+    )
+    .await?;
+
+    wisecrow::dnb::feedback::apply_srs_feedback(&pool, engine.completed_trials()).await?;
+
+    info!(
+        "Session complete: {} trials, N peak={}, audio={:.0}%, visual={:.0}%",
+        trial_count,
+        state.n_level_peak,
+        audio_acc * 100.0,
+        visual_acc * 100.0,
+    );
+
     Ok(())
 }
 
@@ -280,32 +542,35 @@ async fn handle_learn(args: LearnArgs) -> Result<(), Error> {
     validate_languages(&args.native_lang, &args.foreign_lang)?;
     let (config, pool) = load_config_and_pool().await?;
 
-    let session = match SessionManager::resume(&pool, &args.native_lang, &args.foreign_lang).await?
-    {
-        Some(session) => {
-            info!(
-                "Resuming session {} at card {}/{}",
-                session.id,
-                session.current_index,
-                session.cards.len()
-            );
-            session
-        }
-        None => {
-            info!(
-                "Creating new session: {} -> {}, deck_size={}, speed={}ms",
-                args.native_lang, args.foreign_lang, args.deck_size, args.speed_ms
-            );
-            SessionManager::create(
-                &pool,
-                &args.native_lang,
-                &args.foreign_lang,
-                args.deck_size,
-                args.speed_ms,
-            )
+    let session =
+        match SessionManager::resume(&pool, args.user_id, &args.native_lang, &args.foreign_lang)
             .await?
-        }
-    };
+        {
+            Some(session) => {
+                info!(
+                    "Resuming session {} at card {}/{}",
+                    session.id,
+                    session.current_index,
+                    session.cards.len()
+                );
+                session
+            }
+            None => {
+                info!(
+                    "Creating new session: {} -> {}, deck_size={}, speed={}ms",
+                    args.native_lang, args.foreign_lang, args.deck_size, args.speed_ms
+                );
+                SessionManager::create(
+                    &pool,
+                    args.user_id,
+                    &args.native_lang,
+                    &args.foreign_lang,
+                    args.deck_size,
+                    args.speed_ms,
+                )
+                .await?
+            }
+        };
 
     if session.cards.is_empty() {
         info!("No cards available. Ingest some data first with `wisecrow ingest`.");

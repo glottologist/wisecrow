@@ -1,5 +1,6 @@
 mod cloze;
 mod multiple_choice;
+pub mod rule_explanation;
 
 use dioxus::prelude::*;
 

@@ -245,7 +245,11 @@ mod tests {
     #[rstest]
     #[case("\"Hola \u{2014} Hello\"", "Hola", Some("Hello"))]
     #[case("\"Hola, mundo\"", "Hola, mundo", None)]
-    #[case("\"text part - translation part\"", "text part", "translation part")]
+    #[case(
+        "\"text part - translation part\"",
+        "text part",
+        Some("translation part")
+    )]
     fn split_example_cases(
         #[case] input: &str,
         #[case] expected_text: &str,

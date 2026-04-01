@@ -141,6 +141,8 @@ pub struct LearnArgs {
     pub deck_size: u32,
     #[arg(long, default_value = "3000")]
     pub speed_ms: u32,
+    #[arg(long, default_value = "1")]
+    pub user_id: i32,
 }
 
 #[derive(Args)]
@@ -165,20 +167,104 @@ pub struct DownloadAllArgs {
     pub unpack: bool,
 }
 
+#[derive(Args)]
+pub struct SeedGrammarArgs {
+    #[arg(short, long)]
+    pub lang: String,
+    #[arg(short = 'L', long, value_delimiter = ',')]
+    pub levels: Vec<String>,
+}
+
+#[derive(Args)]
+pub struct ImportGrammarArgs {
+    #[arg(short, long)]
+    pub lang: String,
+    #[arg(short, long)]
+    pub file: String,
+}
+
+#[derive(Args)]
+pub struct ImportPdfArgs {
+    #[arg(short, long)]
+    pub lang: String,
+    #[arg(short = 'L', long)]
+    pub level: String,
+    #[arg(short, long)]
+    pub file: String,
+}
+
+#[derive(Args)]
+pub struct SyncArgs {
+    #[arg(short, long)]
+    pub remote: String,
+    #[arg(long)]
+    pub api_key: Option<String>,
+}
+
+#[derive(Args)]
+pub struct GenerateExercisesArgs {
+    #[arg(short, long)]
+    pub lang: String,
+    #[arg(short = 'L', long)]
+    pub level: String,
+    #[arg(short, long, default_value = "20")]
+    pub count: u32,
+}
+
+#[derive(Args)]
+pub struct NbackArgs {
+    #[arg(short, long)]
+    pub native_lang: String,
+    #[arg(short, long)]
+    pub foreign_lang: String,
+    #[arg(short, long, default_value = "audio_written")]
+    pub mode: String,
+    #[arg(long, default_value = "2")]
+    pub n_level: u8,
+    #[arg(long, default_value = "1")]
+    pub user_id: i32,
+}
+
+#[derive(Args)]
+pub struct PrefetchMediaArgs {
+    #[arg(short, long)]
+    pub native_lang: String,
+    #[arg(short, long)]
+    pub foreign_lang: String,
+    #[arg(long, default_value = "true")]
+    pub audio: bool,
+    #[arg(long, default_value = "true")]
+    pub images: bool,
+}
+
 #[derive(Subcommand)]
 pub enum Command {
     #[command(aliases = ["d"])]
     Download(LanguageArgs),
     #[command(aliases = ["da"])]
     DownloadAll(DownloadAllArgs),
+    #[command(aliases = ["ge"])]
+    GenerateExercises(GenerateExercisesArgs),
     #[command(aliases = ["i"])]
     Ingest(LanguageArgs),
+    #[command(aliases = ["ig"])]
+    ImportGrammar(ImportGrammarArgs),
+    #[command(aliases = ["ip"])]
+    ImportPdf(ImportPdfArgs),
     #[command(aliases = ["r"])]
     Learn(LearnArgs),
+    #[command(aliases = ["nb"])]
+    Nback(NbackArgs),
     #[command(aliases = ["l"])]
     ListLanguages,
+    #[command(aliases = ["pm"])]
+    PrefetchMedia(PrefetchMediaArgs),
     #[command(aliases = ["q"])]
     Quiz(QuizArgs),
+    #[command(aliases = ["sg"])]
+    SeedGrammar(SeedGrammarArgs),
+    #[command(aliases = ["s"])]
+    Sync(SyncArgs),
 }
 
 #[cfg(test)]
@@ -193,10 +279,17 @@ mod tests {
             (cmd, name),
             (Command::Download(_), "Download")
                 | (Command::DownloadAll(_), "DownloadAll")
+                | (Command::GenerateExercises(_), "GenerateExercises")
+                | (Command::ImportGrammar(_), "ImportGrammar")
+                | (Command::ImportPdf(_), "ImportPdf")
                 | (Command::Ingest(_), "Ingest")
                 | (Command::Learn(_), "Learn")
                 | (Command::ListLanguages, "ListLanguages")
+                | (Command::Nback(_), "Nback")
+                | (Command::PrefetchMedia(_), "PrefetchMedia")
                 | (Command::Quiz(_), "Quiz")
+                | (Command::SeedGrammar(_), "SeedGrammar")
+                | (Command::Sync(_), "Sync")
         )
     }
 
@@ -207,6 +300,20 @@ mod tests {
     #[case(&["wisecrow", "i", "-n", "ja", "-f", "en"], "Ingest")]
     #[case(&["wisecrow", "list-languages"], "ListLanguages")]
     #[case(&["wisecrow", "l"], "ListLanguages")]
+    #[case(&["wisecrow", "seed-grammar", "--lang", "es", "--levels", "A1,A2"], "SeedGrammar")]
+    #[case(&["wisecrow", "sg", "--lang", "es", "--levels", "A1"], "SeedGrammar")]
+    #[case(&["wisecrow", "import-grammar", "--lang", "es", "--file", "rules.json"], "ImportGrammar")]
+    #[case(&["wisecrow", "ig", "--lang", "es", "--file", "rules.json"], "ImportGrammar")]
+    #[case(&["wisecrow", "import-pdf", "--lang", "es", "--level", "B1", "--file", "g.pdf"], "ImportPdf")]
+    #[case(&["wisecrow", "ip", "--lang", "es", "--level", "B1", "--file", "g.pdf"], "ImportPdf")]
+    #[case(&["wisecrow", "sync", "--remote", "https://example.com"], "Sync")]
+    #[case(&["wisecrow", "s", "--remote", "https://example.com"], "Sync")]
+    #[case(&["wisecrow", "generate-exercises", "--lang", "es", "--level", "B1"], "GenerateExercises")]
+    #[case(&["wisecrow", "ge", "--lang", "es", "--level", "B1"], "GenerateExercises")]
+    #[case(&["wisecrow", "nback", "-n", "en", "-f", "es"], "Nback")]
+    #[case(&["wisecrow", "nb", "-n", "en", "-f", "de", "--mode", "word_translation"], "Nback")]
+    #[case(&["wisecrow", "prefetch-media", "-n", "en", "-f", "es"], "PrefetchMedia")]
+    #[case(&["wisecrow", "pm", "-n", "en", "-f", "de"], "PrefetchMedia")]
     fn command_and_alias_parses(#[case] args: &[&str], #[case] expected_variant: &str) {
         let cli = Cli::parse_from(args);
         assert!(

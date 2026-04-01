@@ -58,15 +58,25 @@ mod media_support {
             }
         }
 
-        pub fn drain(&mut self) {
+        /// Drains pending media results. Returns `true` if new audio arrived
+        /// during this drain (used to trigger auto-play).
+        pub fn drain(&mut self) -> bool {
+            let mut new_audio = false;
             while let Ok(result) = self.rx.try_recv() {
                 match result {
                     #[cfg(feature = "audio")]
-                    MediaResult::Audio(path) => self.audio_path = Some(path),
+                    MediaResult::Audio(path) => {
+                        let had_audio = self.audio_path.is_some();
+                        self.audio_path = Some(path);
+                        if !had_audio {
+                            new_audio = true;
+                        }
+                    }
                     #[cfg(feature = "images")]
                     MediaResult::Image(protocol) => self.image_protocol = Some(protocol),
                 }
             }
+            new_audio
         }
 
         pub fn clear(&mut self) {
@@ -112,7 +122,7 @@ mod media_support {
                         return;
                     };
                     let client = ctx.http_client.clone(); // clone: reqwest::Client is Arc-based
-                    let api_key = api_key.expose().to_owned(); // expose: SecureString → String at point of HTTP use
+                    let api_key = api_key.expose().to_owned(); // expose: SecureString -> String at point of HTTP use
                     let word = to_phrase;
                     let result = ctx
                         .cache
@@ -192,11 +202,13 @@ impl App {
         }
     }
 
-    fn drain_media(&mut self) {
+    /// Drains pending media results. Returns `true` if new audio arrived.
+    fn drain_media(&mut self) -> bool {
         #[cfg(any(feature = "audio", feature = "images"))]
         if let Some(ref mut media) = self.media {
-            media.drain();
+            return media.drain();
         }
+        false
     }
 
     fn clear_media(&mut self) {
@@ -206,7 +218,7 @@ impl App {
         }
     }
 
-    fn play_audio_on_flip(&self) {
+    fn play_audio(&self) {
         #[cfg(any(feature = "audio", feature = "images"))]
         if let Some(ref media) = self.media {
             media.play_audio();
@@ -250,7 +262,7 @@ impl App {
         } else {
             self.flipped = true;
             self.speed.reset();
-            self.play_audio_on_flip();
+            self.play_audio();
         }
         Ok(())
     }
@@ -266,7 +278,7 @@ impl App {
             KeyCode::Char(' ') if !self.flipped => {
                 self.flipped = true;
                 self.speed.reset();
-                self.play_audio_on_flip();
+                self.play_audio();
             }
             KeyCode::Char('1') => self.handle_rating(ReviewRating::Again).await?,
             KeyCode::Char('2') => self.handle_rating(ReviewRating::Hard).await?,
@@ -373,7 +385,11 @@ async fn run_app(
     app.fetch_media_for_current_card();
 
     loop {
-        app.drain_media();
+        let audio_arrived = app.drain_media();
+        if audio_arrived {
+            app.play_audio();
+        }
+
         terminal.draw(|frame| app.draw(frame))?;
 
         if app.should_quit {

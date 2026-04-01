@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use wisecrow_dto::{CardDto, ReviewRatingDto};
+use wisecrow_dto::{CardDto, ReviewRatingDto, ScriptDirection};
 
 #[component]
 pub fn CardDisplay(
@@ -12,11 +12,16 @@ pub fn CardDisplay(
     image_url: Option<String>,
     on_flip: EventHandler<()>,
     on_rate: EventHandler<ReviewRatingDto>,
+    #[props(default = ScriptDirection::Ltr)] script_direction: ScriptDirection,
 ) -> Element {
     let display_num = index.saturating_add(1);
+    let dir_class = match script_direction {
+        ScriptDirection::Rtl => "dir-rtl font-intl",
+        ScriptDirection::Ltr => "font-intl",
+    };
 
     rsx! {
-        div { class: "bg-gray-800 rounded-xl p-8 min-h-[300px] flex flex-col",
+        div { class: "bg-gray-800 rounded-xl p-8 min-h-[300px] flex flex-col {dir_class}",
             div { class: "text-sm text-gray-500 mb-4",
                 "Card {display_num} / {total}"
             }
@@ -54,11 +59,26 @@ pub fn CardDisplay(
                 } else {
                     div { class: "text-center cursor-pointer",
                         onclick: move |_| on_flip.call(()),
+                        if let Some(ref img_src) = image_url {
+                            img {
+                                class: "mx-auto mb-4 rounded max-w-[200px] max-h-[200px]",
+                                src: "{img_src}",
+                                alt: "{card.to_phrase}",
+                            }
+                        }
                         p { class: "text-3xl font-bold text-cyan-400 mb-4",
                             "{card.to_phrase}"
                         }
                         p { class: "text-gray-500 text-sm",
                             "Click or press Space to reveal"
+                        }
+                        if let Some(ref audio_src) = audio_url {
+                            audio {
+                                src: "{audio_src}",
+                                autoplay: true,
+                                controls: true,
+                                class: "mx-auto mt-2",
+                            }
                         }
                     }
                 }

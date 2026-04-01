@@ -1,3 +1,3 @@
 [workspace]
-members = ["wisecrow-core", "wisecrow-dto", "wisecrow-web"]
+members = ["wisecrow-core", "wisecrow-dto", "wisecrow-mobile", "wisecrow-web"]
 resolver = "2"

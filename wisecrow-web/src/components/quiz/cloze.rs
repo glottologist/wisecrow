@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 
+use super::rule_explanation;
 use wisecrow_dto::ClozeQuizDto;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -96,6 +97,9 @@ pub fn ClozeQuestion(
                             span { class: "text-gray-400", "Answer: " }
                             span { class: "text-emerald-400 font-bold", "{quiz.answer}" }
                         }
+                        if let Some(ref ctx) = quiz.rule_context {
+                            rule_explanation::RuleExplanation { context: ctx.clone() } // clone: Dioxus component props require owned values
+                        }
                         button {
                             class: "bg-emerald-600 hover:bg-emerald-500 rounded px-6 py-2 font-semibold transition mt-4",
                             onclick: move |_| {
@@ -119,6 +123,9 @@ pub fn ClozeQuestion(
                             span { class: "text-gray-400", "Correct answer: " }
                             span { class: "text-emerald-400 font-bold", "{quiz.answer}" }
                         }
+                        if let Some(ref ctx) = quiz.rule_context {
+                            rule_explanation::RuleExplanation { context: ctx.clone() } // clone: Dioxus component props require owned values
+                        }
                         button {
                             class: "bg-emerald-600 hover:bg-emerald-500 rounded px-6 py-2 font-semibold transition mt-4",
                             onclick: move |_| {
@@ -137,6 +144,9 @@ pub fn ClozeQuestion(
                         p { class: "text-lg",
                             span { class: "text-gray-400", "Answer: " }
                             span { class: "text-emerald-400 font-bold", "{quiz.answer}" }
+                        }
+                        if let Some(ref ctx) = quiz.rule_context {
+                            rule_explanation::RuleExplanation { context: ctx.clone() } // clone: Dioxus component props require owned values
                         }
                         button {
                             class: "bg-emerald-600 hover:bg-emerald-500 rounded px-6 py-2 font-semibold transition mt-4",

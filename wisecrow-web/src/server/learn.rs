@@ -4,7 +4,8 @@ use wisecrow::cli::SUPPORTED_LANGUAGE_INFO;
 use wisecrow::dto_convert::language_info;
 use wisecrow::srs::scheduler::{CardManager, ReviewRating};
 use wisecrow::srs::session::SessionManager;
-use wisecrow_dto::{CardDto, LanguageInfo, ReviewRatingDto, SessionDto};
+use wisecrow::users::UserRepository;
+use wisecrow_dto::{CardDto, LanguageInfo, ReviewRatingDto, SessionDto, UserDto};
 
 use super::{pool, validate_lang};
 
@@ -18,6 +19,7 @@ pub async fn list_languages() -> Result<Vec<LanguageInfo>, ServerFnError> {
 
 #[server]
 pub async fn create_session(
+    user_id: i32,
     native: String,
     foreign: String,
     deck_size: u32,
@@ -26,7 +28,7 @@ pub async fn create_session(
     validate_lang(&native)?;
     validate_lang(&foreign)?;
     let db = pool()?;
-    let session = SessionManager::create(db, &native, &foreign, deck_size, speed_ms)
+    let session = SessionManager::create(db, user_id, &native, &foreign, deck_size, speed_ms)
         .await
         .map_err(|e| ServerFnError::new(format!("Session creation failed: {e}")))?;
     Ok(SessionDto::from(&session))
@@ -34,13 +36,14 @@ pub async fn create_session(
 
 #[server]
 pub async fn resume_session(
+    user_id: i32,
     native: String,
     foreign: String,
 ) -> Result<Option<SessionDto>, ServerFnError> {
     validate_lang(&native)?;
     validate_lang(&foreign)?;
     let db = pool()?;
-    let session = SessionManager::resume(db, &native, &foreign)
+    let session = SessionManager::resume(db, user_id, &native, &foreign)
         .await
         .map_err(|e| ServerFnError::new(format!("Session resume failed: {e}")))?;
     Ok(session.as_ref().map(SessionDto::from))
@@ -81,4 +84,22 @@ pub async fn complete_session(session_id: i32) -> Result<(), ServerFnError> {
         .await
         .map_err(|e| ServerFnError::new(format!("Complete failed: {e}")))?;
     Ok(())
+}
+
+#[server]
+pub async fn list_users() -> Result<Vec<UserDto>, ServerFnError> {
+    let db = pool()?;
+    let users = UserRepository::list_all(db)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to list users: {e}")))?;
+    Ok(users.iter().map(UserDto::from).collect())
+}
+
+#[server]
+pub async fn create_user(display_name: String) -> Result<UserDto, ServerFnError> {
+    let db = pool()?;
+    let user = UserRepository::create(db, &display_name)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to create user: {e}")))?;
+    Ok(UserDto::from(&user))
 }

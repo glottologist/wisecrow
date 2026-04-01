@@ -24,6 +24,7 @@ path = "src/bin/wisecrow.rs"
 [dependencies]
 wisecrow-dto = { path = "../wisecrow-dto" }
 anyhow = "1.0.86"
+async-trait = "0.1"
 chrono = { version = ">=0.4,<0.4.44", features = ["serde"] }
 clap = { version = "4.5.4", features = ["derive"] }
 config = { version = "0.14.0" }
@@ -37,6 +38,7 @@ indicatif = "0.17.8"
 msedge-tts = { version = "0.2", optional = true }
 pdf-extract = "0.7"
 quick-xml = "0.36"
+rand = "0.8"
 ratatui = "0.29"
 ratatui-image = { version = "1", optional = true }
 reqwest = { version = "0.12.5", default-features = false, features = ["json", "rustls-tls"] }
@@ -49,6 +51,7 @@ thiserror = "2"
 tokio = { version = "1.37.0", features = ["full"] }
 tracing = { version = "0.1.40" }
 tracing-subscriber = "0.3.18"
+unicode-width = "0.2"
 url = "2.5.0"
 zeroize = { version = "1.8.1", features = ["derive"] }
 zip = "2.2.2"

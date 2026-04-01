@@ -28,4 +28,8 @@ pub enum WisecrowError {
     PdfExtractionError(String),
     #[error("Quiz generation error: {0}")]
     QuizGenerationError(String),
+    #[error("LLM error: {0}")]
+    LlmError(String),
+    #[error("Sync error: {0}")]
+    SyncError(String),
 }

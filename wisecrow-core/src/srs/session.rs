@@ -26,6 +26,7 @@ impl SessionManager {
     /// Returns an error if the database operations fail.
     pub async fn create(
         pool: &PgPool,
+        user_id: i32,
         native_lang: &str,
         foreign_lang: &str,
         deck_size: u32,
@@ -56,10 +57,11 @@ impl SessionManager {
         let speed_ms_i32 = i32::try_from(speed_ms).unwrap_or(i32::MAX);
 
         let session_id = sqlx::query_scalar::<_, i32>(
-            "INSERT INTO sessions (native_lang, foreign_lang, deck_size, speed_ms)
-             VALUES ($1, $2, $3, $4)
+            "INSERT INTO sessions (user_id, native_lang, foreign_lang, deck_size, speed_ms)
+             VALUES ($1, $2, $3, $4, $5)
              RETURNING id",
         )
+        .bind(user_id)
         .bind(native_lang)
         .bind(foreign_lang)
         .bind(deck_size_i32)
@@ -93,7 +95,7 @@ impl SessionManager {
         })
     }
 
-    /// Resumes the most recent unfinished session for this language pair.
+    /// Resumes the most recent unfinished session for this user and language pair.
     /// Returns `None` if no paused session exists.
     ///
     /// # Errors
@@ -101,19 +103,21 @@ impl SessionManager {
     /// Returns an error if the database query fails.
     pub async fn resume(
         pool: &PgPool,
+        user_id: i32,
         native_lang: &str,
         foreign_lang: &str,
     ) -> Result<Option<Session>, WisecrowError> {
         let row = sqlx::query_as::<_, (i32, i32, i32)>(
             "SELECT id, deck_size, speed_ms
              FROM sessions
-             WHERE native_lang = $1 AND foreign_lang = $2
+             WHERE native_lang = $1 AND foreign_lang = $2 AND user_id = $3
                AND completed_at IS NULL AND paused_at IS NOT NULL
              ORDER BY paused_at DESC
              LIMIT 1",
         )
         .bind(native_lang)
         .bind(foreign_lang)
+        .bind(user_id)
         .fetch_optional(pool)
         .await?;
 

@@ -1,7 +1,9 @@
 pub mod learn;
 #[cfg(any(feature = "audio", feature = "images"))]
 pub mod media;
+pub mod nback;
 pub mod quiz;
+pub mod sync;
 
 use sqlx::PgPool;
 use std::sync::OnceLock;

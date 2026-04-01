@@ -39,6 +39,10 @@ pub struct Config {
     pub db_user: Option<String>,
     pub db_password: Option<SecureString>,
     pub unsplash_api_key: Option<SecureString>,
+    pub llm_provider: Option<String>,
+    pub llm_api_key: Option<SecureString>,
+    pub remote_url: Option<String>,
+    pub remote_api_key: Option<SecureString>,
 }
 
 impl Config {
@@ -95,6 +99,10 @@ mod tests {
             db_user: None,
             db_password: None,
             unsplash_api_key: None,
+            llm_provider: None,
+            llm_api_key: None,
+            remote_url: None,
+            remote_api_key: None,
         }
     }
 
@@ -106,6 +114,10 @@ mod tests {
             db_user: Some(user.to_owned()),
             db_password: Some(SecureString::from(pass.to_owned())),
             unsplash_api_key: None,
+            llm_provider: None,
+            llm_api_key: None,
+            remote_url: None,
+            remote_api_key: None,
         }
     }
 
@@ -135,6 +147,10 @@ mod tests {
             db_user: None,
             db_password: None,
             unsplash_api_key: None,
+            llm_provider: None,
+            llm_api_key: None,
+            remote_url: None,
+            remote_api_key: None,
         };
         assert!(config.database_url().is_err());
     }
@@ -148,6 +164,10 @@ mod tests {
             db_user: Some("other-user".to_owned()),
             db_password: Some(SecureString::from("other-pass".to_owned())),
             unsplash_api_key: None,
+            llm_provider: None,
+            llm_api_key: None,
+            remote_url: None,
+            remote_api_key: None,
         };
         let url = config.database_url().unwrap();
         assert_eq!(url.as_ref(), "postgres://direct@host/db");

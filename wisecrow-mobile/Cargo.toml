@@ -1,0 +1,21 @@
+[package]
+name = "wisecrow-mobile"
+version = "0.1.0"
+edition = "2021"
+description = "Wisecrow mobile language learning app"
+
+[dependencies]
+wisecrow-dto = { path = "../wisecrow-dto" }
+dioxus = { version = "0.7", features = ["router", "fullstack"] }
+serde = { version = "1.0", features = ["derive"] }
+tracing = "0.1"
+
+[features]
+default = []
+server = ["dioxus/server"]
+desktop = ["dioxus/desktop"]
+mobile = ["dioxus/mobile"]
+web = ["dioxus/web"]
+
+[lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = ['cfg(feature, values("server"))'] }

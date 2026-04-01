@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod config;
+pub mod dnb;
 pub mod downloader;
 pub mod dto_convert;
 pub mod errors;
@@ -7,9 +8,12 @@ pub mod files;
 pub mod frequency;
 pub mod grammar;
 pub mod ingesting;
+pub mod llm;
 pub mod media;
 pub mod srs;
+pub mod sync;
 pub mod tui;
+pub mod users;
 pub mod vocabulary;
 
 use derive_more::Display;

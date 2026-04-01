@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 
+use super::rule_explanation;
 use wisecrow_dto::MultipleChoiceQuizDto;
 
 #[component]
@@ -39,9 +40,9 @@ pub fn McQuestion(
                         };
 
                         let prefix = if answered() && is_correct {
-                            "✓"
+                            "+"
                         } else if answered() && is_selected {
-                            "✗"
+                            "x"
                         } else {
                             " "
                         };
@@ -68,6 +69,10 @@ pub fn McQuestion(
             }
 
             if answered() {
+                if let Some(ref ctx) = quiz.rule_context {
+                    rule_explanation::RuleExplanation { context: ctx.clone() } // clone: Dioxus component props require owned values
+                }
+
                 div { class: "text-center mt-4",
                     button {
                         class: "bg-emerald-600 hover:bg-emerald-500 rounded px-6 py-2 font-semibold transition",

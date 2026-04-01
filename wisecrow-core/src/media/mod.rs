@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod prefetch;
 
 #[cfg(feature = "audio")]
 pub mod audio;

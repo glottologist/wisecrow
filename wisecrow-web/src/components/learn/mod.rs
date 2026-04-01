@@ -24,6 +24,7 @@ mod server_stubs {
 
     #[server]
     pub async fn create_session(
+        user_id: i32,
         native: String,
         foreign: String,
         deck_size: u32,
@@ -34,6 +35,7 @@ mod server_stubs {
 
     #[server]
     pub async fn resume_session(
+        user_id: i32,
         native: String,
         foreign: String,
     ) -> Result<Option<SessionDto>, ServerFnError> {
@@ -77,6 +79,7 @@ async fn get_image_data(_translation_id: i32, _word: String) -> Result<String, S
     Err(ServerFnError::new("images feature not enabled"))
 }
 
+const DEFAULT_USER_ID: i32 = 1;
 const DEFAULT_DECK_SIZE: u32 = 50;
 const DEFAULT_SPEED_MS: u32 = 3000;
 const TICK_INTERVAL_MS: u64 = 100;
@@ -115,7 +118,7 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
         let native = native_clone.clone(); // clone: moving into async block
         let foreign = foreign_clone.clone(); // clone: moving into async block
         async move {
-            match resume_session(native.clone(), foreign.clone()).await {
+            match resume_session(DEFAULT_USER_ID, native.clone(), foreign.clone()).await {
                 // clone: resume may fail, need values for create
                 Ok(Some(s)) => {
                     let idx = usize::try_from(s.current_index).unwrap_or(0);
@@ -126,7 +129,14 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
                     session.set(Some(s));
                 }
                 Ok(None) => {
-                    match create_session(native, foreign, DEFAULT_DECK_SIZE, DEFAULT_SPEED_MS).await
+                    match create_session(
+                        DEFAULT_USER_ID,
+                        native,
+                        foreign,
+                        DEFAULT_DECK_SIZE,
+                        DEFAULT_SPEED_MS,
+                    )
+                    .await
                     {
                         Ok(s) => session.set(Some(s)),
                         Err(e) => error_msg.set(Some(format!("Failed to create session: {e}"))),
@@ -137,6 +147,32 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
             loading.set(false);
         }
     });
+
+    {
+        let foreign_lang = foreign.clone(); // clone: need owned for effect closure
+        use_effect(move || {
+            let sess = session();
+            let idx = current_index();
+            if let Some(ref s) = sess {
+                if let Some(card) = s.cards.get(idx) {
+                    let tid = card.translation_id;
+                    let phrase = card.to_phrase.clone(); // clone: moving into spawned async
+                    let lang = foreign_lang.clone(); // clone: moving into spawned async
+                    let word = card.from_phrase.clone(); // clone: moving into spawned async
+                    audio_url.set(None);
+                    image_url.set(None);
+                    spawn(async move {
+                        if let Ok(url) = get_audio_data(tid, phrase, lang).await {
+                            audio_url.set(Some(url));
+                        }
+                        if let Ok(url) = get_image_data(tid, word).await {
+                            image_url.set(Some(url));
+                        }
+                    });
+                }
+            }
+        });
+    }
 
     let _ = use_future(move || async move {
         loop {
@@ -201,13 +237,9 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
 
     let current_card = &sess.cards[idx];
     let card_id = current_card.card_id;
-    let translation_id = current_card.translation_id;
     let session_id = sess.id;
     let timer_fraction = speed().remaining_fraction();
     let is_flipped = flipped();
-    let foreign_lang = sess.foreign_lang.clone(); // clone: need owned for async closure
-    let foreign_phrase = current_card.to_phrase.clone(); // clone: need owned for async closure
-    let from_phrase = current_card.from_phrase.clone(); // clone: need owned for async closure
 
     rsx! {
         div { class: "grid grid-cols-1 lg:grid-cols-4 gap-6",
@@ -223,19 +255,6 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
                     on_flip: move |_| {
                         flipped.set(true);
                         speed.write().reset();
-                        audio_url.set(None);
-                        image_url.set(None);
-                        let phrase = foreign_phrase.clone(); // clone: moving into spawned async
-                        let lang = foreign_lang.clone(); // clone: moving into spawned async
-                        let word = from_phrase.clone(); // clone: moving into spawned async
-                        spawn(async move {
-                            if let Ok(url) = get_audio_data(translation_id, phrase, lang).await {
-                                audio_url.set(Some(url));
-                            }
-                            if let Ok(url) = get_image_data(translation_id, word).await {
-                                image_url.set(Some(url));
-                            }
-                        });
                     },
                     on_rate: move |rating: ReviewRatingDto| {
                         async move {
@@ -249,8 +268,6 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
                                     current_index.set(idx.saturating_add(1));
                                     flipped.set(false);
                                     speed.write().reset();
-                                    audio_url.set(None);
-                                    image_url.set(None);
                                 }
                                 Err(e) => {
                                     tracing::error!("Failed to answer card: {e}");

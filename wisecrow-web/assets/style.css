@@ -153,6 +153,64 @@ select {
     background-size: 1.5em 1.5em;
 }
 
+/* RTL script support */
+[dir="rtl"] {
+    direction: rtl;
+    unicode-bidi: embed;
+    text-align: right;
+}
+
+[dir="rtl"] .text-center { text-align: center; }
+[dir="rtl"] .text-left { text-align: right; }
+
+.dir-rtl { direction: rtl; unicode-bidi: isolate; }
+.dir-ltr { direction: ltr; unicode-bidi: isolate; }
+
+/* Noto Sans font stack for non-Latin scripts */
+@font-face {
+    font-family: 'Noto Sans';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: local('Noto Sans'), local('NotoSans');
+}
+
+@font-face {
+    font-family: 'Noto Sans Arabic';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: local('Noto Sans Arabic'), local('NotoSansArabic');
+}
+
+@font-face {
+    font-family: 'Noto Sans CJK';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: local('Noto Sans CJK SC'), local('Noto Sans CJK JP'), local('NotoSansCJKsc');
+}
+
+@font-face {
+    font-family: 'Noto Sans Hebrew';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: local('Noto Sans Hebrew'), local('NotoSansHebrew');
+}
+
+@font-face {
+    font-family: 'Noto Sans Devanagari';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: local('Noto Sans Devanagari'), local('NotoSansDevanagari');
+}
+
+.font-intl {
+    font-family: 'Noto Sans', 'Noto Sans Arabic', 'Noto Sans Hebrew', 'Noto Sans CJK', 'Noto Sans Devanagari', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
 /* Link styling */
 a {
     text-decoration: none;

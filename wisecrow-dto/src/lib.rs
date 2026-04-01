@@ -44,10 +44,17 @@ pub struct SessionDto {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UserDto {
+    pub id: i32,
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClozeQuizDto {
     pub sentence_with_blank: String,
     pub answer: String,
     pub hint: Option<String>,
+    pub rule_context: Option<RuleContextDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -55,6 +62,15 @@ pub struct MultipleChoiceQuizDto {
     pub question: String,
     pub options: Vec<String>,
     pub correct_index: usize,
+    pub rule_context: Option<RuleContextDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuleContextDto {
+    pub rule_title: String,
+    pub rule_explanation: String,
+    pub cefr_level: String,
+    pub extra_examples: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,10 +79,17 @@ pub enum QuizItemDto {
     MultipleChoice(MultipleChoiceQuizDto),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ScriptDirection {
+    Ltr,
+    Rtl,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LanguageInfo {
     pub code: String,
     pub name: String,
+    pub script_direction: ScriptDirection,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -74,6 +97,150 @@ pub struct SessionSummary {
     pub cards_seen: usize,
     pub total: usize,
     pub streak: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CefrLevelDto {
+    pub code: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GrammarRuleDto {
+    pub id: i32,
+    pub title: String,
+    pub explanation: String,
+    pub cefr_level: String,
+    pub source: String,
+    pub examples: Vec<RuleExampleDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuleExampleDto {
+    pub sentence: String,
+    pub translation: Option<String>,
+    pub is_correct: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GrammarRuleImport {
+    pub title: String,
+    pub explanation: String,
+    pub cefr_level: String,
+    pub examples: Vec<RuleExampleImport>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RuleExampleImport {
+    pub sentence: String,
+    pub translation: Option<String>,
+    #[serde(default = "default_true")]
+    pub is_correct: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncLanguageDto {
+    pub id: i32,
+    pub code: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncTranslationDto {
+    pub id: i32,
+    pub from_language_code: String,
+    pub from_phrase: String,
+    pub to_language_code: String,
+    pub to_phrase: String,
+    pub frequency: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncGrammarRuleDto {
+    pub id: i32,
+    pub language_code: String,
+    pub cefr_level_code: String,
+    pub title: String,
+    pub explanation: String,
+    pub source: String,
+    pub examples: Vec<SyncRuleExampleDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncRuleExampleDto {
+    pub sentence: String,
+    pub translation: Option<String>,
+    pub is_correct: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncProgressDto {
+    pub table: String,
+    pub synced: usize,
+    pub total: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DnbModeDto {
+    AudioWritten,
+    WordTranslation,
+    AudioImage,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DnbConfigDto {
+    pub mode: DnbModeDto,
+    pub n_level: u8,
+    pub interval_ms: u32,
+    pub native_lang: String,
+    pub foreign_lang: String,
+    pub user_id: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DnbTrialDto {
+    pub trial_number: u32,
+    pub n_level: u8,
+    pub audio_phrase: String,
+    pub visual_phrase: String,
+    pub audio_match: bool,
+    pub visual_match: bool,
+    pub interval_ms: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DnbTrialResultDto {
+    pub trial_number: u32,
+    pub audio_response: Option<bool>,
+    pub visual_response: Option<bool>,
+    pub response_time_ms: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DnbAdaptationDto {
+    pub new_n_level: u8,
+    pub new_interval_ms: u32,
+    pub audio_accuracy: f32,
+    pub visual_accuracy: f32,
+    pub should_terminate: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DnbSessionResultsDto {
+    pub session_id: i32,
+    pub mode: DnbModeDto,
+    pub n_level_start: u8,
+    pub n_level_peak: u8,
+    pub n_level_end: u8,
+    pub trials_completed: u32,
+    pub accuracy_audio: Option<f32>,
+    pub accuracy_visual: Option<f32>,
+    pub interval_ms_start: u32,
+    pub interval_ms_end: u32,
 }
 
 const MIN_SPEED_MS: u32 = 500;

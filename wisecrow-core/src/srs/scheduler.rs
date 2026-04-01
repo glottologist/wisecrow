@@ -329,6 +329,29 @@ impl CardManager {
             lapses: new_card.lapses,
         })
     }
+
+    /// Fetches a card by its translation ID, returning `None` if no card exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    pub async fn card_for_translation(
+        pool: &PgPool,
+        translation_id: i32,
+    ) -> Result<Option<CardState>, WisecrowError> {
+        let query = format!(
+            "SELECT {CARD_SELECT_COLUMNS} \
+             FROM cards c \
+             JOIN translations t ON c.translation_id = t.id \
+             WHERE c.translation_id = $1"
+        );
+        let row = sqlx::query_as::<_, CardRow>(&query)
+            .bind(translation_id)
+            .fetch_optional(pool)
+            .await?;
+
+        Ok(row.map(CardState::from_row))
+    }
 }
 
 #[cfg(test)]
