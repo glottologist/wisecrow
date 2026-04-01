@@ -79,7 +79,6 @@ async fn get_image_data(_translation_id: i32, _word: String) -> Result<String, S
     Err(ServerFnError::new("images feature not enabled"))
 }
 
-const DEFAULT_USER_ID: i32 = 1;
 const DEFAULT_DECK_SIZE: u32 = 50;
 const DEFAULT_SPEED_MS: u32 = 3000;
 const TICK_INTERVAL_MS: u64 = 100;
@@ -100,7 +99,7 @@ async fn async_sleep(ms: u64) {
 }
 
 #[component]
-pub fn LearnPage(native: String, foreign: String) -> Element {
+pub fn LearnPage(user_id: i32, native: String, foreign: String) -> Element {
     let mut session: Signal<Option<SessionDto>> = use_signal(|| None);
     let mut current_index = use_signal(|| 0usize);
     let mut flipped = use_signal(|| false);
@@ -118,7 +117,7 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
         let native = native_clone.clone(); // clone: moving into async block
         let foreign = foreign_clone.clone(); // clone: moving into async block
         async move {
-            match resume_session(DEFAULT_USER_ID, native.clone(), foreign.clone()).await {
+            match resume_session(user_id, native.clone(), foreign.clone()).await {
                 // clone: resume may fail, need values for create
                 Ok(Some(s)) => {
                     let idx = usize::try_from(s.current_index).unwrap_or(0);
@@ -130,7 +129,7 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
                 }
                 Ok(None) => {
                     match create_session(
-                        DEFAULT_USER_ID,
+                        user_id,
                         native,
                         foreign,
                         DEFAULT_DECK_SIZE,

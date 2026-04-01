@@ -12,8 +12,8 @@ pub enum Route {
     #[layout(Layout)]
         #[route("/")]
         Home {},
-        #[route("/learn/:native/:foreign")]
-        LearnPage { native: String, foreign: String },
+        #[route("/learn/:user_id/:native/:foreign")]
+        LearnPage { user_id: i32, native: String, foreign: String },
         #[route("/nback/:native/:foreign")]
         NbackPage { native: String, foreign: String },
         #[route("/quiz")]

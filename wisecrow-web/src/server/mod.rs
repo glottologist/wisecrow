@@ -11,12 +11,29 @@ use std::sync::OnceLock;
 use wisecrow::config::Config;
 
 static POOL: OnceLock<PgPool> = OnceLock::new();
+static SYNC_API_KEY: OnceLock<Option<String>> = OnceLock::new();
 
 const MAX_LANG_CODE_LEN: usize = 10;
 
 pub fn pool() -> Result<&'static PgPool, dioxus::prelude::ServerFnError> {
     POOL.get()
         .ok_or_else(|| dioxus::prelude::ServerFnError::new("Database pool not initialized"))
+}
+
+pub fn validate_sync_key(provided_key: &str) -> Result<(), dioxus::prelude::ServerFnError> {
+    let expected = SYNC_API_KEY
+        .get()
+        .ok_or_else(|| dioxus::prelude::ServerFnError::new("Server not initialised"))?;
+
+    match expected {
+        Some(key) if key == provided_key => Ok(()),
+        Some(_) => Err(dioxus::prelude::ServerFnError::new(
+            "Unauthorised: invalid sync API key",
+        )),
+        None => Err(dioxus::prelude::ServerFnError::new(
+            "Sync API key not configured on server. Set WISECROW__SYNC_API_KEY.",
+        )),
+    }
 }
 
 pub fn validate_lang(code: &str) -> Result<(), dioxus::prelude::ServerFnError> {
@@ -61,6 +78,11 @@ pub async fn init_pool() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Database migrations applied");
 
     POOL.set(db_pool).map_err(|_| "Pool already initialized")?;
+
+    let sync_key = cfg.sync_api_key.map(|k| k.expose().to_owned());
+    SYNC_API_KEY
+        .set(sync_key)
+        .map_err(|_| "Sync API key already initialized")?;
 
     Ok(())
 }

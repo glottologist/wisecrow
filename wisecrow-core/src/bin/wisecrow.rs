@@ -460,45 +460,39 @@ async fn handle_nback(args: NbackArgs) -> Result<(), Error> {
 
     let mut engine = wisecrow::dnb::DnbEngine::new(vocab, &config, seed)?;
 
-    info!(
-        "Starting {mode} n-back (N={}) session {}",
-        args.n_level, session_id
-    );
+    crossterm::terminal::enable_raw_mode()?;
+    let mut stdout = std::io::stdout();
+    crossterm::execute!(
+        stdout,
+        crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+        crossterm::cursor::MoveTo(0, 0)
+    )?;
+
+    print_line(
+        &mut stdout,
+        &format!(
+            "Dual N-Back ({mode}) | N={} | [A]=audio match  [L]=visual match  [Enter]=submit  [Q]=quit\r\n",
+            args.n_level
+        ),
+    )?;
+    print_line(&mut stdout, "\r\n")?;
 
     let mut trial_count = 0u32;
-    loop {
-        let trial = engine.next_trial();
-        trial_count = trial_count.saturating_add(1);
+    let result = nback_game_loop(
+        &mut engine,
+        &pool,
+        session_id,
+        &mut stdout,
+        &mut trial_count,
+    )
+    .await;
 
-        println!(
-            "\nTrial {} (N={}) [{} ms]",
-            trial.trial_number, trial.n_level, trial.interval_ms
-        );
-        println!("  Audio: {}", trial.audio_vocab.to_phrase);
-        println!("  Visual: {}", trial.visual_vocab.from_phrase);
-        if trial.audio_match {
-            println!("  [AUDIO MATCH]");
-        }
-        if trial.visual_match {
-            println!("  [VISUAL MATCH]");
-        }
+    crossterm::terminal::disable_raw_mode()?;
+    crossterm::execute!(stdout, crossterm::cursor::Show)?;
+    println!();
 
-        let response = wisecrow::dnb::TrialResponse {
-            audio_response: None,
-            visual_response: None,
-            response_time_ms: None,
-        };
-
-        engine.record_response(response);
-
-        if let Some(last) = engine.completed_trials().last() {
-            wisecrow::dnb::session::DnbSessionRepository::save_trial(&pool, session_id, last)
-                .await?;
-        }
-
-        if engine.should_terminate() || trial_count >= 50 {
-            break;
-        }
+    if let Err(e) = result {
+        error!("Game loop error: {e}");
     }
 
     let state = engine.state();
@@ -527,13 +521,132 @@ async fn handle_nback(args: NbackArgs) -> Result<(), Error> {
 
     wisecrow::dnb::feedback::apply_srs_feedback(&pool, engine.completed_trials()).await?;
 
-    info!(
-        "Session complete: {} trials, N peak={}, audio={:.0}%, visual={:.0}%",
+    println!(
+        "\r\nSession complete: {} trials, N peak={}, audio={:.0}%, visual={:.0}%",
         trial_count,
         state.n_level_peak,
         audio_acc * 100.0,
         visual_acc * 100.0,
     );
+
+    Ok(())
+}
+
+fn print_line(stdout: &mut std::io::Stdout, text: &str) -> Result<(), std::io::Error> {
+    use std::io::Write;
+    write!(stdout, "{text}")?;
+    stdout.flush()
+}
+
+async fn nback_game_loop(
+    engine: &mut wisecrow::dnb::DnbEngine,
+    pool: &PgPool,
+    session_id: i32,
+    stdout: &mut std::io::Stdout,
+    trial_count: &mut u32,
+) -> Result<(), Error> {
+    use std::time::{Duration, Instant};
+
+    const MAX_TRIALS: u32 = 50;
+
+    loop {
+        let trial = engine.next_trial();
+        *trial_count = trial_count.saturating_add(1);
+
+        print_line(
+            stdout,
+            &format!(
+                "\r\n--- Trial {} (N={}) ---\r\n",
+                trial.trial_number, trial.n_level
+            ),
+        )?;
+        print_line(
+            stdout,
+            &format!("  Audio:  {}\r\n", trial.audio_vocab.to_phrase),
+        )?;
+        print_line(
+            stdout,
+            &format!("  Visual: {}\r\n", trial.visual_vocab.from_phrase),
+        )?;
+        print_line(
+            stdout,
+            "  [A] audio match  [L] visual match  [Enter] submit\r\n",
+        )?;
+
+        let mut audio_pressed = false;
+        let mut visual_pressed = false;
+        let start = Instant::now();
+        let deadline = Duration::from_millis(u64::from(trial.interval_ms));
+
+        loop {
+            let remaining = deadline.saturating_sub(start.elapsed());
+            if remaining.is_zero() {
+                print_line(stdout, "  Time up!\r\n")?;
+                break;
+            }
+
+            if crossterm::event::poll(remaining.min(Duration::from_millis(50)))? {
+                if let crossterm::event::Event::Key(key) = crossterm::event::read()? {
+                    if key.kind != crossterm::event::KeyEventKind::Press {
+                        continue;
+                    }
+                    match key.code {
+                        crossterm::event::KeyCode::Char('a')
+                        | crossterm::event::KeyCode::Char('A') => {
+                            audio_pressed = !audio_pressed;
+                            let marker = if audio_pressed { "ON" } else { "off" };
+                            print_line(stdout, &format!("  Audio match: {marker}\r\n"))?;
+                        }
+                        crossterm::event::KeyCode::Char('l')
+                        | crossterm::event::KeyCode::Char('L') => {
+                            visual_pressed = !visual_pressed;
+                            let marker = if visual_pressed { "ON" } else { "off" };
+                            print_line(stdout, &format!("  Visual match: {marker}\r\n"))?;
+                        }
+                        crossterm::event::KeyCode::Enter => break,
+                        crossterm::event::KeyCode::Char('q')
+                        | crossterm::event::KeyCode::Char('Q') => {
+                            return Ok(());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        let elapsed_ms = u32::try_from(start.elapsed().as_millis()).unwrap_or(u32::MAX);
+        let response = wisecrow::dnb::TrialResponse {
+            audio_response: Some(audio_pressed),
+            visual_response: Some(visual_pressed),
+            response_time_ms: Some(elapsed_ms),
+        };
+
+        engine.record_response(response);
+
+        if let Some(last) = engine.completed_trials().last() {
+            let a_ok = if last.audio_correct() {
+                "correct"
+            } else {
+                "wrong"
+            };
+            let v_ok = if last.visual_correct() {
+                "correct"
+            } else {
+                "wrong"
+            };
+            print_line(
+                stdout,
+                &format!("  Result: audio={a_ok}, visual={v_ok}\r\n"),
+            )?;
+
+            wisecrow::dnb::session::DnbSessionRepository::save_trial(pool, session_id, last)
+                .await?;
+        }
+
+        if engine.should_terminate() || *trial_count >= MAX_TRIALS {
+            break;
+        }
+    }
 
     Ok(())
 }

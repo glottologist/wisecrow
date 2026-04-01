@@ -1,13 +1,15 @@
 use dioxus::prelude::*;
 
-use super::pool;
+use super::{pool, validate_sync_key};
 
 const SYNC_PAGE_SIZE: i64 = 500;
 
 #[server]
 pub async fn sync_languages(
+    api_key: String,
     after_id: i32,
 ) -> Result<Vec<wisecrow_dto::SyncLanguageDto>, ServerFnError> {
+    validate_sync_key(&api_key)?;
     let db = pool()?;
     let rows = sqlx::query_as::<_, (i32, String, String)>(
         "SELECT id, code, name FROM languages WHERE id > $1 ORDER BY id LIMIT $2",
@@ -26,8 +28,10 @@ pub async fn sync_languages(
 
 #[server]
 pub async fn sync_translations(
+    api_key: String,
     after_id: i32,
 ) -> Result<Vec<wisecrow_dto::SyncTranslationDto>, ServerFnError> {
+    validate_sync_key(&api_key)?;
     let db = pool()?;
     let rows = sqlx::query_as::<_, (i32, String, String, String, String, i32)>(
         "SELECT t.id, fl.code, t.from_phrase, tl.code, t.to_phrase, t.frequency
@@ -61,8 +65,10 @@ pub async fn sync_translations(
 
 #[server]
 pub async fn sync_grammar_rules(
+    api_key: String,
     after_id: i32,
 ) -> Result<Vec<wisecrow_dto::SyncGrammarRuleDto>, ServerFnError> {
+    validate_sync_key(&api_key)?;
     let db = pool()?;
     let rules = sqlx::query_as::<_, (i32, String, String, String, String, String)>(
         "SELECT gr.id, l.code, cl.code, gr.title, gr.explanation, gr.source

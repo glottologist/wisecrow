@@ -43,6 +43,7 @@ pub struct Config {
     pub llm_api_key: Option<SecureString>,
     pub remote_url: Option<String>,
     pub remote_api_key: Option<SecureString>,
+    pub sync_api_key: Option<SecureString>,
 }
 
 impl Config {
@@ -103,6 +104,7 @@ mod tests {
             llm_api_key: None,
             remote_url: None,
             remote_api_key: None,
+            sync_api_key: None,
         }
     }
 
@@ -118,6 +120,7 @@ mod tests {
             llm_api_key: None,
             remote_url: None,
             remote_api_key: None,
+            sync_api_key: None,
         }
     }
 
@@ -151,6 +154,7 @@ mod tests {
             llm_api_key: None,
             remote_url: None,
             remote_api_key: None,
+            sync_api_key: None,
         };
         assert!(config.database_url().is_err());
     }
@@ -168,6 +172,7 @@ mod tests {
             llm_api_key: None,
             remote_url: None,
             remote_api_key: None,
+            sync_api_key: None,
         };
         let url = config.database_url().unwrap();
         assert_eq!(url.as_ref(), "postgres://direct@host/db");
