@@ -170,7 +170,8 @@ impl CardState {
 pub struct CardManager;
 
 impl CardManager {
-    /// Creates cards for translations that don't already have them.
+    /// Creates cards for translations that don't already have them, scoped to
+    /// the given user.
     ///
     /// # Errors
     ///
@@ -178,18 +179,21 @@ impl CardManager {
     pub async fn ensure_cards(
         pool: &PgPool,
         translation_ids: &[i32],
+        user_id: i32,
     ) -> Result<Vec<i32>, WisecrowError> {
         if translation_ids.is_empty() {
             return Ok(Vec::new());
         }
 
         let ids = sqlx::query_scalar::<_, i32>(
-            "INSERT INTO cards (translation_id)
-             SELECT unnest($1::int[])
-             ON CONFLICT (translation_id) DO UPDATE SET translation_id = cards.translation_id
+            "INSERT INTO cards (translation_id, user_id)
+             SELECT unnest($1::int[]), $2
+             ON CONFLICT (translation_id, user_id)
+                 DO UPDATE SET translation_id = cards.translation_id
              RETURNING id",
         )
         .bind(translation_ids)
+        .bind(user_id)
         .fetch_all(pool)
         .await?;
 
@@ -229,6 +233,7 @@ impl CardManager {
         pool: &PgPool,
         native_lang: &str,
         foreign_lang: &str,
+        user_id: i32,
         limit: u32,
     ) -> Result<Vec<CardState>, WisecrowError> {
         let query = format!(
@@ -237,7 +242,8 @@ impl CardManager {
              JOIN translations t ON c.translation_id = t.id \
              JOIN languages fl ON t.from_language_id = fl.id \
              JOIN languages tl ON t.to_language_id = tl.id \
-             WHERE fl.code = $1 AND tl.code = $2 AND c.due <= NOW() \
+             WHERE fl.code = $1 AND tl.code = $2 \
+               AND c.user_id = $3 AND c.due <= NOW() \
              ORDER BY \
                 CASE c.state \
                     WHEN 3 THEN 0 \
@@ -247,11 +253,12 @@ impl CardManager {
                     ELSE 4 \
                 END, \
                 c.due ASC \
-             LIMIT $3"
+             LIMIT $4"
         );
         let rows = sqlx::query_as::<_, CardRow>(&query)
             .bind(native_lang)
             .bind(foreign_lang)
+            .bind(user_id)
             .bind(i64::from(limit))
             .fetch_all(pool)
             .await?;
@@ -338,15 +345,17 @@ impl CardManager {
     pub async fn card_for_translation(
         pool: &PgPool,
         translation_id: i32,
+        user_id: i32,
     ) -> Result<Option<CardState>, WisecrowError> {
         let query = format!(
             "SELECT {CARD_SELECT_COLUMNS} \
              FROM cards c \
              JOIN translations t ON c.translation_id = t.id \
-             WHERE c.translation_id = $1"
+             WHERE c.translation_id = $1 AND c.user_id = $2"
         );
         let row = sqlx::query_as::<_, CardRow>(&query)
             .bind(translation_id)
+            .bind(user_id)
             .fetch_optional(pool)
             .await?;
 

@@ -34,6 +34,8 @@ dirs = "5"
 dotenvy = "0.15"
 flate2 = "1.0.35"
 image = { version = "0.25", optional = true }
+jieba-rs = "0.9"
+lindera = { version = "3", features = ["embed-ipadic"] }
 indicatif = "0.17.8"
 msedge-tts = { version = "0.2", optional = true }
 pdf-extract = "0.7"
@@ -46,6 +48,7 @@ rodio = { version = "0.19", optional = true }
 rs-fsrs = "1.2"
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 sqlx = { version = "0.7.4", features = ["postgres", "runtime-tokio-rustls", "migrate", "chrono"] }
 thiserror = "2"
 tokio = { version = "1.37.0", features = ["full"] }
@@ -55,6 +58,7 @@ unicode-width = "0.2"
 url = "2.5.0"
 zeroize = { version = "1.8.1", features = ["derive"] }
 zip = "2.2.2"
+kham-core = "0.5.1"
 
 [dev-dependencies]
 proptest = "1.5.0"

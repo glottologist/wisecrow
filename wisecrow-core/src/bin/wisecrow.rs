@@ -12,9 +12,10 @@ use tokio::{
 use tracing::{error, info};
 use wisecrow::{
     cli::{
-        is_supported_language, Cli, Command, DownloadAllArgs, GenerateExercisesArgs,
-        ImportGrammarArgs, ImportPdfArgs, LanguageArgs, LearnArgs, NbackArgs, PrefetchMediaArgs,
-        QuizArgs, SeedGrammarArgs, SyncArgs, SUPPORTED_LANGUAGE_INFO,
+        is_supported_language, Cli, Command, DownloadAllArgs, GenerateExercisesArgs, GlossArgs,
+        GradedReaderArgs, GradedReaderFormat, ImportGrammarArgs, ImportPdfArgs, LanguageArgs,
+        LearnArgs, NbackArgs, PrefetchMediaArgs, PreviewArgs, QuizArgs, SeedGrammarArgs, SyncArgs,
+        SUPPORTED_LANGUAGE_INFO,
     },
     config::Config,
     downloader::DownloadConfig,
@@ -361,6 +362,142 @@ async fn handle_generate_exercises(args: GenerateExercisesArgs) -> Result<(), Er
     Ok(())
 }
 
+async fn handle_gloss(args: GlossArgs) -> Result<(), Error> {
+    let (config, pool) = load_config_and_pool().await?;
+    let provider = wisecrow::llm::create_provider(&config)?;
+    let lang_name = resolve_language_name(&args.lang)?;
+    let gloss = wisecrow::grammar::gloss::generate_or_lookup_with_refresh(
+        &pool,
+        provider.as_ref(),
+        &args.sentence,
+        &args.lang,
+        lang_name,
+        args.refresh,
+    )
+    .await?;
+    println!("{gloss}");
+    Ok(())
+}
+
+async fn handle_graded_reader(args: GradedReaderArgs) -> Result<(), Error> {
+    validate_languages(&args.native_lang, &args.foreign_lang)?;
+    let (config, pool) = load_config_and_pool().await?;
+    let provider = wisecrow::llm::create_provider(&config)?;
+    let lang_name = resolve_language_name(&args.foreign_lang)?;
+    let request = wisecrow::grammar::graded_reader::GradedReaderRequest {
+        native_lang: &args.native_lang,
+        foreign_lang: &args.foreign_lang,
+        foreign_lang_name: lang_name,
+        user_id: args.user_id,
+        cefr: &args.cefr,
+        seed_states: &args.seed_states,
+        seed_min_stability: args.seed_min_stability,
+        seed_limit: args.seed_limit,
+        length_words: args.length_words,
+    };
+    let reader =
+        wisecrow::grammar::graded_reader::generate(&pool, provider.as_ref(), &request).await?;
+    let rendered = match args.format {
+        GradedReaderFormat::Md => reader.to_markdown(),
+        GradedReaderFormat::Html => reader.to_html(),
+    };
+    if let Some(path) = args.output {
+        std::fs::write(&path, rendered)?;
+    } else {
+        print!("{rendered}");
+    }
+    Ok(())
+}
+
+async fn handle_preview(args: PreviewArgs) -> Result<(), Error> {
+    use wisecrow::preview::annotate::{AnnotatedToken, Status};
+
+    validate_languages(&args.native_lang, &args.foreign_lang)?;
+    let (config, pool) = load_config_and_pool().await?;
+
+    let content = std::fs::read_to_string(&args.file).map_err(|e| {
+        WisecrowError::InvalidInput(format!(
+            "Failed to read subtitle file {}: {e}",
+            args.file.display()
+        ))
+    })?;
+
+    let cues = match args.file.extension().and_then(|e| e.to_str()) {
+        Some("vtt") => wisecrow::preview::subtitle::parse_vtt(&content)?,
+        Some("ass" | "ssa") => wisecrow::preview::subtitle::parse_ass(&content)?,
+        _ => wisecrow::preview::subtitle::parse_srt(&content)?,
+    };
+
+    let tokenizer = wisecrow::preview::tokenize::for_language(&args.foreign_lang)?;
+    let mut tokens: Vec<String> = cues.iter().flat_map(|c| tokenizer.tokenize(c)).collect();
+    tokens.sort();
+    tokens.dedup();
+
+    let mut annotated: Vec<AnnotatedToken> = if args.no_srs {
+        tokens
+            .into_iter()
+            .map(|t| AnnotatedToken {
+                token: t,
+                frequency: None,
+                status: Status::Unknown,
+                llm_translation: None,
+            })
+            .collect()
+    } else {
+        wisecrow::preview::annotate::annotate_tokens(
+            &pool,
+            &args.foreign_lang,
+            args.user_id,
+            &tokens,
+        )
+        .await?
+    };
+
+    if args.gloss_unknowns {
+        let provider = wisecrow::llm::create_provider(&config)?;
+        let foreign_name = resolve_language_name(&args.foreign_lang)?;
+        let native_name = resolve_language_name(&args.native_lang)?;
+        wisecrow::preview::annotate::enrich_unknowns_with_llm(
+            &mut annotated,
+            provider.as_ref(),
+            foreign_name,
+            native_name,
+        )
+        .await?;
+    }
+
+    let mut filtered: Vec<AnnotatedToken> = annotated
+        .into_iter()
+        .filter(|a| !args.unknown_only || matches!(a.status, Status::New | Status::Unknown))
+        .collect();
+    filtered.sort_by(|a, b| b.frequency.unwrap_or(0).cmp(&a.frequency.unwrap_or(0)));
+    if let Some(n) = args.top_n {
+        filtered.truncate(usize::try_from(n).unwrap_or(usize::MAX));
+    }
+
+    for a in &filtered {
+        let tag = match a.status {
+            Status::Known => "[known]",
+            Status::Learning => "[learning]",
+            Status::New => "[new]",
+            Status::Unknown => "[?]",
+        };
+        let freq_str = a
+            .frequency
+            .map_or_else(|| "-".to_owned(), |f| f.to_string());
+        match &a.llm_translation {
+            Some(translation) => {
+                println!("{tag:>11} {:>8} {} → {translation}", freq_str, a.token);
+            }
+            None => {
+                println!("{tag:>11} {:>8} {}", freq_str, a.token);
+            }
+        }
+    }
+
+    Ok(())
+}
+
 async fn handle_prefetch_media(args: PrefetchMediaArgs) -> Result<(), Error> {
     validate_languages(&args.native_lang, &args.foreign_lang)?;
     let (config, pool) = load_config_and_pool().await?;
@@ -392,6 +529,8 @@ async fn main() -> Result<(), Error> {
         Command::Download(args) => handle_download(args).await?,
         Command::DownloadAll(args) => handle_download_all(args).await?,
         Command::GenerateExercises(args) => handle_generate_exercises(args).await?,
+        Command::Gloss(args) => handle_gloss(args).await?,
+        Command::GradedReader(args) => handle_graded_reader(args).await?,
         Command::ImportGrammar(args) => handle_import_grammar(args).await?,
         Command::ImportPdf(args) => handle_import_pdf(args).await?,
         Command::Ingest(args) => handle_ingest(args).await?,
@@ -405,6 +544,7 @@ async fn main() -> Result<(), Error> {
             }
         }
         Command::PrefetchMedia(args) => handle_prefetch_media(args).await?,
+        Command::Preview(args) => handle_preview(args).await?,
         Command::Quiz(args) => handle_quiz(args)?,
         Command::SeedGrammar(args) => handle_seed_grammar(args).await?,
         Command::Sync(args) => handle_sync(args).await?,
@@ -519,7 +659,8 @@ async fn handle_nback(args: NbackArgs) -> Result<(), Error> {
     )
     .await?;
 
-    wisecrow::dnb::feedback::apply_srs_feedback(&pool, engine.completed_trials()).await?;
+    wisecrow::dnb::feedback::apply_srs_feedback(&pool, args.user_id, engine.completed_trials())
+        .await?;
 
     println!(
         "\r\nSession complete: {} trials, N peak={}, audio={:.0}%, visual={:.0}%",
@@ -690,6 +831,19 @@ async fn handle_learn(args: LearnArgs) -> Result<(), Error> {
         return Ok(());
     }
 
+    let foreign_lang_name = resolve_language_name(&args.foreign_lang)?.to_owned();
+
+    let gloss_ctx = match wisecrow::llm::create_provider(&config) {
+        Ok(provider) => Some(wisecrow::tui::app::GlossContext {
+            provider: provider.into(),
+            pool: pool.clone(), // clone: PgPool is Arc-based
+        }),
+        Err(e) => {
+            tracing::info!("LLM provider not configured; gloss overlay unavailable: {e}");
+            None
+        }
+    };
+
     let media_ctx = match MediaContext::new(
         pool.clone(), // clone: PgPool is Arc-based
         args.foreign_lang,
@@ -702,7 +856,7 @@ async fn handle_learn(args: LearnArgs) -> Result<(), Error> {
         }
     };
 
-    app::run_tui(pool, session, media_ctx).await?;
+    app::run_tui(pool, session, media_ctx, gloss_ctx, foreign_lang_name).await?;
     Ok(())
 }
 

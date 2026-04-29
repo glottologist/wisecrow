@@ -1,3 +1,4 @@
+pub mod acquisition;
 pub mod learn;
 #[cfg(any(feature = "audio", feature = "images"))]
 pub mod media;

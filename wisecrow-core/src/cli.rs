@@ -237,6 +237,69 @@ pub struct PrefetchMediaArgs {
     pub images: bool,
 }
 
+#[derive(Args)]
+pub struct GlossArgs {
+    #[arg(short, long)]
+    pub sentence: String,
+    #[arg(short, long)]
+    pub lang: String,
+    /// Bypass and overwrite the cached gloss for this sentence (forces LLM re-prompt).
+    #[arg(long, default_value_t = false)]
+    pub refresh: bool,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+pub enum GradedReaderFormat {
+    Md,
+    Html,
+}
+
+#[derive(Args)]
+pub struct PreviewArgs {
+    #[arg(long)]
+    pub file: std::path::PathBuf,
+    #[arg(short, long)]
+    pub native_lang: String,
+    #[arg(short, long)]
+    pub foreign_lang: String,
+    #[arg(long, default_value_t = false)]
+    pub unknown_only: bool,
+    #[arg(long, default_value_t = false)]
+    pub no_srs: bool,
+    #[arg(long)]
+    pub top_n: Option<u32>,
+    /// Use the LLM to translate tokens that aren't in the corpus (Status::Unknown).
+    /// Requires `WISECROW__LLM_PROVIDER` and `WISECROW__LLM_API_KEY`.
+    #[arg(long, default_value_t = false)]
+    pub gloss_unknowns: bool,
+    #[arg(long, default_value = "1")]
+    pub user_id: i32,
+}
+
+#[derive(Args)]
+pub struct GradedReaderArgs {
+    #[arg(short, long)]
+    pub native_lang: String,
+    #[arg(short, long)]
+    pub foreign_lang: String,
+    #[arg(long)]
+    pub cefr: String,
+    #[arg(long, value_delimiter = ',', default_values_t = vec![2_i16])]
+    pub seed_states: Vec<i16>,
+    #[arg(long)]
+    pub seed_min_stability: Option<f32>,
+    #[arg(long, default_value_t = 30)]
+    pub seed_limit: u32,
+    #[arg(long, default_value_t = 200)]
+    pub length_words: u32,
+    #[arg(long, value_enum, default_value_t = GradedReaderFormat::Md)]
+    pub format: GradedReaderFormat,
+    #[arg(long)]
+    pub output: Option<std::path::PathBuf>,
+    #[arg(long, default_value = "1")]
+    pub user_id: i32,
+}
+
 #[derive(Subcommand)]
 pub enum Command {
     #[command(aliases = ["d"])]
@@ -245,6 +308,10 @@ pub enum Command {
     DownloadAll(DownloadAllArgs),
     #[command(aliases = ["ge"])]
     GenerateExercises(GenerateExercisesArgs),
+    #[command(aliases = ["gl"])]
+    Gloss(GlossArgs),
+    #[command(aliases = ["gr"])]
+    GradedReader(GradedReaderArgs),
     #[command(aliases = ["i"])]
     Ingest(LanguageArgs),
     #[command(aliases = ["ig"])]
@@ -259,6 +326,8 @@ pub enum Command {
     ListLanguages,
     #[command(aliases = ["pm"])]
     PrefetchMedia(PrefetchMediaArgs),
+    #[command(aliases = ["pv"])]
+    Preview(PreviewArgs),
     #[command(aliases = ["q"])]
     Quiz(QuizArgs),
     #[command(aliases = ["sg"])]
@@ -280,6 +349,8 @@ mod tests {
             (Command::Download(_), "Download")
                 | (Command::DownloadAll(_), "DownloadAll")
                 | (Command::GenerateExercises(_), "GenerateExercises")
+                | (Command::Gloss(_), "Gloss")
+                | (Command::GradedReader(_), "GradedReader")
                 | (Command::ImportGrammar(_), "ImportGrammar")
                 | (Command::ImportPdf(_), "ImportPdf")
                 | (Command::Ingest(_), "Ingest")
@@ -287,6 +358,7 @@ mod tests {
                 | (Command::ListLanguages, "ListLanguages")
                 | (Command::Nback(_), "Nback")
                 | (Command::PrefetchMedia(_), "PrefetchMedia")
+                | (Command::Preview(_), "Preview")
                 | (Command::Quiz(_), "Quiz")
                 | (Command::SeedGrammar(_), "SeedGrammar")
                 | (Command::Sync(_), "Sync")
@@ -314,6 +386,13 @@ mod tests {
     #[case(&["wisecrow", "nb", "-n", "en", "-f", "de", "--mode", "word_translation"], "Nback")]
     #[case(&["wisecrow", "prefetch-media", "-n", "en", "-f", "es"], "PrefetchMedia")]
     #[case(&["wisecrow", "pm", "-n", "en", "-f", "de"], "PrefetchMedia")]
+    #[case(&["wisecrow", "gloss", "--sentence", "Меня зовут Иван", "--lang", "ru"], "Gloss")]
+    #[case(&["wisecrow", "gl", "--sentence", "casa", "--lang", "es"], "Gloss")]
+    #[case(&["wisecrow", "graded-reader", "-n", "en", "-f", "es", "--cefr", "B1"], "GradedReader")]
+    #[case(&["wisecrow", "gr", "-n", "en", "-f", "es", "--cefr", "A2"], "GradedReader")]
+    #[case(&["wisecrow", "gr", "-n", "en", "-f", "es", "--cefr", "A2", "--seed-states", "2,3"], "GradedReader")]
+    #[case(&["wisecrow", "preview", "--file", "ep.srt", "-n", "en", "-f", "es"], "Preview")]
+    #[case(&["wisecrow", "pv", "--file", "ep.vtt", "-n", "en", "-f", "es", "--unknown-only"], "Preview")]
     fn command_and_alias_parses(#[case] args: &[&str], #[case] expected_variant: &str) {
         let cli = Cli::parse_from(args);
         assert!(

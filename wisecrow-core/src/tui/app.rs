@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
@@ -6,16 +7,124 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 use sqlx::PgPool;
+use tokio::sync::mpsc;
 
 use crate::errors::WisecrowError;
+use crate::llm::LlmProvider;
 use crate::media::MediaContext;
 use crate::srs::scheduler::ReviewRating;
 use crate::srs::session::{Session, SessionManager};
 use crate::tui::speed::SpeedController;
 use crate::tui::widgets::card::CardWidget;
+use crate::tui::widgets::gloss::{GlossDisplay, GlossModal};
 use crate::tui::widgets::stats::StatsWidget;
 
 use super::TICK_RATE_MS;
+
+pub struct GlossContext {
+    pub provider: Arc<dyn LlmProvider>,
+    pub pool: PgPool,
+}
+
+#[derive(Debug)]
+pub enum GlossOutcome {
+    Ready(String),
+    Error(String),
+}
+
+pub struct GlossState {
+    ctx: Option<Arc<GlossContext>>,
+    rx: Option<mpsc::UnboundedReceiver<GlossOutcome>>,
+    tx_template: Option<mpsc::UnboundedSender<GlossOutcome>>,
+    current: Option<GlossOutcome>,
+    loading: bool,
+}
+
+impl GlossState {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            ctx: None,
+            rx: None,
+            tx_template: None,
+            current: None,
+            loading: false,
+        }
+    }
+
+    #[must_use]
+    pub fn with_ctx(ctx: GlossContext) -> Self {
+        let (tx, rx) = mpsc::unbounded_channel();
+        Self {
+            ctx: Some(Arc::new(ctx)),
+            rx: Some(rx),
+            tx_template: Some(tx),
+            current: None,
+            loading: false,
+        }
+    }
+
+    #[must_use]
+    pub fn is_loading(&self) -> bool {
+        self.loading
+    }
+
+    #[must_use]
+    pub fn current(&self) -> Option<&GlossOutcome> {
+        self.current.as_ref()
+    }
+
+    pub fn fetch(&mut self, sentence: String, lang_code: String, lang_name: String) {
+        let (Some(ctx), Some(tx)) = (self.ctx.as_ref(), self.tx_template.as_ref()) else {
+            return;
+        };
+        self.loading = true;
+        self.current = None;
+        let ctx = Arc::clone(ctx); // clone: Arc shared into spawned task
+        let tx = tx.clone(); // clone: sender into spawned task
+        tokio::spawn(async move {
+            let result = crate::grammar::gloss::generate_or_lookup(
+                &ctx.pool,
+                ctx.provider.as_ref(),
+                &sentence,
+                &lang_code,
+                &lang_name,
+            )
+            .await;
+            let outcome = match result {
+                Ok(g) => GlossOutcome::Ready(g),
+                Err(e) => GlossOutcome::Error(e.to_string()),
+            };
+            if let Err(e) = tx.send(outcome) {
+                tracing::warn!("Failed to send gloss outcome: {e}");
+            }
+        });
+    }
+
+    pub fn drain(&mut self) -> bool {
+        let Some(rx) = self.rx.as_mut() else {
+            return false;
+        };
+        let mut changed = false;
+        while let Ok(outcome) = rx.try_recv() {
+            self.current = Some(outcome);
+            self.loading = false;
+            changed = true;
+        }
+        changed
+    }
+
+    pub fn clear(&mut self) {
+        self.current = None;
+        self.loading = false;
+    }
+}
+
+impl Default for GlossState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(any(feature = "audio", feature = "images"))]
 mod media_support {
@@ -164,12 +273,20 @@ struct App {
     speed: SpeedController,
     streak: usize,
     should_quit: bool,
+    foreign_lang_name: String,
+    gloss_state: GlossState,
+    gloss_modal_open: bool,
     #[cfg(any(feature = "audio", feature = "images"))]
     media: Option<media_support::MediaState>,
 }
 
 impl App {
-    fn new(pool: PgPool, session: Session, media_ctx: Option<MediaContext>) -> Self {
+    fn new(
+        pool: PgPool,
+        session: Session,
+        media_ctx: Option<MediaContext>,
+        foreign_lang_name: String,
+    ) -> Self {
         let speed_ms = u32::try_from(session.speed_ms).unwrap_or(3000);
         let current_index = usize::try_from(session.current_index).unwrap_or(0);
         #[cfg(any(feature = "audio", feature = "images"))]
@@ -184,9 +301,17 @@ impl App {
             speed: SpeedController::new(speed_ms),
             streak: 0,
             should_quit: false,
+            foreign_lang_name,
+            gloss_state: GlossState::new(),
+            gloss_modal_open: false,
             #[cfg(any(feature = "audio", feature = "images"))]
             media,
         }
+    }
+
+    fn with_gloss_ctx(mut self, ctx: GlossContext) -> Self {
+        self.gloss_state = GlossState::with_ctx(ctx);
+        self
     }
 
     fn is_session_complete(&self) -> bool {
@@ -275,6 +400,8 @@ impl App {
                 }
                 self.should_quit = true;
             }
+            KeyCode::Char('g') => self.toggle_gloss_modal(),
+            KeyCode::Esc if self.gloss_modal_open => self.close_gloss_modal(),
             KeyCode::Char(' ') if !self.flipped => {
                 self.flipped = true;
                 self.speed.reset();
@@ -296,6 +423,34 @@ impl App {
             _ => {}
         }
         Ok(())
+    }
+
+    fn toggle_gloss_modal(&mut self) {
+        self.gloss_modal_open = !self.gloss_modal_open;
+        if self.gloss_modal_open {
+            if let Some(card) = self.session.cards.get(self.current_index) {
+                self.gloss_state.fetch(
+                    card.to_phrase.clone(),            // clone: owned arg for spawned task
+                    self.session.foreign_lang.clone(), // clone: owned arg for spawned task
+                    self.foreign_lang_name.clone(),    // clone: owned arg for spawned task
+                );
+            }
+        } else {
+            self.gloss_state.clear();
+        }
+    }
+
+    fn close_gloss_modal(&mut self) {
+        self.gloss_modal_open = false;
+        self.gloss_state.clear();
+    }
+
+    fn tick_auto_advance(&mut self, elapsed: Duration) -> bool {
+        if self.gloss_modal_open {
+            return false;
+        }
+        let elapsed_ms = u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX);
+        self.speed.tick(elapsed_ms)
     }
 
     fn draw(&mut self, frame: &mut Frame<'_>) {
@@ -353,7 +508,42 @@ impl App {
             self.speed.is_paused(),
         );
         frame.render_widget(stats, chunks[1]);
+
+        if self.gloss_modal_open {
+            let modal_area = centered_rect(80, 60, area);
+            let display = match self.gloss_state.current() {
+                Some(GlossOutcome::Ready(g)) => GlossDisplay::Ready(g),
+                Some(GlossOutcome::Error(e)) => GlossDisplay::Error(e),
+                None => GlossDisplay::Loading,
+            };
+            frame.render_widget(GlossModal { display }, modal_area);
+        }
     }
+}
+
+fn centered_rect(
+    percent_x: u16,
+    percent_y: u16,
+    area: ratatui::layout::Rect,
+) -> ratatui::layout::Rect {
+    use ratatui::layout::{Constraint, Direction, Layout};
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(area);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }
 
 /// Runs the TUI event loop for a learning session.
@@ -366,9 +556,19 @@ pub async fn run_tui(
     pool: PgPool,
     session: Session,
     media_ctx: Option<MediaContext>,
+    gloss_ctx: Option<GlossContext>,
+    foreign_lang_name: String,
 ) -> Result<(), WisecrowError> {
     let mut terminal = ratatui::init();
-    let result = run_app(&mut terminal, pool, session, media_ctx).await;
+    let result = run_app(
+        &mut terminal,
+        pool,
+        session,
+        media_ctx,
+        gloss_ctx,
+        foreign_lang_name,
+    )
+    .await;
     ratatui::restore();
     result
 }
@@ -378,8 +578,13 @@ async fn run_app(
     pool: PgPool,
     session: Session,
     media_ctx: Option<MediaContext>,
+    gloss_ctx: Option<GlossContext>,
+    foreign_lang_name: String,
 ) -> Result<(), WisecrowError> {
-    let mut app = App::new(pool, session, media_ctx);
+    let mut app = App::new(pool, session, media_ctx, foreign_lang_name);
+    if let Some(ctx) = gloss_ctx {
+        app = app.with_gloss_ctx(ctx);
+    }
     let tick_rate = Duration::from_millis(TICK_RATE_MS);
 
     app.fetch_media_for_current_card();
@@ -389,6 +594,8 @@ async fn run_app(
         if audio_arrived {
             app.play_audio();
         }
+
+        app.gloss_state.drain();
 
         terminal.draw(|frame| app.draw(frame))?;
 
@@ -407,9 +614,100 @@ async fn run_app(
             }
         }
 
-        let elapsed_ms = u32::try_from(start.elapsed().as_millis()).unwrap_or(u32::MAX);
-        if app.speed.tick(elapsed_ms) {
+        if app.tick_auto_advance(start.elapsed()) {
             app.handle_timeout().await?;
         }
+    }
+}
+
+#[cfg(test)]
+mod gloss_state_tests {
+    use super::*;
+    use crate::srs::scheduler::{CardState, CardStatus};
+    use chrono::Utc;
+    use sqlx::postgres::PgPoolOptions;
+
+    fn make_session_with_card() -> Session {
+        Session {
+            id: 1,
+            native_lang: "en".to_owned(),
+            foreign_lang: "ru".to_owned(),
+            deck_size: 1,
+            speed_ms: 3000,
+            current_index: 0,
+            cards: vec![CardState {
+                card_id: 1,
+                translation_id: 1,
+                from_phrase: "my name is Ivan".to_owned(),
+                to_phrase: "Меня зовут Иван".to_owned(),
+                frequency: 100,
+                stability: 0.0,
+                difficulty: 0.0,
+                state: CardStatus::New,
+                due: Utc::now(),
+                reps: 0,
+                lapses: 0,
+            }],
+        }
+    }
+
+    fn lazy_pool() -> PgPool {
+        PgPoolOptions::new()
+            .connect_lazy("postgres://test:test@127.0.0.1:5432/test")
+            .expect("lazy pool construction")
+    }
+
+    impl App {
+        fn test_only_minimal() -> Self {
+            App::new(
+                lazy_pool(),
+                make_session_with_card(),
+                None,
+                "Russian".to_owned(),
+            )
+        }
+    }
+
+    #[tokio::test]
+    async fn gloss_state_starts_idle() {
+        let state = GlossState::new();
+        assert!(!state.is_loading());
+        assert!(state.current().is_none());
+    }
+
+    #[tokio::test]
+    async fn g_keypress_toggles_modal() {
+        let mut app = App::test_only_minimal();
+        assert!(!app.gloss_modal_open);
+        app.handle_key(KeyCode::Char('g')).await.unwrap();
+        assert!(app.gloss_modal_open);
+        app.handle_key(KeyCode::Char('g')).await.unwrap();
+        assert!(!app.gloss_modal_open);
+    }
+
+    #[tokio::test]
+    async fn esc_closes_modal_when_open() {
+        let mut app = App::test_only_minimal();
+        app.gloss_modal_open = true;
+        app.handle_key(KeyCode::Esc).await.unwrap();
+        assert!(!app.gloss_modal_open);
+    }
+
+    #[tokio::test]
+    async fn modal_open_blocks_auto_advance() {
+        let mut app = App::test_only_minimal();
+        app.gloss_modal_open = true;
+        let advanced = app.tick_auto_advance(Duration::from_secs(10));
+        assert!(!advanced, "auto-advance must not fire while modal is open");
+    }
+
+    #[tokio::test]
+    async fn auto_advance_fires_when_modal_closed_and_timer_expires() {
+        let mut app = App::test_only_minimal();
+        let advanced = app.tick_auto_advance(Duration::from_secs(10));
+        assert!(
+            advanced,
+            "auto-advance fires past speed_ms when modal is closed"
+        );
     }
 }

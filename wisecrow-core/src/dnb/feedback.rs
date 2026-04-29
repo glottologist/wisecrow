@@ -8,7 +8,7 @@ use super::CompletedTrial;
 const GOOD_WEIGHT: f64 = 0.5;
 const AGAIN_WEIGHT: f64 = 0.5;
 
-/// Applies SRS feedback from n-back trial results.
+/// Applies SRS feedback from n-back trial results, scoped to the given user.
 ///
 /// For each translation seen during the session, aggregates correct/incorrect
 /// recognitions across both channels. Applies a fractional FSRS rating:
@@ -20,6 +20,7 @@ const AGAIN_WEIGHT: f64 = 0.5;
 /// Returns an error if card lookup or review operations fail.
 pub async fn apply_srs_feedback(
     pool: &PgPool,
+    user_id: i32,
     trials: &[CompletedTrial],
 ) -> Result<u32, WisecrowError> {
     let mut translation_scores: std::collections::HashMap<i32, (u32, u32)> =
@@ -35,7 +36,7 @@ pub async fn apply_srs_feedback(
 
     let mut updated = 0u32;
     for (translation_id, (correct, incorrect)) in &translation_scores {
-        let card = CardManager::card_for_translation(pool, *translation_id).await?;
+        let card = CardManager::card_for_translation(pool, *translation_id, user_id).await?;
         let Some(card) = card else {
             continue;
         };

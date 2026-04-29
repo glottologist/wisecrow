@@ -32,7 +32,8 @@ impl SessionManager {
         deck_size: u32,
         speed_ms: u32,
     ) -> Result<Session, WisecrowError> {
-        let due = CardManager::due_cards(pool, native_lang, foreign_lang, deck_size).await?;
+        let due =
+            CardManager::due_cards(pool, native_lang, foreign_lang, user_id, deck_size).await?;
         let due_count = u32::try_from(due.len()).unwrap_or(u32::MAX);
 
         let mut all_cards = due;
@@ -45,10 +46,11 @@ impl SessionManager {
             if !unlearned.is_empty() {
                 let translation_ids: Vec<i32> =
                     unlearned.iter().map(|v| v.translation_id).collect();
-                CardManager::ensure_cards(pool, &translation_ids).await?;
+                CardManager::ensure_cards(pool, &translation_ids, user_id).await?;
 
                 let new_cards =
-                    CardManager::due_cards(pool, native_lang, foreign_lang, remaining).await?;
+                    CardManager::due_cards(pool, native_lang, foreign_lang, user_id, remaining)
+                        .await?;
                 all_cards.extend(new_cards);
             }
         }

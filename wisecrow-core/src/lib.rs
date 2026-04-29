@@ -10,6 +10,7 @@ pub mod grammar;
 pub mod ingesting;
 pub mod llm;
 pub mod media;
+pub mod preview;
 pub mod srs;
 pub mod sync;
 pub mod tui;

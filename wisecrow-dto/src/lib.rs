@@ -191,6 +191,41 @@ pub enum DnbModeDto {
     AudioImage,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GlossaryEntryDto {
+    pub word: String,
+    pub translation: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GradedReaderDto {
+    pub passage: String,
+    pub glossary: Vec<GlossaryEntryDto>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TokenStatusDto {
+    Known,
+    Learning,
+    New,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnnotatedTokenDto {
+    pub token: String,
+    pub frequency: Option<i32>,
+    pub status: TokenStatusDto,
+    pub llm_translation: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SubtitleFormatDto {
+    Srt,
+    Vtt,
+    Ass,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DnbConfigDto {
     pub mode: DnbModeDto,

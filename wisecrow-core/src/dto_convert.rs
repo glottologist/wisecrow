@@ -1,13 +1,16 @@
 use wisecrow_dto::{
-    CardDto, CardStatusDto, ClozeQuizDto, DnbAdaptationDto, DnbModeDto, DnbSessionResultsDto,
-    DnbTrialDto, GrammarRuleDto, LanguageInfo, MultipleChoiceQuizDto, QuizItemDto, ReviewRatingDto,
-    RuleExampleDto, ScriptDirection, SessionDto, UserDto,
+    AnnotatedTokenDto, CardDto, CardStatusDto, ClozeQuizDto, DnbAdaptationDto, DnbModeDto,
+    DnbSessionResultsDto, DnbTrialDto, GlossaryEntryDto, GradedReaderDto, GrammarRuleDto,
+    LanguageInfo, MultipleChoiceQuizDto, QuizItemDto, ReviewRatingDto, RuleExampleDto,
+    ScriptDirection, SessionDto, TokenStatusDto, UserDto,
 };
 
 use crate::dnb::scoring::AdaptationState;
 use crate::dnb::{DnbMode, Trial};
+use crate::grammar::graded_reader::{GlossaryEntry, GradedReader};
 use crate::grammar::quiz::{ClozeQuiz, MultipleChoiceQuiz};
 use crate::grammar::rules::{GrammarRule, RuleExample};
+use crate::preview::annotate::{AnnotatedToken, Status};
 use crate::srs::scheduler::{CardState, CardStatus, ReviewRating};
 use crate::srs::session::Session;
 use crate::users::User;
@@ -217,6 +220,46 @@ pub fn dnb_results_to_dto(
         accuracy_visual,
         interval_ms_start: state.interval_ms_start,
         interval_ms_end: state.interval_ms,
+    }
+}
+
+impl From<&GlossaryEntry> for GlossaryEntryDto {
+    fn from(entry: &GlossaryEntry) -> Self {
+        Self {
+            word: entry.word.clone(), // clone: building owned DTO from borrowed domain type
+            translation: entry.translation.clone(), // clone: building owned DTO from borrowed domain type
+        }
+    }
+}
+
+impl From<&GradedReader> for GradedReaderDto {
+    fn from(reader: &GradedReader) -> Self {
+        Self {
+            passage: reader.passage.clone(), // clone: building owned DTO from borrowed domain type
+            glossary: reader.glossary.iter().map(GlossaryEntryDto::from).collect(),
+        }
+    }
+}
+
+impl From<&Status> for TokenStatusDto {
+    fn from(s: &Status) -> Self {
+        match s {
+            Status::Known => Self::Known,
+            Status::Learning => Self::Learning,
+            Status::New => Self::New,
+            Status::Unknown => Self::Unknown,
+        }
+    }
+}
+
+impl From<&AnnotatedToken> for AnnotatedTokenDto {
+    fn from(t: &AnnotatedToken) -> Self {
+        Self {
+            token: t.token.clone(), // clone: building owned DTO from borrowed domain type
+            frequency: t.frequency,
+            status: TokenStatusDto::from(&t.status),
+            llm_translation: t.llm_translation.clone(), // clone: building owned DTO from borrowed domain type
+        }
     }
 }
 

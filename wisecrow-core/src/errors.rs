@@ -32,4 +32,18 @@ pub enum WisecrowError {
     LlmError(String),
     #[error("Sync error: {0}")]
     SyncError(String),
+    #[error("Unsupported language: {0}")]
+    UnsupportedLanguage(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unsupported_language_error_displays_lang_code() {
+        let e = WisecrowError::UnsupportedLanguage("zh".to_owned());
+        let s = format!("{e}");
+        assert!(s.contains("zh"));
+    }
 }
