@@ -1,0 +1,16 @@
+target/
+**/target/
+.git/
+.github/
+.direnv/
+.devenv/
+.devbox/
+ansible/
+claude/
+codex/
+docs/book/
+node_modules/
+*.log
+.env
+.env.*
+!.env.example

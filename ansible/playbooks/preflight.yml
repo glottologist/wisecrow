@@ -1,0 +1,52 @@
+---
+# Read-only checks. Run before install.yml.
+# Verifies ssh, rsync, deploy_dir writability, vault secrets are populated,
+# and docker (informational — `common` will install if missing).
+#
+# Usage: ansible-playbook playbooks/preflight.yml --ask-become-pass
+
+- name: Preflight checks
+  hosts: calypso
+  gather_facts: true
+  vars_files: [../vars/secrets.yml]
+  tasks:
+    - name: rsync is available (required for synchronize)
+      ansible.builtin.command: rsync --version
+      changed_when: false
+
+    - name: docker is installed (informational)
+      ansible.builtin.command: docker --version
+      changed_when: false
+      failed_when: false
+      register: docker_check
+    - name: Note missing docker
+      ansible.builtin.debug:
+        msg: "docker not installed — `common` role will install during install.yml"
+      when: docker_check.rc != 0
+
+    - name: docker compose plugin is available (informational)
+      ansible.builtin.command: docker compose version
+      changed_when: false
+      failed_when: false
+      register: compose_check
+    - name: Note missing docker compose plugin
+      ansible.builtin.debug:
+        msg: "docker compose plugin not installed — `common` role will install"
+      when: compose_check.rc != 0
+
+    - name: Postgres password is configured (vault)
+      ansible.builtin.assert:
+        that:
+          - postgres_password is defined
+          - postgres_password | length > 0
+          - not (postgres_password is search('REPLACE_ME'))
+        fail_msg: "postgres_password not set in vars/secrets.yml (vault)"
+      no_log: true
+
+    - name: deploy_dir parent is writable (creates if missing)
+      ansible.builtin.file:
+        path: "{{ deploy_dir }}"
+        state: directory
+        mode: "0755"
+      become: true
+      check_mode: true

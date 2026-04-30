@@ -1,0 +1,25 @@
+---
+# Public-facing config. Secrets live in vars/secrets.yml (vault-encrypted).
+
+# Image tag (overridable per release).
+wisecrow_image_tag: latest
+
+# Compose file shipped to the remote and used by every lifecycle playbook.
+compose_file: docker-compose.deploy.yml
+
+# Web bind. 127.0.0.1 keeps the port off the public internet; put a
+# reverse proxy (Caddy / nginx) in front of it for TLS + auth.
+wisecrow_web_bind: "127.0.0.1"
+wisecrow_web_port: 8080
+
+# Default Postgres identity. Password lives in vars/secrets.yml.
+postgres_user: wisecrow
+postgres_db: wisecrow
+
+# Optional knobs — leave blank to omit from the generated .env.
+llm_provider: ""        # anthropic | openai
+unsplash_api_key: ""
+remote_url: ""
+remote_api_key: ""
+sync_api_key: ""
+rust_log: "wisecrow=info,info"

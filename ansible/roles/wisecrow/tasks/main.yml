@@ -1,0 +1,78 @@
+---
+# Sync the workspace to calypso, render the runtime .env, build the image,
+# and bring the stack up.
+
+- name: Sync repository to {{ deploy_dir }}
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../../"
+    dest: "{{ deploy_dir }}/"
+    delete: false
+    rsync_opts:
+      - "--exclude=target"
+      - "--exclude=.git"
+      - "--exclude=node_modules"
+      - "--exclude=claude/"
+      - "--exclude=codex/"
+      - "--exclude=docs/book"
+      - "--exclude=.direnv"
+      - "--exclude=.devenv"
+      - "--exclude=.devbox"
+      - "--exclude=ansible/vars/secrets.yml"
+
+- name: Render runtime .env from inventory + vault
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ deploy_dir }}/.env"
+    mode: "0600"
+  no_log: true
+
+- name: Build wisecrow image
+  ansible.builtin.command:
+    cmd: docker compose -f {{ compose_file }} build
+    chdir: "{{ deploy_dir }}"
+  become: true
+  changed_when: true
+
+- name: Bring the stack up
+  ansible.builtin.command:
+    cmd: docker compose -f {{ compose_file }} up -d
+    chdir: "{{ deploy_dir }}"
+  become: true
+  register: compose_up
+  changed_when: >-
+    ('Started' in compose_up.stderr) or
+    ('Created' in compose_up.stderr) or
+    ('Recreated' in compose_up.stderr)
+
+- name: Wait for postgres to report healthy
+  ansible.builtin.command:
+    cmd: docker inspect -f '{{ "{{" }}.State.Health.Status{{ "}}" }}' wisecrow-db
+  become: true
+  register: pg_health
+  until: pg_health.stdout.strip() == "healthy"
+  retries: 30
+  delay: 2
+  changed_when: false
+
+- name: Wait for wisecrow-web to report healthy
+  ansible.builtin.command:
+    cmd: docker inspect -f '{{ "{{" }}.State.Health.Status{{ "}}" }}' wisecrow-web
+  become: true
+  register: web_health
+  until: web_health.stdout.strip() == "healthy"
+  retries: 60
+  delay: 3
+  changed_when: false
+  failed_when: false
+
+- name: Smoke test — wisecrow list-languages via the running container
+  ansible.builtin.command:
+    cmd: docker compose -f {{ compose_file }} exec -T wisecrow-web wisecrow list-languages
+    chdir: "{{ deploy_dir }}"
+  become: true
+  register: smoke
+  changed_when: false
+
+- name: Show smoke test (first 5 lines)
+  ansible.builtin.debug:
+    msg: "{{ smoke.stdout_lines[:5] }}"

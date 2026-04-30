@@ -1,0 +1,37 @@
+---
+# Sync the latest source, rebuild the image, restart the stack.
+# Usage: ansible-playbook playbooks/update.yml --ask-become-pass
+
+- name: Update Wisecrow stack
+  hosts: calypso
+  vars_files: [../vars/secrets.yml]
+  tasks:
+    - name: Sync repository
+      ansible.posix.synchronize:
+        src: "{{ playbook_dir }}/../../"
+        dest: "{{ deploy_dir }}/"
+        delete: false
+        rsync_opts:
+          - "--exclude=target"
+          - "--exclude=.git"
+          - "--exclude=node_modules"
+          - "--exclude=claude/"
+          - "--exclude=codex/"
+          - "--exclude=docs/book"
+          - "--exclude=.direnv"
+          - "--exclude=.devenv"
+          - "--exclude=.devbox"
+          - "--exclude=ansible/vars/secrets.yml"
+
+    - name: Render .env (picks up any inventory/vault changes)
+      ansible.builtin.template:
+        src: ../roles/wisecrow/templates/env.j2
+        dest: "{{ deploy_dir }}/.env"
+        mode: "0600"
+      no_log: true
+
+    - name: Rebuild and restart
+      ansible.builtin.command:
+        cmd: docker compose -f {{ compose_file }} up -d --build
+        chdir: "{{ deploy_dir }}"
+      become: true

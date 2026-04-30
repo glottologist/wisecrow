@@ -1,0 +1,24 @@
+---
+# Tail logs from one or both services. Bypass with `--tail=N` via extra-vars.
+# Usage:
+#   ansible-playbook playbooks/logs.yml --extra-vars "service=wisecrow-web tail=200"
+#   ansible-playbook playbooks/logs.yml                       # default: 100 lines, both services
+
+- name: Tail logs
+  hosts: calypso
+  vars_files: [../vars/secrets.yml]
+  vars:
+    service: ""
+    tail: 100
+  tasks:
+    - ansible.builtin.command:
+        cmd: >-
+          docker compose -f {{ compose_file }} logs --no-color --tail={{ tail }}
+          {{ service }}
+        chdir: "{{ deploy_dir }}"
+      become: true
+      register: logs
+      changed_when: false
+
+    - ansible.builtin.debug:
+        var: logs.stdout_lines

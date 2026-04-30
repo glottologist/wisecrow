@@ -13,7 +13,6 @@ pub async fn start_nback_session(
     use wisecrow::dnb::scoring::AdaptationState;
     use wisecrow::dnb::session::DnbSessionRepository;
     use wisecrow::dnb::DnbMode;
-    use wisecrow::dto_convert::DnbTrialDto as _;
 
     let pool = pool()?;
     let mode: DnbMode = DnbModeDto::into(config.mode);

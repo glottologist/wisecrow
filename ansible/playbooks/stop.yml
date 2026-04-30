@@ -1,0 +1,9 @@
+---
+- name: Stop Wisecrow stack
+  hosts: calypso
+  vars_files: [../vars/secrets.yml]
+  tasks:
+    - ansible.builtin.command:
+        cmd: docker compose -f {{ compose_file }} down
+        chdir: "{{ deploy_dir }}"
+      become: true

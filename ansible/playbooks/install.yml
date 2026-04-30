@@ -1,0 +1,19 @@
+---
+# Full bootstrap: install Docker + base packages, sync the repo, build the
+# image, bring the stack up, smoke-test.
+#
+# Usage: ansible-playbook playbooks/install.yml --ask-become-pass
+
+- name: Common provisioning (Docker engine, base packages, deploy dir)
+  hosts: calypso
+  gather_facts: true
+  vars_files: [../vars/secrets.yml]
+  roles:
+    - common
+
+- name: Deploy and start Wisecrow stack
+  hosts: calypso
+  gather_facts: false
+  vars_files: [../vars/secrets.yml]
+  roles:
+    - wisecrow

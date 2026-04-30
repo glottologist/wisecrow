@@ -93,3 +93,7 @@ target/
 
 .devenv
 .direnv
+
+# Ansible deployment vars (contains secrets — vault-encrypted)
+ansible/vars/secrets.yml
+.ansible-vault-wisecrow
