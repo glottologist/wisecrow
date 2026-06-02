@@ -97,3 +97,6 @@ target/
 # Ansible deployment vars (contains secrets — vault-encrypted)
 ansible/vars/secrets.yml
 .ansible-vault-wisecrow
+
+# Local environment variables (contains secrets — API keys, DB credentials)
+.env

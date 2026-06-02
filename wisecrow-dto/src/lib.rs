@@ -233,13 +233,14 @@ pub struct DnbConfigDto {
     pub interval_ms: u32,
     pub native_lang: String,
     pub foreign_lang: String,
-    pub user_id: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DnbTrialDto {
     pub trial_number: u32,
     pub n_level: u8,
+    pub audio_translation_id: i32,
+    pub visual_translation_id: i32,
     pub audio_phrase: String,
     pub visual_phrase: String,
     pub audio_match: bool,

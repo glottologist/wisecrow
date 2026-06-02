@@ -1,4 +1,5 @@
 pub mod client;
+pub mod clients;
 
 use sqlx::PgPool;
 use tracing::info;

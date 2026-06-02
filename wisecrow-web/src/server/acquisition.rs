@@ -1,8 +1,14 @@
+// Study endpoints (e.g. preview_subtitles) expose many independent options; the
+// `#[server]` macro expands them into functions clippy counts as over-long.
+#![allow(clippy::too_many_arguments)]
+
 use dioxus::prelude::*;
 
 use wisecrow::cli::SUPPORTED_LANGUAGE_INFO;
 use wisecrow_dto::{AnnotatedTokenDto, GradedReaderDto, SubtitleFormatDto};
 
+use super::auth::current_user;
+use super::ratelimit::check_llm_quota;
 use super::{pool, validate_lang};
 
 const MAX_SENTENCE_BYTES: usize = 4 * 1024;
@@ -34,6 +40,8 @@ pub async fn gloss_sentence(
     lang: String,
     refresh: bool,
 ) -> Result<String, ServerFnError> {
+    let user = current_user().await?;
+    check_llm_quota(user.id)?;
     if sentence.is_empty() {
         return Err(ServerFnError::new("Sentence cannot be empty"));
     }
@@ -60,7 +68,6 @@ pub async fn gloss_sentence(
 
 #[server]
 pub async fn generate_graded_reader(
-    user_id: i32,
     native: String,
     foreign: String,
     cefr: String,
@@ -69,6 +76,8 @@ pub async fn generate_graded_reader(
     seed_limit: u32,
     length_words: u32,
 ) -> Result<GradedReaderDto, ServerFnError> {
+    let user = current_user().await?;
+    check_llm_quota(user.id)?;
     validate_lang(&native)?;
     validate_lang(&foreign)?;
     let foreign_name = resolve_language_name(&foreign)?;
@@ -78,7 +87,7 @@ pub async fn generate_graded_reader(
         native_lang: &native,
         foreign_lang: &foreign,
         foreign_lang_name: foreign_name,
-        user_id,
+        user_id: user.id,
         cefr: &cefr,
         seed_states: &seed_states,
         seed_min_stability,
@@ -93,7 +102,6 @@ pub async fn generate_graded_reader(
 
 #[server]
 pub async fn preview_subtitles(
-    user_id: i32,
     native: String,
     foreign: String,
     format: SubtitleFormatDto,
@@ -105,6 +113,7 @@ pub async fn preview_subtitles(
 ) -> Result<Vec<AnnotatedTokenDto>, ServerFnError> {
     use wisecrow::preview::annotate::{AnnotatedToken, Status};
 
+    let user = current_user().await?;
     validate_lang(&native)?;
     validate_lang(&foreign)?;
     if content.len() > MAX_SUBTITLE_BYTES {
@@ -139,12 +148,13 @@ pub async fn preview_subtitles(
             })
             .collect()
     } else {
-        wisecrow::preview::annotate::annotate_tokens(db, &foreign, user_id, &tokens)
+        wisecrow::preview::annotate::annotate_tokens(db, &foreign, user.id, &tokens)
             .await
             .map_err(|e| ServerFnError::new(format!("Annotate failed: {e}")))?
     };
 
     if gloss_unknowns {
+        check_llm_quota(user.id)?;
         let provider = load_llm_provider()?;
         let foreign_name = resolve_language_name(&foreign)?;
         let native_name = resolve_language_name(&native)?;

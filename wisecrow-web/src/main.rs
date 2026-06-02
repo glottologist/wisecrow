@@ -1,27 +1,11 @@
-mod components;
-mod router;
-
-#[cfg(feature = "server")]
-mod server;
-
-use dioxus::prelude::*;
+//! Binary entry point. Delegates to the `wisecrow_web` library: under the
+//! `server` feature it serves the fullstack app via the custom router; otherwise
+//! it launches the WASM client.
 
 fn main() {
-    tracing::info!("Starting Wisecrow web UI");
-
     #[cfg(feature = "server")]
-    {
-        tokio::runtime::Runtime::new()
-            .expect("Failed to create tokio runtime")
-            .block_on(server::init_pool())
-            .expect("Failed to initialise database pool");
-    }
+    wisecrow_web::run_server();
 
-    launch(app);
-}
-
-fn app() -> Element {
-    rsx! {
-        Router::<router::Route> {}
-    }
+    #[cfg(not(feature = "server"))]
+    dioxus::prelude::launch(wisecrow_web::app);
 }

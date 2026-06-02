@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 
+use super::auth::current_user;
 use super::pool;
 
 const MAX_IMAGE_BYTES: u64 = 5 * 1024 * 1024;
@@ -16,6 +17,7 @@ pub async fn get_audio_data(
     use wisecrow::media::cache::MediaCache;
     use wisecrow::media::MediaType;
 
+    let _ = current_user().await?;
     let db = pool()?;
     let cache = MediaCache::new(db.clone()) // clone: MediaCache takes owned PgPool
         .map_err(|e| ServerFnError::new(format!("Cache init failed: {e}")))?;
@@ -50,6 +52,7 @@ pub async fn get_image_data(translation_id: i32, word: String) -> Result<String,
     use wisecrow::media::images::fetch_image;
     use wisecrow::media::MediaType;
 
+    let _ = current_user().await?;
     let api_key = {
         let settings = config::Config::builder()
             .add_source(config::Environment::default())

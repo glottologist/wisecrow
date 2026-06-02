@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod cli;
 pub mod config;
 pub mod dnb;
@@ -8,6 +9,7 @@ pub mod files;
 pub mod frequency;
 pub mod grammar;
 pub mod ingesting;
+pub mod lang;
 pub mod llm;
 pub mod media;
 pub mod preview;

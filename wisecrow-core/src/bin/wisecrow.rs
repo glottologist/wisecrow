@@ -15,7 +15,7 @@ use wisecrow::{
         is_supported_language, Cli, Command, DownloadAllArgs, GenerateExercisesArgs, GlossArgs,
         GradedReaderArgs, GradedReaderFormat, ImportGrammarArgs, ImportPdfArgs, LanguageArgs,
         LearnArgs, NbackArgs, PrefetchMediaArgs, PreviewArgs, QuizArgs, SeedGrammarArgs, SyncArgs,
-        SUPPORTED_LANGUAGE_INFO,
+        SyncClientCmd, UserCmd, SUPPORTED_LANGUAGE_INFO,
     },
     config::Config,
     downloader::DownloadConfig,
@@ -24,7 +24,9 @@ use wisecrow::{
     ingesting::Ingester,
     media::MediaContext,
     srs::session::SessionManager,
+    sync::clients::SyncClientRepository,
     tui::{app, quiz},
+    users::UserRepository,
     Langs,
 };
 
@@ -548,6 +550,101 @@ async fn main() -> Result<(), Error> {
         Command::Quiz(args) => handle_quiz(args)?,
         Command::SeedGrammar(args) => handle_seed_grammar(args).await?,
         Command::Sync(args) => handle_sync(args).await?,
+        Command::User { command } => handle_user(command).await?,
+        Command::SyncClient { command } => handle_sync_client(command).await?,
+    }
+    Ok(())
+}
+
+/// Reads a password for account provisioning. Prefers the non-interactive
+/// `WISECROW__INIT_PASSWORD` env var (for scripted/container bootstrap), falling
+/// back to a hidden interactive prompt.
+fn read_password() -> Result<String, Error> {
+    if let Ok(pw) = std::env::var("WISECROW__INIT_PASSWORD") {
+        if !pw.is_empty() {
+            return Ok(pw);
+        }
+    }
+    let pw = rpassword::prompt_password("Password: ")
+        .map_err(|e| anyhow::anyhow!("failed to read password: {e}"))?;
+    if pw.is_empty() {
+        return Err(anyhow::anyhow!("password cannot be empty"));
+    }
+    Ok(pw)
+}
+
+async fn handle_user(cmd: UserCmd) -> Result<(), Error> {
+    let (_config, pool) = load_config_and_pool().await?;
+    match cmd {
+        UserCmd::Add(args) => {
+            let hash = wisecrow::auth::hash_password(&read_password()?)?;
+            let user = UserRepository::create_with_credentials(
+                &pool,
+                &args.email,
+                &args.display_name,
+                &hash,
+                args.admin,
+            )
+            .await?;
+            println!(
+                "Created user id={} email={} admin={}",
+                user.id, args.email, args.admin
+            );
+        }
+        UserCmd::List => {
+            let accounts = UserRepository::list_accounts(&pool).await?;
+            println!("{:<5} {:<30} {:<20} Admin", "ID", "Email", "Name");
+            println!("{}", "-".repeat(64));
+            for (id, email, name, is_admin) in accounts {
+                println!(
+                    "{id:<5} {:<30} {name:<20} {}",
+                    email.unwrap_or_else(|| "-".to_owned()),
+                    if is_admin { "yes" } else { "no" }
+                );
+            }
+        }
+        UserCmd::Passwd(args) => {
+            let hash = wisecrow::auth::hash_password(&read_password()?)?;
+            if UserRepository::set_password(&pool, &args.email, &hash).await? {
+                println!("Password updated for {}", args.email);
+            } else {
+                println!("No user with email {}", args.email);
+            }
+        }
+        UserCmd::Disable(args) => {
+            if UserRepository::disable(&pool, &args.email).await? {
+                println!("Disabled web login for {}", args.email);
+            } else {
+                println!("No user with email {}", args.email);
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn handle_sync_client(cmd: SyncClientCmd) -> Result<(), Error> {
+    let (_config, pool) = load_config_and_pool().await?;
+    match cmd {
+        SyncClientCmd::Add(args) => {
+            let key = SyncClientRepository::add(&pool, &args.name).await?;
+            println!("Created sync client '{}'.", args.name);
+            println!("Key (shown once): {key}");
+        }
+        SyncClientCmd::Revoke(args) => {
+            if SyncClientRepository::revoke(&pool, &args.name).await? {
+                println!("Revoked sync client '{}'", args.name);
+            } else {
+                println!("No active sync client named '{}'", args.name);
+            }
+        }
+        SyncClientCmd::List => {
+            let clients = SyncClientRepository::list(&pool).await?;
+            println!("{:<30} Status", "Name");
+            println!("{}", "-".repeat(40));
+            for (name, revoked) in clients {
+                println!("{name:<30} {}", if revoked { "revoked" } else { "active" });
+            }
+        }
     }
     Ok(())
 }
@@ -565,6 +662,7 @@ async fn handle_nback(args: NbackArgs) -> Result<(), Error> {
 
     let vocab = wisecrow::dnb::session::DnbSessionRepository::load_vocab(
         &pool,
+        args.user_id,
         &args.native_lang,
         &args.foreign_lang,
         100,
@@ -622,6 +720,7 @@ async fn handle_nback(args: NbackArgs) -> Result<(), Error> {
         &mut engine,
         &pool,
         session_id,
+        args.user_id,
         &mut stdout,
         &mut trial_count,
     )
@@ -650,6 +749,7 @@ async fn handle_nback(args: NbackArgs) -> Result<(), Error> {
     wisecrow::dnb::session::DnbSessionRepository::complete_session(
         &pool,
         session_id,
+        args.user_id,
         state,
         trial_count,
         #[expect(clippy::cast_possible_truncation)]
@@ -683,6 +783,7 @@ async fn nback_game_loop(
     engine: &mut wisecrow::dnb::DnbEngine,
     pool: &PgPool,
     session_id: i32,
+    user_id: i32,
     stdout: &mut std::io::Stdout,
     trial_count: &mut u32,
 ) -> Result<(), Error> {
@@ -780,8 +881,10 @@ async fn nback_game_loop(
                 &format!("  Result: audio={a_ok}, visual={v_ok}\r\n"),
             )?;
 
-            wisecrow::dnb::session::DnbSessionRepository::save_trial(pool, session_id, last)
-                .await?;
+            wisecrow::dnb::session::DnbSessionRepository::save_trial(
+                pool, session_id, user_id, last,
+            )
+            .await?;
         }
 
         if engine.should_terminate() || *trial_count >= MAX_TRIALS {

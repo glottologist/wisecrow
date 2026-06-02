@@ -169,6 +169,8 @@ impl From<&Trial> for DnbTrialDto {
         Self {
             trial_number: trial.trial_number,
             n_level: trial.n_level,
+            audio_translation_id: trial.audio_vocab.translation_id,
+            visual_translation_id: trial.visual_vocab.translation_id,
             audio_phrase: trial.audio_vocab.to_phrase.clone(), // clone: building owned DTO from borrowed domain type
             visual_phrase: trial.visual_vocab.from_phrase.clone(), // clone: building owned DTO from borrowed domain type
             audio_match: trial.audio_match,

@@ -2,8 +2,25 @@ use dioxus::prelude::*;
 
 use crate::router::Route;
 
+#[cfg(feature = "server")]
+use crate::server::auth::logout;
+
+#[cfg(not(feature = "server"))]
+mod server_stubs {
+    use dioxus::prelude::*;
+
+    #[server]
+    pub async fn logout() -> Result<(), ServerFnError> {
+        Err(ServerFnError::new("server-only"))
+    }
+}
+
+#[cfg(not(feature = "server"))]
+use server_stubs::*;
+
 #[component]
 pub fn Layout() -> Element {
+    let navigator = use_navigator();
     rsx! {
         div { class: "min-h-screen bg-gray-900 text-white",
             nav { class: "bg-gray-800 border-b border-gray-700 px-6 py-4",
@@ -11,7 +28,7 @@ pub fn Layout() -> Element {
                     Link { to: Route::Home {}, class: "text-2xl font-bold text-emerald-400 hover:text-emerald-300",
                         "Wisecrow"
                     }
-                    div { class: "flex gap-4",
+                    div { class: "flex gap-4 items-center",
                         Link { to: Route::Home {}, class: "px-3 py-2 rounded hover:bg-gray-700 transition",
                             "Home"
                         }
@@ -19,6 +36,14 @@ pub fn Layout() -> Element {
                             to: Route::QuizPage {},
                             class: "px-3 py-2 rounded hover:bg-gray-700 transition",
                             "Quiz"
+                        }
+                        button {
+                            class: "px-3 py-2 rounded hover:bg-gray-700 transition text-gray-300",
+                            onclick: move |_| async move {
+                                let _ = logout().await;
+                                navigator.push(Route::LoginPage {});
+                            },
+                            "Logout"
                         }
                     }
                 }

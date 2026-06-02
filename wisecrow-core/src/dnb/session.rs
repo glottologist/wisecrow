@@ -3,7 +3,7 @@ use sqlx::PgPool;
 use crate::errors::WisecrowError;
 
 use super::scoring::AdaptationState;
-use super::{CompletedTrial, DnbMode, DnbVocab};
+use super::{CompletedTrial, DnbMode, DnbVocab, Trial, TrialResponse};
 
 pub struct DnbSessionRepository;
 
@@ -49,16 +49,20 @@ impl DnbSessionRepository {
     pub async fn save_trial(
         pool: &PgPool,
         session_id: i32,
+        user_id: i32,
         trial: &CompletedTrial,
     ) -> Result<(), WisecrowError> {
-        sqlx::query(
+        // Fail closed: the row is inserted only when the session belongs to the
+        // caller. Zero affected rows means the caller does not own the session.
+        let result = sqlx::query(
             "INSERT INTO dnb_trials \
                 (session_id, trial_number, n_level, \
                  audio_translation_id, visual_translation_id, \
                  audio_match, visual_match, \
                  audio_response, visual_response, \
                  response_time_ms, interval_ms) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+             SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11 \
+             WHERE EXISTS (SELECT 1 FROM dnb_sessions WHERE id = $1 AND user_id = $12)",
         )
         .bind(session_id)
         .bind(i32::try_from(trial.trial.trial_number).unwrap_or(i32::MAX))
@@ -76,8 +80,12 @@ impl DnbSessionRepository {
                 .map(|ms| i32::try_from(ms).unwrap_or(i32::MAX)),
         )
         .bind(i32::try_from(trial.trial.interval_ms).unwrap_or(i32::MAX))
+        .bind(user_id)
         .execute(pool)
         .await?;
+        if result.rows_affected() == 0 {
+            return Err(WisecrowError::Unauthorized);
+        }
 
         Ok(())
     }
@@ -90,12 +98,13 @@ impl DnbSessionRepository {
     pub async fn complete_session(
         pool: &PgPool,
         session_id: i32,
+        user_id: i32,
         state: &AdaptationState,
         trials_completed: u32,
         accuracy_audio: Option<f32>,
         accuracy_visual: Option<f32>,
     ) -> Result<(), WisecrowError> {
-        sqlx::query(
+        let result = sqlx::query(
             "UPDATE dnb_sessions SET \
                 n_level_peak = $2, \
                 n_level_end = $3, \
@@ -104,7 +113,7 @@ impl DnbSessionRepository {
                 accuracy_visual = $6, \
                 interval_ms_end = $7, \
                 completed_at = NOW() \
-             WHERE id = $1",
+             WHERE id = $1 AND user_id = $8",
         )
         .bind(session_id)
         .bind(i16::from(state.n_level_peak))
@@ -113,8 +122,12 @@ impl DnbSessionRepository {
         .bind(accuracy_audio)
         .bind(accuracy_visual)
         .bind(i32::try_from(state.interval_ms).unwrap_or(i32::MAX))
+        .bind(user_id)
         .execute(pool)
         .await?;
+        if result.rows_affected() == 0 {
+            return Err(WisecrowError::Unauthorized);
+        }
 
         Ok(())
     }
@@ -128,6 +141,7 @@ impl DnbSessionRepository {
     /// Returns an error if the database query fails.
     pub async fn load_vocab(
         pool: &PgPool,
+        user_id: i32,
         native_lang: &str,
         foreign_lang: &str,
         limit: u32,
@@ -138,13 +152,14 @@ impl DnbSessionRepository {
              FROM translations t \
              JOIN languages fl ON t.from_language_id = fl.id AND fl.code = $1 \
              JOIN languages tl ON t.to_language_id = tl.id AND tl.code = $2 \
-             LEFT JOIN cards c ON c.translation_id = t.id \
+             LEFT JOIN cards c ON c.translation_id = t.id AND c.user_id = $4 \
              ORDER BY COALESCE(c.stability, 0) DESC, t.frequency DESC \
              LIMIT $3",
         )
         .bind(foreign_lang)
         .bind(native_lang)
         .bind(limit_i64)
+        .bind(user_id)
         .fetch_all(pool)
         .await?;
 
@@ -156,5 +171,136 @@ impl DnbSessionRepository {
                 to_phrase,
             })
             .collect())
+    }
+
+    /// Loads all completed trials for a session, ordered by trial number, so the
+    /// server can recompute accuracy and adaptation statelessly across requests.
+    /// Phrases are not persisted and come back empty — scoring only needs the
+    /// match/response flags.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub async fn load_trials(
+        pool: &PgPool,
+        session_id: i32,
+    ) -> Result<Vec<CompletedTrial>, WisecrowError> {
+        let rows = sqlx::query_as::<
+            _,
+            (
+                i32,
+                i16,
+                i32,
+                i32,
+                bool,
+                bool,
+                Option<bool>,
+                Option<bool>,
+                Option<i32>,
+                i32,
+            ),
+        >(
+            "SELECT trial_number, n_level, audio_translation_id, visual_translation_id, \
+                    audio_match, visual_match, audio_response, visual_response, \
+                    response_time_ms, interval_ms \
+             FROM dnb_trials WHERE session_id = $1 ORDER BY trial_number",
+        )
+        .bind(session_id)
+        .fetch_all(pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(
+                |(tn, nl, aid, vid, am, vm, ar, vr, rt, im)| CompletedTrial {
+                    trial: Trial {
+                        trial_number: u32::try_from(tn).unwrap_or(0),
+                        n_level: u8::try_from(nl).unwrap_or(0),
+                        audio_vocab: DnbVocab {
+                            translation_id: aid,
+                            from_phrase: String::new(),
+                            to_phrase: String::new(),
+                        },
+                        visual_vocab: DnbVocab {
+                            translation_id: vid,
+                            from_phrase: String::new(),
+                            to_phrase: String::new(),
+                        },
+                        audio_match: am,
+                        visual_match: vm,
+                        interval_ms: u32::try_from(im).unwrap_or(0),
+                    },
+                    response: TrialResponse {
+                        audio_response: ar,
+                        visual_response: vr,
+                        response_time_ms: rt.map(|r| u32::try_from(r).unwrap_or(0)),
+                    },
+                },
+            )
+            .collect())
+    }
+
+    /// Loads the live adaptation state for a session owned by `user_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WisecrowError::Unauthorized`] if the session is not owned by the
+    /// caller, or a database error on failure.
+    pub async fn load_state(
+        pool: &PgPool,
+        session_id: i32,
+        user_id: i32,
+    ) -> Result<AdaptationState, WisecrowError> {
+        let (n_end, n_start, n_peak, i_end, i_start, cbs) =
+            sqlx::query_as::<_, (i16, i16, i16, i32, i32, i16)>(
+                "SELECT n_level_end, n_level_start, n_level_peak, interval_ms_end, \
+                        interval_ms_start, consecutive_below_start \
+                 FROM dnb_sessions WHERE id = $1 AND user_id = $2",
+            )
+            .bind(session_id)
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or(WisecrowError::Unauthorized)?;
+
+        Ok(AdaptationState {
+            n_level: u8::try_from(n_end).unwrap_or(1),
+            n_level_start: u8::try_from(n_start).unwrap_or(1),
+            n_level_peak: u8::try_from(n_peak).unwrap_or(1),
+            interval_ms: u32::try_from(i_end).unwrap_or(3000),
+            interval_ms_start: u32::try_from(i_start).unwrap_or(3000),
+            consecutive_below_start: u8::try_from(cbs).unwrap_or(0),
+        })
+    }
+
+    /// Persists the evolved adaptation state for a session owned by `user_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WisecrowError::Unauthorized`] if the session is not owned by the
+    /// caller, or a database error on failure.
+    pub async fn update_state(
+        pool: &PgPool,
+        session_id: i32,
+        user_id: i32,
+        state: &AdaptationState,
+    ) -> Result<(), WisecrowError> {
+        let result = sqlx::query(
+            "UPDATE dnb_sessions SET n_level_end = $1, n_level_peak = $2, \
+                    interval_ms_end = $3, consecutive_below_start = $4 \
+             WHERE id = $5 AND user_id = $6",
+        )
+        .bind(i16::from(state.n_level))
+        .bind(i16::from(state.n_level_peak))
+        .bind(i32::try_from(state.interval_ms).unwrap_or(i32::MAX))
+        .bind(i16::from(state.consecutive_below_start))
+        .bind(session_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(WisecrowError::Unauthorized);
+        }
+        Ok(())
     }
 }

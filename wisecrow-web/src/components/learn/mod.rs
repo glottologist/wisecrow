@@ -24,7 +24,6 @@ mod server_stubs {
 
     #[server]
     pub async fn create_session(
-        user_id: i32,
         native: String,
         foreign: String,
         deck_size: u32,
@@ -35,7 +34,6 @@ mod server_stubs {
 
     #[server]
     pub async fn resume_session(
-        user_id: i32,
         native: String,
         foreign: String,
     ) -> Result<Option<SessionDto>, ServerFnError> {
@@ -99,7 +97,7 @@ async fn async_sleep(ms: u64) {
 }
 
 #[component]
-pub fn LearnPage(user_id: i32, native: String, foreign: String) -> Element {
+pub fn LearnPage(native: String, foreign: String) -> Element {
     let mut session: Signal<Option<SessionDto>> = use_signal(|| None);
     let mut current_index = use_signal(|| 0usize);
     let mut flipped = use_signal(|| false);
@@ -117,7 +115,7 @@ pub fn LearnPage(user_id: i32, native: String, foreign: String) -> Element {
         let native = native_clone.clone(); // clone: moving into async block
         let foreign = foreign_clone.clone(); // clone: moving into async block
         async move {
-            match resume_session(user_id, native.clone(), foreign.clone()).await {
+            match resume_session(native.clone(), foreign.clone()).await {
                 // clone: resume may fail, need values for create
                 Ok(Some(s)) => {
                     let idx = usize::try_from(s.current_index).unwrap_or(0);
@@ -128,14 +126,7 @@ pub fn LearnPage(user_id: i32, native: String, foreign: String) -> Element {
                     session.set(Some(s));
                 }
                 Ok(None) => {
-                    match create_session(
-                        user_id,
-                        native,
-                        foreign,
-                        DEFAULT_DECK_SIZE,
-                        DEFAULT_SPEED_MS,
-                    )
-                    .await
+                    match create_session(native, foreign, DEFAULT_DECK_SIZE, DEFAULT_SPEED_MS).await
                     {
                         Ok(s) => session.set(Some(s)),
                         Err(e) => error_msg.set(Some(format!("Failed to create session: {e}"))),

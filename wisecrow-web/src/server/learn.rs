@@ -4,13 +4,14 @@ use wisecrow::cli::SUPPORTED_LANGUAGE_INFO;
 use wisecrow::dto_convert::language_info;
 use wisecrow::srs::scheduler::{CardManager, ReviewRating};
 use wisecrow::srs::session::SessionManager;
-use wisecrow::users::UserRepository;
-use wisecrow_dto::{CardDto, LanguageInfo, ReviewRatingDto, SessionDto, UserDto};
+use wisecrow_dto::{CardDto, LanguageInfo, ReviewRatingDto, SessionDto};
 
+use super::auth::current_user;
 use super::{pool, validate_lang};
 
 #[server]
 pub async fn list_languages() -> Result<Vec<LanguageInfo>, ServerFnError> {
+    let _ = current_user().await?;
     Ok(SUPPORTED_LANGUAGE_INFO
         .iter()
         .map(|(code, name)| language_info(code, name))
@@ -19,16 +20,16 @@ pub async fn list_languages() -> Result<Vec<LanguageInfo>, ServerFnError> {
 
 #[server]
 pub async fn create_session(
-    user_id: i32,
     native: String,
     foreign: String,
     deck_size: u32,
     speed_ms: u32,
 ) -> Result<SessionDto, ServerFnError> {
+    let user = current_user().await?;
     validate_lang(&native)?;
     validate_lang(&foreign)?;
     let db = pool()?;
-    let session = SessionManager::create(db, user_id, &native, &foreign, deck_size, speed_ms)
+    let session = SessionManager::create(db, user.id, &native, &foreign, deck_size, speed_ms)
         .await
         .map_err(|e| ServerFnError::new(format!("Session creation failed: {e}")))?;
     Ok(SessionDto::from(&session))
@@ -36,14 +37,14 @@ pub async fn create_session(
 
 #[server]
 pub async fn resume_session(
-    user_id: i32,
     native: String,
     foreign: String,
 ) -> Result<Option<SessionDto>, ServerFnError> {
+    let user = current_user().await?;
     validate_lang(&native)?;
     validate_lang(&foreign)?;
     let db = pool()?;
-    let session = SessionManager::resume(db, user_id, &native, &foreign)
+    let session = SessionManager::resume(db, user.id, &native, &foreign)
         .await
         .map_err(|e| ServerFnError::new(format!("Session resume failed: {e}")))?;
     Ok(session.as_ref().map(SessionDto::from))
@@ -55,13 +56,14 @@ pub async fn answer_card(
     card_id: i32,
     rating: ReviewRatingDto,
 ) -> Result<CardDto, ServerFnError> {
+    let user = current_user().await?;
     let db = pool()?;
     let card = CardManager::get_card_by_id(db, card_id)
         .await
         .map_err(|e| ServerFnError::new(format!("Card lookup failed: {e}")))?;
 
     let domain_rating = ReviewRating::from(rating);
-    let updated = SessionManager::answer_card(db, session_id, &card, domain_rating)
+    let updated = SessionManager::answer_card(db, session_id, user.id, &card, domain_rating)
         .await
         .map_err(|e| ServerFnError::new(format!("Answer failed: {e}")))?;
 
@@ -70,8 +72,9 @@ pub async fn answer_card(
 
 #[server]
 pub async fn pause_session(session_id: i32) -> Result<(), ServerFnError> {
+    let user = current_user().await?;
     let db = pool()?;
-    SessionManager::pause(db, session_id)
+    SessionManager::pause(db, session_id, user.id)
         .await
         .map_err(|e| ServerFnError::new(format!("Pause failed: {e}")))?;
     Ok(())
@@ -79,27 +82,10 @@ pub async fn pause_session(session_id: i32) -> Result<(), ServerFnError> {
 
 #[server]
 pub async fn complete_session(session_id: i32) -> Result<(), ServerFnError> {
+    let user = current_user().await?;
     let db = pool()?;
-    SessionManager::complete(db, session_id)
+    SessionManager::complete(db, session_id, user.id)
         .await
         .map_err(|e| ServerFnError::new(format!("Complete failed: {e}")))?;
     Ok(())
-}
-
-#[server]
-pub async fn list_users() -> Result<Vec<UserDto>, ServerFnError> {
-    let db = pool()?;
-    let users = UserRepository::list_all(db)
-        .await
-        .map_err(|e| ServerFnError::new(format!("Failed to list users: {e}")))?;
-    Ok(users.iter().map(UserDto::from).collect())
-}
-
-#[server]
-pub async fn create_user(display_name: String) -> Result<UserDto, ServerFnError> {
-    let db = pool()?;
-    let user = UserRepository::create(db, &display_name)
-        .await
-        .map_err(|e| ServerFnError::new(format!("Failed to create user: {e}")))?;
-    Ok(UserDto::from(&user))
 }

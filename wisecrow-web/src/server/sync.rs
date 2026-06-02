@@ -1,38 +1,90 @@
-use dioxus::prelude::*;
+//! Remote→local corpus sync: authenticated `GET` endpoints the core `SyncClient`
+//! pulls from (`GET /api/sync_*` + `x-api-key` header + `after_id` query). Uses
+//! per-client revocable keys (constant-time), falling back to the legacy single
+//! `WISECROW__SYNC_API_KEY` while no per-client keys are provisioned.
 
-use super::{pool, validate_sync_key};
+use axum::extract::Query;
+use axum::http::{HeaderMap, StatusCode};
+use axum::routing::get;
+use axum::{Json, Router};
+use serde::Deserialize;
+use sqlx::PgPool;
+
+use wisecrow::auth::verify_key_ct;
+use wisecrow::sync::clients::SyncClientRepository;
+use wisecrow_dto::{SyncGrammarRuleDto, SyncLanguageDto, SyncRuleExampleDto, SyncTranslationDto};
+
+use super::{pool, SYNC_API_KEY};
 
 const SYNC_PAGE_SIZE: i64 = 500;
 
-#[server]
-pub async fn sync_languages(
-    api_key: String,
+#[derive(Deserialize)]
+struct AfterId {
+    #[serde(default)]
     after_id: i32,
-) -> Result<Vec<wisecrow_dto::SyncLanguageDto>, ServerFnError> {
-    validate_sync_key(&api_key)?;
-    let db = pool()?;
+}
+
+/// Routes for the corpus sync API, merged into the fullstack router.
+pub fn sync_routes() -> Router {
+    Router::new()
+        .route("/api/sync_languages", get(sync_languages))
+        .route("/api/sync_translations", get(sync_translations))
+        .route("/api/sync_grammar_rules", get(sync_grammar_rules))
+}
+
+fn db_or_500() -> Result<&'static PgPool, StatusCode> {
+    pool().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+/// Authenticates a sync request: a non-revoked per-client key (constant-time),
+/// or the legacy single shared key as a fallback.
+async fn authenticate(db: &PgPool, headers: &HeaderMap) -> Result<(), StatusCode> {
+    let key = headers
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if SyncClientRepository::verify(db, key)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        return Ok(());
+    }
+    if let Some(Some(expected)) = SYNC_API_KEY.get() {
+        if verify_key_ct(expected.as_bytes(), key.as_bytes()) {
+            return Ok(());
+        }
+    }
+    Err(StatusCode::UNAUTHORIZED)
+}
+
+async fn sync_languages(
+    headers: HeaderMap,
+    Query(q): Query<AfterId>,
+) -> Result<Json<Vec<SyncLanguageDto>>, StatusCode> {
+    let db = db_or_500()?;
+    authenticate(db, &headers).await?;
     let rows = sqlx::query_as::<_, (i32, String, String)>(
         "SELECT id, code, name FROM languages WHERE id > $1 ORDER BY id LIMIT $2",
     )
-    .bind(after_id)
+    .bind(q.after_id)
     .bind(SYNC_PAGE_SIZE)
     .fetch_all(db)
     .await
-    .map_err(|e| ServerFnError::new(format!("Sync languages failed: {e}")))?;
-
-    Ok(rows
-        .into_iter()
-        .map(|(id, code, name)| wisecrow_dto::SyncLanguageDto { id, code, name })
-        .collect())
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|(id, code, name)| SyncLanguageDto { id, code, name })
+            .collect(),
+    ))
 }
 
-#[server]
-pub async fn sync_translations(
-    api_key: String,
-    after_id: i32,
-) -> Result<Vec<wisecrow_dto::SyncTranslationDto>, ServerFnError> {
-    validate_sync_key(&api_key)?;
-    let db = pool()?;
+async fn sync_translations(
+    headers: HeaderMap,
+    Query(q): Query<AfterId>,
+) -> Result<Json<Vec<SyncTranslationDto>>, StatusCode> {
+    let db = db_or_500()?;
+    authenticate(db, &headers).await?;
     let rows = sqlx::query_as::<_, (i32, String, String, String, String, i32)>(
         "SELECT t.id, fl.code, t.from_phrase, tl.code, t.to_phrase, t.frequency
          FROM translations t
@@ -40,36 +92,33 @@ pub async fn sync_translations(
          JOIN languages tl ON tl.id = t.to_language_id
          WHERE t.id > $1 ORDER BY t.id LIMIT $2",
     )
-    .bind(after_id)
+    .bind(q.after_id)
     .bind(SYNC_PAGE_SIZE)
     .fetch_all(db)
     .await
-    .map_err(|e| ServerFnError::new(format!("Sync translations failed: {e}")))?;
-
-    Ok(rows
-        .into_iter()
-        .map(
-            |(id, from_code, from_phrase, to_code, to_phrase, frequency)| {
-                wisecrow_dto::SyncTranslationDto {
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(
+        rows.into_iter()
+            .map(
+                |(id, from_code, from_phrase, to_code, to_phrase, frequency)| SyncTranslationDto {
                     id,
                     from_language_code: from_code,
                     from_phrase,
                     to_language_code: to_code,
                     to_phrase,
                     frequency,
-                }
-            },
-        )
-        .collect())
+                },
+            )
+            .collect(),
+    ))
 }
 
-#[server]
-pub async fn sync_grammar_rules(
-    api_key: String,
-    after_id: i32,
-) -> Result<Vec<wisecrow_dto::SyncGrammarRuleDto>, ServerFnError> {
-    validate_sync_key(&api_key)?;
-    let db = pool()?;
+async fn sync_grammar_rules(
+    headers: HeaderMap,
+    Query(q): Query<AfterId>,
+) -> Result<Json<Vec<SyncGrammarRuleDto>>, StatusCode> {
+    let db = db_or_500()?;
+    authenticate(db, &headers).await?;
     let rules = sqlx::query_as::<_, (i32, String, String, String, String, String)>(
         "SELECT gr.id, l.code, cl.code, gr.title, gr.explanation, gr.source
          FROM grammar_rules gr
@@ -77,11 +126,11 @@ pub async fn sync_grammar_rules(
          JOIN cefr_levels cl ON cl.id = gr.cefr_level_id
          WHERE gr.id > $1 ORDER BY gr.id LIMIT $2",
     )
-    .bind(after_id)
+    .bind(q.after_id)
     .bind(SYNC_PAGE_SIZE)
     .fetch_all(db)
     .await
-    .map_err(|e| ServerFnError::new(format!("Sync grammar rules failed: {e}")))?;
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let mut result = Vec::with_capacity(rules.len());
     for (id, lang_code, cefr_code, title, explanation, source) in rules {
@@ -91,9 +140,9 @@ pub async fn sync_grammar_rules(
         .bind(id)
         .fetch_all(db)
         .await
-        .map_err(|e| ServerFnError::new(format!("Sync rule examples failed: {e}")))?;
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-        result.push(wisecrow_dto::SyncGrammarRuleDto {
+        result.push(SyncGrammarRuleDto {
             id,
             language_code: lang_code,
             cefr_level_code: cefr_code,
@@ -102,16 +151,13 @@ pub async fn sync_grammar_rules(
             source,
             examples: examples
                 .into_iter()
-                .map(
-                    |(sentence, translation, is_correct)| wisecrow_dto::SyncRuleExampleDto {
-                        sentence,
-                        translation,
-                        is_correct,
-                    },
-                )
+                .map(|(sentence, translation, is_correct)| SyncRuleExampleDto {
+                    sentence,
+                    translation,
+                    is_correct,
+                })
                 .collect(),
         });
     }
-
-    Ok(result)
+    Ok(Json(result))
 }

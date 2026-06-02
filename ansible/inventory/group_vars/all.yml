@@ -7,10 +7,13 @@ wisecrow_image_tag: latest
 # Compose file shipped to the remote and used by every lifecycle playbook.
 compose_file: docker-compose.deploy.yml
 
-# Web bind. 127.0.0.1 keeps the port off the public internet; put a
-# reverse proxy (Caddy / nginx) in front of it for TLS + auth.
-wisecrow_web_bind: "127.0.0.1"
-wisecrow_web_port: 8080
+# Web bind. The app terminates TLS itself (no reverse proxy), so it binds the
+# public interface on the HTTPS port. Certs are mounted read-only from
+# wisecrow_cert_dir into the container's /certs (see docker-compose.deploy.yml);
+# the runtime user is uid 10001, so the cert files must be readable by it.
+wisecrow_web_bind: "0.0.0.0"
+wisecrow_web_port: 8443
+wisecrow_cert_dir: "./certs"
 
 # Default Postgres identity. Password lives in vars/secrets.yml.
 postgres_user: wisecrow
@@ -22,4 +25,5 @@ unsplash_api_key: ""
 remote_url: ""
 remote_api_key: ""
 sync_api_key: ""
+llm_ratelimit_per_min: ""   # per-user LLM request cap; blank = default (20/min)
 rust_log: "wisecrow=info,info"

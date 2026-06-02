@@ -24,7 +24,9 @@ path = "src/bin/wisecrow.rs"
 [dependencies]
 wisecrow-dto = { path = "../wisecrow-dto" }
 anyhow = "1.0.86"
+argon2 = "0.5"
 async-trait = "0.1"
+base64 = "0.22"
 chrono = { version = ">=0.4,<0.4.44", features = ["serde"] }
 clap = { version = "4.5.4", features = ["derive"] }
 config = { version = "0.14.0" }
@@ -45,11 +47,13 @@ ratatui = "0.29"
 ratatui-image = { version = "1", optional = true }
 reqwest = { version = "0.12.5", default-features = false, features = ["json", "rustls-tls"] }
 rodio = { version = "0.19", optional = true }
+rpassword = "7"
 rs-fsrs = "1.2"
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 sqlx = { version = "0.7.4", features = ["postgres", "runtime-tokio-rustls", "migrate", "chrono"] }
+subtle = "2.6"
 thiserror = "2"
 tokio = { version = "1.37.0", features = ["full"] }
 tracing = { version = "0.1.40" }

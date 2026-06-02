@@ -8,7 +8,6 @@ use url::Url;
 const HERMIT_DAVE_BASE: &str =
     "https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/";
 const BATCH_SIZE: usize = 1000;
-const MAX_LANG_CODE_LENGTH: usize = 10;
 
 pub struct FrequencyUpdater;
 
@@ -23,10 +22,7 @@ impl FrequencyUpdater {
         pool: &PgPool,
         lang_code: &str,
     ) -> Result<usize, WisecrowError> {
-        if lang_code.is_empty()
-            || lang_code.len() > MAX_LANG_CODE_LENGTH
-            || !lang_code.chars().all(|c| c.is_ascii_alphanumeric())
-        {
+        if !crate::lang::is_valid_code(lang_code) {
             return Err(WisecrowError::InvalidInput(format!(
                 "Invalid language code: {lang_code}"
             )));

@@ -1,10 +1,13 @@
 pub mod acquisition;
+pub mod auth;
 pub mod learn;
 #[cfg(any(feature = "audio", feature = "images"))]
 pub mod media;
 pub mod nback;
 pub mod quiz;
+pub mod ratelimit;
 pub mod sync;
+pub mod tls;
 
 use sqlx::PgPool;
 use std::sync::OnceLock;
@@ -14,34 +17,13 @@ use wisecrow::config::Config;
 static POOL: OnceLock<PgPool> = OnceLock::new();
 static SYNC_API_KEY: OnceLock<Option<String>> = OnceLock::new();
 
-const MAX_LANG_CODE_LEN: usize = 10;
-
 pub fn pool() -> Result<&'static PgPool, dioxus::prelude::ServerFnError> {
     POOL.get()
         .ok_or_else(|| dioxus::prelude::ServerFnError::new("Database pool not initialized"))
 }
 
-pub fn validate_sync_key(provided_key: &str) -> Result<(), dioxus::prelude::ServerFnError> {
-    let expected = SYNC_API_KEY
-        .get()
-        .ok_or_else(|| dioxus::prelude::ServerFnError::new("Server not initialised"))?;
-
-    match expected {
-        Some(key) if key == provided_key => Ok(()),
-        Some(_) => Err(dioxus::prelude::ServerFnError::new(
-            "Unauthorised: invalid sync API key",
-        )),
-        None => Err(dioxus::prelude::ServerFnError::new(
-            "Sync API key not configured on server. Set WISECROW__SYNC_API_KEY.",
-        )),
-    }
-}
-
 pub fn validate_lang(code: &str) -> Result<(), dioxus::prelude::ServerFnError> {
-    if code.is_empty()
-        || code.len() > MAX_LANG_CODE_LEN
-        || !code.chars().all(|c| c.is_ascii_alphanumeric())
-    {
+    if !wisecrow::lang::is_valid_code(code) {
         return Err(dioxus::prelude::ServerFnError::new(format!(
             "Invalid language code: {code}"
         )));
@@ -86,4 +68,13 @@ pub async fn init_pool() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|_| "Sync API key already initialized")?;
 
     Ok(())
+}
+
+/// Builds the fullstack axum router with the auth-enrichment middleware layered
+/// on. Used instead of the default `launch` so the middleware applies to every
+/// request; from P4 the TLS bootstrap binds this same router.
+pub fn build_router() -> axum::Router {
+    dioxus::server::router(crate::app)
+        .merge(sync::sync_routes())
+        .layer(axum::middleware::from_fn(auth::auth_enrich_layer))
 }

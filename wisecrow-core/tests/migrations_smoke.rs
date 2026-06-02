@@ -86,3 +86,44 @@ async fn glosses_unique_constraint_enforced() {
         .await
         .expect("cleanup failed");
 }
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn auth_and_sync_schema_present() {
+    let pool = test_pool().await;
+
+    let user_cols: Vec<String> = sqlx::query_scalar(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'users'",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("users column query failed");
+    for col in ["email", "password_hash", "is_admin"] {
+        assert!(
+            user_cols.iter().any(|c| c == col),
+            "users.{col} should exist after migrations"
+        );
+    }
+
+    for table in ["auth_sessions", "sync_clients"] {
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1)",
+        )
+        .bind(table)
+        .fetch_one(&pool)
+        .await
+        .expect("table existence query failed");
+        assert!(exists, "{table} table should exist after migrations");
+    }
+
+    let dnb_cols: Vec<String> = sqlx::query_scalar(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'dnb_sessions'",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("dnb_sessions column query failed");
+    assert!(
+        dnb_cols.iter().any(|c| c == "consecutive_below_start"),
+        "dnb_sessions.consecutive_below_start should exist after migrations"
+    );
+}

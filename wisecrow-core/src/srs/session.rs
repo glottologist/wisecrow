@@ -7,6 +7,7 @@ use crate::vocabulary::VocabularyQuery;
 #[derive(Debug)]
 pub struct Session {
     pub id: i32,
+    pub user_id: i32,
     pub native_lang: String,
     pub foreign_lang: String,
     pub deck_size: i32,
@@ -88,6 +89,7 @@ impl SessionManager {
 
         Ok(Session {
             id: session_id,
+            user_id,
             native_lang: native_lang.to_owned(),
             foreign_lang: foreign_lang.to_owned(),
             deck_size: deck_size_i32,
@@ -146,6 +148,7 @@ impl SessionManager {
 
         Ok(Some(Session {
             id: session_id,
+            user_id,
             native_lang: native_lang.to_owned(),
             foreign_lang: foreign_lang.to_owned(),
             deck_size,
@@ -160,11 +163,16 @@ impl SessionManager {
     /// # Errors
     ///
     /// Returns an error if the database update fails.
-    pub async fn pause(pool: &PgPool, session_id: i32) -> Result<(), WisecrowError> {
-        sqlx::query("UPDATE sessions SET paused_at = NOW() WHERE id = $1")
-            .bind(session_id)
-            .execute(pool)
-            .await?;
+    pub async fn pause(pool: &PgPool, session_id: i32, user_id: i32) -> Result<(), WisecrowError> {
+        let result =
+            sqlx::query("UPDATE sessions SET paused_at = NOW() WHERE id = $1 AND user_id = $2")
+                .bind(session_id)
+                .bind(user_id)
+                .execute(pool)
+                .await?;
+        if result.rows_affected() == 0 {
+            return Err(WisecrowError::Unauthorized);
+        }
         Ok(())
     }
 
@@ -173,11 +181,20 @@ impl SessionManager {
     /// # Errors
     ///
     /// Returns an error if the database update fails.
-    pub async fn complete(pool: &PgPool, session_id: i32) -> Result<(), WisecrowError> {
-        sqlx::query("UPDATE sessions SET completed_at = NOW() WHERE id = $1")
-            .bind(session_id)
-            .execute(pool)
-            .await?;
+    pub async fn complete(
+        pool: &PgPool,
+        session_id: i32,
+        user_id: i32,
+    ) -> Result<(), WisecrowError> {
+        let result =
+            sqlx::query("UPDATE sessions SET completed_at = NOW() WHERE id = $1 AND user_id = $2")
+                .bind(session_id)
+                .bind(user_id)
+                .execute(pool)
+                .await?;
+        if result.rows_affected() == 0 {
+            return Err(WisecrowError::Unauthorized);
+        }
         Ok(())
     }
 
@@ -189,18 +206,27 @@ impl SessionManager {
     pub async fn answer_card(
         pool: &PgPool,
         session_id: i32,
+        user_id: i32,
         card: &CardState,
         rating: ReviewRating,
     ) -> Result<CardState, WisecrowError> {
-        sqlx::query(
+        // Fail closed: the row updates only when the session belongs to the
+        // caller and the card is part of that session. Zero affected rows means
+        // the caller does not own the session (or the card is not in it).
+        let result = sqlx::query(
             "UPDATE session_cards SET answered = TRUE, rating = $1, answered_at = NOW()
-             WHERE session_id = $2 AND card_id = $3",
+             WHERE session_id = $2 AND card_id = $3
+               AND EXISTS (SELECT 1 FROM sessions WHERE id = $2 AND user_id = $4)",
         )
         .bind(rating.to_db())
         .bind(session_id)
         .bind(card.card_id)
+        .bind(user_id)
         .execute(pool)
         .await?;
+        if result.rows_affected() == 0 {
+            return Err(WisecrowError::Unauthorized);
+        }
 
         CardManager::review(pool, card, rating).await
     }

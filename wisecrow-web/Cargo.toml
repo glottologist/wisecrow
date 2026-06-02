@@ -19,13 +19,26 @@ sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "migra
 dotenvy = { version = "0.15", optional = true }
 config = { version = "0.14", optional = true }
 tempfile = { version = "3", optional = true }
+axum = { version = "0.8", optional = true }
+axum-server = { version = "0.7", features = ["tls-rustls"], optional = true }
+axum-extra = { version = "0.10", features = ["cookie"], optional = true }
+tower = { version = "0.5", optional = true }
+tower-http = { version = "0.6", features = ["trace"], optional = true }
+governor = { version = "0.7", optional = true }
+rustls = { version = "0.23", optional = true }
+rustls-pemfile = { version = "2", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 gloo-timers = { version = "0.3", features = ["futures"] }
 
 [features]
 default = []
-server = ["dioxus/server", "dep:wisecrow-core", "dep:tokio", "dep:sqlx", "dep:dotenvy", "dep:config", "dep:tempfile"]
+server = ["dioxus/server", "dep:wisecrow-core", "dep:tokio", "dep:sqlx", "dep:dotenvy", "dep:config", "dep:tempfile", "dep:axum", "dep:axum-server", "dep:axum-extra", "dep:tower", "dep:tower-http", "dep:governor", "dep:rustls", "dep:rustls-pemfile"]
 web = ["dioxus/web"]
 audio = ["server", "wisecrow-core/audio", "dep:base64"]
 images = ["server", "wisecrow-core/images", "dep:base64", "dep:reqwest"]
+
+[dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+rcgen = "0.13"
+tempfile = "3"

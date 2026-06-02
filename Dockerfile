@@ -42,18 +42,27 @@ RUN apt-get update \
         ca-certificates libssl3 tini wget \
  && rm -rf /var/lib/apt/lists/*
 
+# Run as a non-root system user.
+RUN useradd --system --uid 10001 --user-group --no-create-home wisecrow
+
 WORKDIR /app
 
 COPY --from=builder /build/target/release/wisecrow              /usr/local/bin/wisecrow
 COPY --from=builder /build/wisecrow-core/migrations             /app/migrations
 COPY --from=builder /build/wisecrow-web/dist                    /app/web
 
-ENV IP=0.0.0.0 \
-    PORT=8080 \
-    RUST_LOG=info \
-    RUST_BACKTRACE=1
+RUN chown -R wisecrow:wisecrow /app
 
-EXPOSE 8080
+# App-terminated TLS: the server serves HTTPS on 8443 when
+# WISECROW__TLS_CERT_PATH / WISECROW__TLS_KEY_PATH are set (see
+# docker-compose.deploy.yml); otherwise it serves plain HTTP on this port.
+ENV IP=0.0.0.0 \
+    PORT=8443 \
+    RUST_LOG=info \
+    RUST_BACKTRACE=0
+
+EXPOSE 8443
+USER wisecrow
 WORKDIR /app/web
 
 # dx 0.7 names the fullstack server after the crate. The wildcard guards

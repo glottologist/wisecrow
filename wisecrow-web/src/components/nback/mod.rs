@@ -117,7 +117,6 @@ pub fn NbackPage(native: String, foreign: String) -> Element {
                                                     interval_ms: 4000,
                                                     native_lang: nat,
                                                     foreign_lang: for_lang,
-                                                    user_id: 1,
                                                 };
                                                 match start_nback_session(config).await {
                                                     Ok((sid, trial_list)) => {

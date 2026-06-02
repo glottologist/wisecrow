@@ -360,7 +360,14 @@ impl App {
             return Ok(());
         };
 
-        SessionManager::answer_card(&self.pool, self.session.id, &card, rating).await?;
+        SessionManager::answer_card(
+            &self.pool,
+            self.session.id,
+            self.session.user_id,
+            &card,
+            rating,
+        )
+        .await?;
 
         if rating == ReviewRating::Again {
             self.streak = 0;
@@ -375,7 +382,7 @@ impl App {
         self.fetch_media_for_current_card();
 
         if self.is_session_complete() {
-            SessionManager::complete(&self.pool, self.session.id).await?;
+            SessionManager::complete(&self.pool, self.session.id, self.session.user_id).await?;
         }
 
         Ok(())
@@ -396,7 +403,8 @@ impl App {
         match key {
             KeyCode::Char('q') => {
                 if !self.is_session_complete() {
-                    SessionManager::pause(&self.pool, self.session.id).await?;
+                    SessionManager::pause(&self.pool, self.session.id, self.session.user_id)
+                        .await?;
                 }
                 self.should_quit = true;
             }
@@ -630,6 +638,7 @@ mod gloss_state_tests {
     fn make_session_with_card() -> Session {
         Session {
             id: 1,
+            user_id: 1,
             native_lang: "en".to_owned(),
             foreign_lang: "ru".to_owned(),
             deck_size: 1,

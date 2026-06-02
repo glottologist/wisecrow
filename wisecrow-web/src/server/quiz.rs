@@ -4,6 +4,9 @@ use wisecrow::dto_convert::quizzes_to_dto;
 use wisecrow::grammar::quiz::{shuffle_options, QuizGenerator};
 use wisecrow_dto::QuizItemDto;
 
+use super::auth::current_user;
+use super::ratelimit::check_llm_quota;
+
 const MAX_PDF_BYTES: usize = 10 * 1024 * 1024;
 
 #[server]
@@ -11,6 +14,7 @@ pub async fn generate_quiz(
     pdf_bytes: Vec<u8>,
     num_questions: u32,
 ) -> Result<Vec<QuizItemDto>, ServerFnError> {
+    let _ = current_user().await?;
     if pdf_bytes.len() > MAX_PDF_BYTES {
         return Err(ServerFnError::new(format!(
             "PDF exceeds maximum size of {} MB",
@@ -76,6 +80,8 @@ pub async fn generate_rule_quiz(
     use wisecrow::llm::create_provider;
     use wisecrow_dto::RuleContextDto;
 
+    let user = current_user().await?;
+    check_llm_quota(user.id)?;
     let db = super::pool()?;
 
     let settings = config::Config::builder()

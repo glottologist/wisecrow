@@ -301,6 +301,50 @@ pub struct GradedReaderArgs {
 }
 
 #[derive(Subcommand)]
+pub enum UserCmd {
+    /// Create a new account (prompts for a password).
+    Add(UserAddArgs),
+    /// List accounts.
+    List,
+    /// Reset an account's password (prompts for a new one).
+    Passwd(UserEmailArgs),
+    /// Disable web login for an account and revoke its sessions.
+    Disable(UserEmailArgs),
+}
+
+#[derive(Args)]
+pub struct UserAddArgs {
+    #[arg(short, long)]
+    pub email: String,
+    #[arg(short, long)]
+    pub display_name: String,
+    #[arg(long, default_value_t = false)]
+    pub admin: bool,
+}
+
+#[derive(Args)]
+pub struct UserEmailArgs {
+    #[arg(short, long)]
+    pub email: String,
+}
+
+#[derive(Subcommand)]
+pub enum SyncClientCmd {
+    /// Create a sync client key (printed once).
+    Add(SyncClientNameArgs),
+    /// Revoke a sync client key.
+    Revoke(SyncClientNameArgs),
+    /// List sync clients.
+    List,
+}
+
+#[derive(Args)]
+pub struct SyncClientNameArgs {
+    #[arg(short, long)]
+    pub name: String,
+}
+
+#[derive(Subcommand)]
 pub enum Command {
     #[command(aliases = ["d"])]
     Download(LanguageArgs),
@@ -334,6 +378,16 @@ pub enum Command {
     SeedGrammar(SeedGrammarArgs),
     #[command(aliases = ["s"])]
     Sync(SyncArgs),
+    #[command(aliases = ["u"])]
+    User {
+        #[command(subcommand)]
+        command: UserCmd,
+    },
+    #[command(aliases = ["sc"])]
+    SyncClient {
+        #[command(subcommand)]
+        command: SyncClientCmd,
+    },
 }
 
 #[cfg(test)]
@@ -445,5 +499,43 @@ mod tests {
             let is_known = SUPPORTED_LANGUAGE_INFO.iter().any(|(c, _)| *c == s);
             prop_assert_eq!(is_supported_language(&s), is_known);
         }
+    }
+
+    #[test]
+    fn parses_user_and_sync_client_subcommands() {
+        assert!(matches!(
+            Cli::parse_from([
+                "wisecrow",
+                "user",
+                "add",
+                "--email",
+                "a@b.c",
+                "--display-name",
+                "A",
+                "--admin",
+            ])
+            .command,
+            Command::User {
+                command: UserCmd::Add(_)
+            }
+        ));
+        assert!(matches!(
+            Cli::parse_from(["wisecrow", "u", "list"]).command,
+            Command::User {
+                command: UserCmd::List
+            }
+        ));
+        assert!(matches!(
+            Cli::parse_from(["wisecrow", "sync-client", "add", "--name", "laptop"]).command,
+            Command::SyncClient {
+                command: SyncClientCmd::Add(_)
+            }
+        ));
+        assert!(matches!(
+            Cli::parse_from(["wisecrow", "sc", "revoke", "--name", "laptop"]).command,
+            Command::SyncClient {
+                command: SyncClientCmd::Revoke(_)
+            }
+        ));
     }
 }
