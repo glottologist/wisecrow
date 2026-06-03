@@ -1,0 +1,37 @@
+#!/bin/sh
+# certbot --manual hook for DNS-01 via CNAME delegation to deSEC — installed by
+# the wisecrow Ansible role.
+#
+# Let's Encrypt resolves _acme-challenge.<wisecrow domain>, follows the static
+# IONOS CNAME to _acme-challenge.<deSEC domain>, and reads the TXT there. This
+# hook upserts (auth) or clears (cleanup) that TXT in the deSEC zone over the
+# REST API. certbot records it in the renewal config, so `certbot renew` (run
+# by the systemd timer) re-runs it unattended. Credentials are read from
+# desec.env so they are present at renewal time, not just at issuance.
+set -eu
+
+# shellcheck source=/dev/null
+. /etc/letsencrypt/desec.env   # DESEC_TOKEN, DESEC_DOMAIN, DESEC_PROPAGATION
+
+api="https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/"
+hdr_auth="Authorization: Token ${DESEC_TOKEN}"
+hdr_type="Content-Type: application/json"
+
+case "${1:-}" in
+  auth)
+    # shellcheck disable=SC2154  # CERTBOT_VALIDATION is set by certbot
+    curl -fsS -X PATCH "$api" -H "$hdr_auth" -H "$hdr_type" \
+      -d "[{\"subname\":\"_acme-challenge\",\"type\":\"TXT\",\"ttl\":3600,\"records\":[\"\\\"${CERTBOT_VALIDATION}\\\"\"]}]" \
+      >/dev/null
+    sleep "${DESEC_PROPAGATION:-60}"
+    ;;
+  cleanup)
+    curl -fsS -X PATCH "$api" -H "$hdr_auth" -H "$hdr_type" \
+      -d "[{\"subname\":\"_acme-challenge\",\"type\":\"TXT\",\"ttl\":3600,\"records\":[]}]" \
+      >/dev/null
+    ;;
+  *)
+    echo "usage: $0 auth|cleanup" >&2
+    exit 2
+    ;;
+esac

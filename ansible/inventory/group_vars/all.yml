@@ -26,17 +26,22 @@ wisecrow_tls_renewal_hook: true
 
 # Obtain (and auto-renew) the Let's Encrypt cert via certbot DNS-01. calypso
 # shares this host with the trading stack, whose Caddy owns :80/:443, so
-# HTTP-01 / --standalone is not available — DNS-01 needs no inbound ports.
-# IONOS has no native certbot plugin, so the third-party certbot-dns-ionos
-# plugin is pip-installed beside the apt certbot, whose systemd timer drives
+# HTTP-01 / --standalone is unavailable — DNS-01 needs no inbound ports.
+# IONOS DNS has no usable API on this account, so the _acme-challenge record is
+# CNAME-delegated to a free deSEC zone: certbot runs --manual and a hook writes
+# the TXT to deSEC over its REST API. The apt certbot's systemd timer drives
 # renewals. Disable for self-signed or externally-managed certificates.
 wisecrow_tls_obtain_cert: true
 wisecrow_tls_domain: "wisecrow.glottologist.co.uk"   # public FQDN
 wisecrow_tls_email: "jason@ridgway-taylor.co.uk"     # Let's Encrypt expiry-notice contact
 
-# IONOS DNS is slow to propagate; certbot waits this many seconds before asking
-# ACME to validate the TXT record. Lower only if your zone propagates faster.
-wisecrow_certbot_dns_propagation: 900
+# deSEC delegation zone that holds the _acme-challenge TXT. Create it free at
+# desec.io, then add a one-off CNAME in IONOS:
+#   _acme-challenge.wisecrow  ->  _acme-challenge.<this value>
+wisecrow_desec_domain: ""    # e.g. wisecrow-acme.dedyn.io (required)
+
+# Seconds to wait after writing the TXT to deSEC before ACME validates.
+wisecrow_desec_propagation: 60
 
 # Default Postgres identity. Password lives in vars/secrets.yml.
 postgres_user: wisecrow

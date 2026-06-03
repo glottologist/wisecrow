@@ -35,58 +35,58 @@
 
 # --- TLS: obtain and install the cert before the server binds it ----------
 # calypso shares this host with the trading stack, whose Caddy owns :80/:443,
-# so the cert is issued over DNS-01 (no inbound ports). IONOS needs the
-# third-party certbot-dns-ionos plugin; the apt certbot's systemd timer renews
-# thereafter and runs the deploy-hook installed below.
+# so the cert is issued over DNS-01 (no inbound ports). IONOS has no usable DNS
+# API here, so _acme-challenge is CNAME-delegated to a free deSEC zone: certbot
+# runs --manual and the hook below writes the TXT via the deSEC REST API. The
+# apt certbot's systemd timer renews thereafter and runs the reload deploy-hook.
 - name: Assert TLS issuance inputs are present
   ansible.builtin.assert:
     that:
       - (wisecrow_tls_domain | default('')) | length > 0
       - (wisecrow_tls_email | default('')) | length > 0
-      - (wisecrow_ionos_prefix | default('')) | length > 0
-      - (wisecrow_ionos_secret | default('')) | length > 0
+      - (wisecrow_desec_domain | default('')) | length > 0
+      - (wisecrow_desec_token | default('')) | length > 0
     fail_msg: >-
       wisecrow_tls_obtain_cert is true but one of wisecrow_tls_domain,
-      wisecrow_tls_email, wisecrow_ionos_prefix or wisecrow_ionos_secret is
-      unset (the IONOS values live in vars/secrets.yml).
+      wisecrow_tls_email, wisecrow_desec_domain or wisecrow_desec_token is
+      unset (wisecrow_desec_token lives in vars/secrets.yml).
   when: wisecrow_tls_obtain_cert | bool
 
-- name: Install certbot and pip
+- name: Install certbot and curl
   ansible.builtin.apt:
-    name: [certbot, python3-pip]
+    name: [certbot, curl]
     state: present
   become: true
   when: wisecrow_tls_obtain_cert | bool
 
-- name: Install the certbot-dns-ionos plugin (IONOS has no native certbot plugin)
-  ansible.builtin.pip:
-    name: certbot-dns-ionos
-    state: present
-    extra_args: "--break-system-packages"
-  become: true
-  when: wisecrow_tls_obtain_cert | bool
-
-- name: Write the IONOS DNS credentials for certbot
-  ansible.builtin.copy:
-    dest: /etc/letsencrypt/ionos.ini
+- name: Write the deSEC API credentials for the challenge hook
+  ansible.builtin.template:
+    src: desec.env.j2
+    dest: /etc/letsencrypt/desec.env
     owner: root
     group: root
     mode: "0600"
-    content: |
-      dns_ionos_prefix = {{ wisecrow_ionos_prefix }}
-      dns_ionos_secret = {{ wisecrow_ionos_secret }}
-      dns_ionos_endpoint = https://api.hosting.ionos.com
   become: true
   no_log: true
   when: wisecrow_tls_obtain_cert | bool
 
-- name: Obtain the Let's Encrypt certificate via DNS-01 (IONOS)
+- name: Install the deSEC DNS-01 challenge hook
+  ansible.builtin.template:
+    src: desec-hook.sh.j2
+    dest: /etc/letsencrypt/desec-hook.sh
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+  when: wisecrow_tls_obtain_cert | bool
+
+- name: Obtain the Let's Encrypt certificate via DNS-01 (deSEC delegation)
   ansible.builtin.command:
     cmd: >-
       certbot certonly --non-interactive --agree-tos
-      --authenticator dns-ionos
-      --dns-ionos-credentials /etc/letsencrypt/ionos.ini
-      --dns-ionos-propagation-seconds {{ wisecrow_certbot_dns_propagation }}
+      --manual --preferred-challenges dns
+      --manual-auth-hook "/etc/letsencrypt/desec-hook.sh auth"
+      --manual-cleanup-hook "/etc/letsencrypt/desec-hook.sh cleanup"
       --email {{ wisecrow_tls_email }}
       --domain {{ wisecrow_tls_domain }}
       --keep-until-expiring

@@ -37,24 +37,30 @@ already listening on the web port.
 By default the `wisecrow` Ansible role obtains and renews a Let's Encrypt
 certificate over the **DNS-01** challenge — no inbound ports are touched, which
 is required here because the trading stack's Caddy already owns `:80`/`:443`
-(see [Shared host](#shared-host)). DNS-01 is driven through IONOS with the
-third-party `certbot-dns-ionos` plugin.
+(see [Shared host](#shared-host)).
 
-Set the public hostname and contact in `inventory/group_vars/all.yml`:
+IONOS has no usable DNS API on this account, so the challenge is **CNAME-
+delegated** to a free [deSEC](https://desec.io) zone: certbot runs `--manual`
+and a hook writes the `_acme-challenge` TXT to deSEC over its REST API, while
+IONOS keeps serving the rest of the zone. One-time setup:
 
-- `wisecrow_tls_domain` — the public FQDN, e.g. `wisecrow.glottologist.co.uk`.
-- `wisecrow_tls_email` — Let's Encrypt registration / expiry contact.
+1. Create a free deSEC account and a delegation domain (e.g.
+   `wisecrow-acme.dedyn.io`), then a token under **Token Management**.
+2. In the IONOS DNS panel add a single static CNAME:
+   `_acme-challenge.wisecrow` → `_acme-challenge.wisecrow-acme.dedyn.io`.
+3. Set in `inventory/group_vars/all.yml`:
+   - `wisecrow_tls_domain` — the public FQDN, e.g. `wisecrow.glottologist.co.uk`.
+   - `wisecrow_tls_email` — Let's Encrypt registration / expiry contact.
+   - `wisecrow_desec_domain` — the deSEC zone, e.g. `wisecrow-acme.dedyn.io`.
+4. Put the deSEC token in the vault as `wisecrow_desec_token` (step 2).
 
-…and the IONOS API key (from developer.hosting.ionos.de, shown as
-`<prefix>.<secret>`) in the vault, split across `wisecrow_ionos_prefix` and
-`wisecrow_ionos_secret` (step 2). On `install.yml` the role then pip-installs
-the plugin, issues the cert, copies `fullchain.pem` + `privkey.pem` into the
-cert directory with ownership for uid 10001, and installs a renewal deploy-hook
-so future renewals reload the running container automatically.
+On `install.yml` the role installs the challenge hook, issues the cert, copies
+`fullchain.pem` + `privkey.pem` into the cert directory with ownership for uid
+10001, and installs a renewal deploy-hook so future renewals reload the running
+container automatically.
 
-> IONOS DNS propagates slowly, so issuance waits
-> `wisecrow_certbot_dns_propagation` seconds (default 900) before ACME
-> validates — the first deploy pauses for several minutes here.
+> After writing the TXT the hook waits `wisecrow_desec_propagation` seconds
+> (default 60) before ACME validates.
 
 **Bringing your own certificate instead.** Set `wisecrow_tls_obtain_cert:
 false` and place `fullchain.pem` + `privkey.pem` in the cert directory
@@ -91,9 +97,8 @@ ansible-vault encrypt ansible/vars/secrets.yml
   update the vault.
 - `sync_api_key_secret` is the optional legacy single sync key; prefer per-client
   keys (step 5).
-- `wisecrow_ionos_prefix` / `wisecrow_ionos_secret` are the two halves of the
-  IONOS DNS API key used for DNS-01 issuance (step 1). Leave blank if
-  `wisecrow_tls_obtain_cert` is false.
+- `wisecrow_desec_token` is the deSEC API token used to write the DNS-01
+  challenge record (step 1). Leave blank if `wisecrow_tls_obtain_cert` is false.
 
 ## 3. Build and start
 
