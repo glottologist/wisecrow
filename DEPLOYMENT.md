@@ -15,31 +15,60 @@ covers a production deployment to the `calypso` host.
 There is no reverse proxy: the application owns TLS termination and certificate
 loading.
 
+### Shared host
+
+calypso also runs the trading stack, whose Caddy already binds `:80` and `:443`.
+Wisecrow therefore serves on `:8443` (free on this host) and never uses `:80`/
+`:443`. Because those ports are taken, the certificate is obtained over the
+DNS-01 challenge rather than HTTP-01/`--standalone` (step 1). The `install.yml`
+play also refuses to start if anything other than wisecrow's own container is
+already listening on the web port.
+
 ## Prerequisites
 
 - Docker and the Compose plugin on calypso.
-- A TLS certificate and private key for the public hostname.
+- A public DNS hostname for wisecrow and an IONOS DNS API key (for automated
+  DNS-01 issuance), or your own certificate to drop in (step 1).
 - Ansible on the control machine (to run the `ansible/` playbooks), or run
   `docker compose` directly on the host.
 
 ## 1. TLS certificates
 
-Provide a PEM chain and key in the cert directory (`wisecrow_cert_dir`, default
-`./certs` next to the compose file):
+By default the `wisecrow` Ansible role obtains and renews a Let's Encrypt
+certificate over the **DNS-01** challenge — no inbound ports are touched, which
+is required here because the trading stack's Caddy already owns `:80`/`:443`
+(see [Shared host](#shared-host)). DNS-01 is driven through IONOS with the
+third-party `certbot-dns-ionos` plugin.
 
-- `fullchain.pem` — the certificate chain.
-- `privkey.pem` — the private key.
+Set the public hostname and contact in `inventory/group_vars/all.yml`:
 
-The container runs as uid 10001, so the files must be readable by it:
+- `wisecrow_tls_domain` — the public FQDN, e.g. `wisecrow.glottologist.co.uk`.
+- `wisecrow_tls_email` — Let's Encrypt registration / expiry contact.
+
+…and the IONOS API key (from developer.hosting.ionos.de, shown as
+`<prefix>.<secret>`) in the vault, split across `wisecrow_ionos_prefix` and
+`wisecrow_ionos_secret` (step 2). On `install.yml` the role then pip-installs
+the plugin, issues the cert, copies `fullchain.pem` + `privkey.pem` into the
+cert directory with ownership for uid 10001, and installs a renewal deploy-hook
+so future renewals reload the running container automatically.
+
+> IONOS DNS propagates slowly, so issuance waits
+> `wisecrow_certbot_dns_propagation` seconds (default 900) before ACME
+> validates — the first deploy pauses for several minutes here.
+
+**Bringing your own certificate instead.** Set `wisecrow_tls_obtain_cert:
+false` and place `fullchain.pem` + `privkey.pem` in the cert directory
+(`wisecrow_cert_dir`, default `./certs` next to the compose file) yourself. The
+container runs as uid 10001, so the files must be readable by it:
 
 ```sh
 sudo chown root:10001 certs/privkey.pem && sudo chmod 0640 certs/privkey.pem
 sudo chmod 0644 certs/fullchain.pem
 ```
 
-Obtain certificates however you prefer (Let's Encrypt via certbot, an internal
-CA, etc.). Renewal is the operator's responsibility — the server loads certs at
-start-up, so restart the container after a renewal:
+The server loads certs only at start-up, so restart the container after any
+out-of-band renewal (set `wisecrow_tls_renewal_hook: false` to leave the
+auto-reload hook out entirely):
 
 ```sh
 docker compose -f docker-compose.deploy.yml restart wisecrow-web
@@ -62,6 +91,9 @@ ansible-vault encrypt ansible/vars/secrets.yml
   update the vault.
 - `sync_api_key_secret` is the optional legacy single sync key; prefer per-client
   keys (step 5).
+- `wisecrow_ionos_prefix` / `wisecrow_ionos_secret` are the two halves of the
+  IONOS DNS API key used for DNS-01 issuance (step 1). Leave blank if
+  `wisecrow_tls_obtain_cert` is false.
 
 ## 3. Build and start
 

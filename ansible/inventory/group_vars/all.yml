@@ -15,6 +15,29 @@ wisecrow_web_bind: "0.0.0.0"
 wisecrow_web_port: 8443
 wisecrow_cert_dir: "./certs"
 
+# Runtime user inside the container (Dockerfile: useradd --uid 10001). Cert
+# files must be readable by it; the renewal hook restores this ownership.
+wisecrow_cert_uid: 10001
+
+# Install a certbot deploy-hook (renewal-hooks/deploy) that copies renewed
+# Let's Encrypt certs into wisecrow_cert_dir and restarts the web container so
+# it reloads them. Disable for self-signed or non-certbot deployments.
+wisecrow_tls_renewal_hook: true
+
+# Obtain (and auto-renew) the Let's Encrypt cert via certbot DNS-01. calypso
+# shares this host with the trading stack, whose Caddy owns :80/:443, so
+# HTTP-01 / --standalone is not available — DNS-01 needs no inbound ports.
+# IONOS has no native certbot plugin, so the third-party certbot-dns-ionos
+# plugin is pip-installed beside the apt certbot, whose systemd timer drives
+# renewals. Disable for self-signed or externally-managed certificates.
+wisecrow_tls_obtain_cert: true
+wisecrow_tls_domain: ""    # public FQDN, e.g. wisecrow.glottologist.co.uk (required)
+wisecrow_tls_email: ""     # Let's Encrypt registration / expiry-notice contact (required)
+
+# IONOS DNS is slow to propagate; certbot waits this many seconds before asking
+# ACME to validate the TXT record. Lower only if your zone propagates faster.
+wisecrow_certbot_dns_propagation: 900
+
 # Default Postgres identity. Password lives in vars/secrets.yml.
 postgres_user: wisecrow
 postgres_db: wisecrow

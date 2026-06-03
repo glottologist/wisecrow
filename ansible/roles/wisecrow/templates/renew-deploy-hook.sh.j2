@@ -1,0 +1,22 @@
+#!/bin/sh
+# Certbot deploy-hook for wisecrow-web — installed by the wisecrow Ansible role.
+#
+# Certbot runs every script in renewal-hooks/deploy/ after a certificate is
+# renewed, exporting RENEWED_LINEAGE as the path to the live/<domain> directory.
+# The server reads its TLS material only at start-up, so a renewal has no effect
+# until the fresh PEMs reach the mounted cert directory and the container is
+# restarted. Copy the new chain and key into place, restore the ownership and
+# mode the container's uid {{ wisecrow_cert_uid }} requires, then restart the
+# web service.
+set -eu
+
+cd "{{ deploy_dir }}"
+
+cp -L "$RENEWED_LINEAGE/fullchain.pem" "{{ wisecrow_cert_dir }}/fullchain.pem"
+cp -L "$RENEWED_LINEAGE/privkey.pem" "{{ wisecrow_cert_dir }}/privkey.pem"
+
+chown "root:{{ wisecrow_cert_uid }}" "{{ wisecrow_cert_dir }}/privkey.pem"
+chmod 0640 "{{ wisecrow_cert_dir }}/privkey.pem"
+chmod 0644 "{{ wisecrow_cert_dir }}/fullchain.pem"
+
+docker compose -f {{ compose_file }} restart wisecrow-web

@@ -33,6 +33,133 @@
   become: true
   changed_when: true
 
+# --- TLS: obtain and install the cert before the server binds it ----------
+# calypso shares this host with the trading stack, whose Caddy owns :80/:443,
+# so the cert is issued over DNS-01 (no inbound ports). IONOS needs the
+# third-party certbot-dns-ionos plugin; the apt certbot's systemd timer renews
+# thereafter and runs the deploy-hook installed below.
+- name: Assert TLS issuance inputs are present
+  ansible.builtin.assert:
+    that:
+      - (wisecrow_tls_domain | default('')) | length > 0
+      - (wisecrow_tls_email | default('')) | length > 0
+      - (wisecrow_ionos_prefix | default('')) | length > 0
+      - (wisecrow_ionos_secret | default('')) | length > 0
+    fail_msg: >-
+      wisecrow_tls_obtain_cert is true but one of wisecrow_tls_domain,
+      wisecrow_tls_email, wisecrow_ionos_prefix or wisecrow_ionos_secret is
+      unset (the IONOS values live in vars/secrets.yml).
+  when: wisecrow_tls_obtain_cert | bool
+
+- name: Install certbot and pip
+  ansible.builtin.apt:
+    name: [certbot, python3-pip]
+    state: present
+  become: true
+  when: wisecrow_tls_obtain_cert | bool
+
+- name: Install the certbot-dns-ionos plugin (IONOS has no native certbot plugin)
+  ansible.builtin.pip:
+    name: certbot-dns-ionos
+    state: present
+    extra_args: "--break-system-packages"
+  become: true
+  when: wisecrow_tls_obtain_cert | bool
+
+- name: Write the IONOS DNS credentials for certbot
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/ionos.ini
+    owner: root
+    group: root
+    mode: "0600"
+    content: |
+      dns_ionos_prefix = {{ wisecrow_ionos_prefix }}
+      dns_ionos_secret = {{ wisecrow_ionos_secret }}
+      dns_ionos_endpoint = https://api.hosting.ionos.com
+  become: true
+  no_log: true
+  when: wisecrow_tls_obtain_cert | bool
+
+- name: Obtain the Let's Encrypt certificate via DNS-01 (IONOS)
+  ansible.builtin.command:
+    cmd: >-
+      certbot certonly --non-interactive --agree-tos
+      --authenticator dns-ionos
+      --dns-ionos-credentials /etc/letsencrypt/ionos.ini
+      --dns-ionos-propagation-seconds {{ wisecrow_certbot_dns_propagation }}
+      --email {{ wisecrow_tls_email }}
+      --domain {{ wisecrow_tls_domain }}
+      --keep-until-expiring
+    creates: "/etc/letsencrypt/live/{{ wisecrow_tls_domain }}/fullchain.pem"
+  become: true
+  when: wisecrow_tls_obtain_cert | bool
+
+- name: Bootstrap the issued chain into the cert dir (renewals use the hook)
+  ansible.builtin.command:
+    cmd: >-
+      install -D -T -o root -g {{ wisecrow_cert_uid }} -m 0644
+      /etc/letsencrypt/live/{{ wisecrow_tls_domain }}/fullchain.pem
+      {{ deploy_dir }}/{{ wisecrow_cert_dir }}/fullchain.pem
+    creates: "{{ deploy_dir }}/{{ wisecrow_cert_dir }}/fullchain.pem"
+  become: true
+  when: wisecrow_tls_obtain_cert | bool
+
+- name: Bootstrap the issued key into the cert dir (renewals use the hook)
+  ansible.builtin.command:
+    cmd: >-
+      install -D -T -o root -g {{ wisecrow_cert_uid }} -m 0640
+      /etc/letsencrypt/live/{{ wisecrow_tls_domain }}/privkey.pem
+      {{ deploy_dir }}/{{ wisecrow_cert_dir }}/privkey.pem
+    creates: "{{ deploy_dir }}/{{ wisecrow_cert_dir }}/privkey.pem"
+  become: true
+  when: wisecrow_tls_obtain_cert | bool
+
+- name: Ensure certbot deploy-hook directory exists
+  ansible.builtin.file:
+    path: /etc/letsencrypt/renewal-hooks/deploy
+    state: directory
+    mode: "0755"
+  become: true
+  when: wisecrow_tls_renewal_hook | bool
+
+- name: Install wisecrow TLS renewal deploy-hook
+  ansible.builtin.template:
+    src: renew-deploy-hook.sh.j2
+    dest: /etc/letsencrypt/renewal-hooks/deploy/wisecrow.sh
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: wisecrow_tls_renewal_hook | bool
+
+# --- Port guard: this host also runs the trading stack, so refuse to start if
+# anything other than our own container already holds the web port. ---
+- name: Check whether wisecrow-web is already running
+  ansible.builtin.command:
+    cmd: docker inspect -f '{{ "{{" }}.State.Running{{ "}}" }}' wisecrow-web
+  become: true
+  register: web_running
+  changed_when: false
+  failed_when: false
+
+- name: Probe the web port for a foreign listener
+  ansible.builtin.command:
+    cmd: "ss -Hltn sport = :{{ wisecrow_web_port }}"
+  become: true
+  register: web_port_check
+  changed_when: false
+  when: (web_running.stdout | default('') | trim) != 'true'
+
+- name: Fail fast if the web port is held by another process
+  ansible.builtin.assert:
+    that: (web_port_check.stdout | default('') | trim) | length == 0
+    fail_msg: >-
+      Port {{ wisecrow_web_port }} is already in use on {{ inventory_hostname }}
+      by another process (the trading stack also runs on this host):
+      {{ web_port_check.stdout | default('') | trim }}
+    success_msg: "Port {{ wisecrow_web_port }} is free."
+  when: (web_running.stdout | default('') | trim) != 'true'
+
 - name: Bring the stack up
   ansible.builtin.command:
     cmd: docker compose -f {{ compose_file }} up -d
