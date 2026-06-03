@@ -31,8 +31,8 @@ wisecrow_tls_renewal_hook: true
 # plugin is pip-installed beside the apt certbot, whose systemd timer drives
 # renewals. Disable for self-signed or externally-managed certificates.
 wisecrow_tls_obtain_cert: true
-wisecrow_tls_domain: ""    # public FQDN, e.g. wisecrow.glottologist.co.uk (required)
-wisecrow_tls_email: ""     # Let's Encrypt registration / expiry-notice contact (required)
+wisecrow_tls_domain: "wisecrow.glottologist.co.uk"   # public FQDN
+wisecrow_tls_email: "jason@ridgway-taylor.co.uk"     # Let's Encrypt expiry-notice contact
 
 # IONOS DNS is slow to propagate; certbot waits this many seconds before asking
 # ACME to validate the TXT record. Lower only if your zone propagates faster.
