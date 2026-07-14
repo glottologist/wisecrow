@@ -21,7 +21,6 @@ pub fn NbackPage(native: String, foreign: String) -> Element {
     let mut audio_correct = use_signal(|| 0u32);
     let mut visual_correct = use_signal(|| 0u32);
     let mut total_responded = use_signal(|| 0u32);
-    let mut n_level_peak = use_signal(|| 2u8);
     let mut final_results: Signal<Option<DnbSessionResultsDto>> = use_signal(|| None);
     let mut error_msg: Signal<Option<String>> = use_signal(|| None);
     let mut loading = use_signal(|| false);
@@ -79,7 +78,6 @@ pub fn NbackPage(native: String, foreign: String) -> Element {
                                                         audio_correct.set(0);
                                                         visual_correct.set(0);
                                                         total_responded.set(0);
-                                                        n_level_peak.set(2);
                                                         phase.set(Phase::Playing);
                                                     }
                                                     Err(e) => {
@@ -111,25 +109,10 @@ pub fn NbackPage(native: String, foreign: String) -> Element {
 
             if idx >= all_trials.len() {
                 let sid = session_id();
-                let peak = n_level_peak();
-                let count = total_responded();
-                let total = total_responded();
-                let a_acc = if total > 0 {
-                    audio_correct() as f32 / total as f32
-                } else {
-                    0.0
-                };
-                let v_acc = if total > 0 {
-                    visual_correct() as f32 / total as f32
-                } else {
-                    0.0
-                };
 
                 use_effect(move || {
                     spawn(async move {
-                        if let Ok(res) =
-                            complete_nback_session(sid, 2, 4000, peak, count, a_acc, v_acc).await
-                        {
+                        if let Ok(res) = complete_nback_session(sid).await {
                             final_results.set(Some(res));
                             phase.set(Phase::Results);
                         }
@@ -146,16 +129,10 @@ pub fn NbackPage(native: String, foreign: String) -> Element {
             let trial = all_trials[idx].clone(); // clone: Dioxus component needs owned value
             let total = all_trials.len();
             let responded = total_responded();
-            let audio_pct = if responded > 0 {
-                (audio_correct() as f32 / responded as f32 * 100.0) as u32
-            } else {
-                0
-            };
-            let visual_pct = if responded > 0 {
-                (visual_correct() as f32 / responded as f32 * 100.0) as u32
-            } else {
-                0
-            };
+            let audio_pct =
+                (wisecrow_dto::channel_ratio(audio_correct(), responded) * 100.0) as u32;
+            let visual_pct =
+                (wisecrow_dto::channel_ratio(visual_correct(), responded) * 100.0) as u32;
             let display_idx = idx.saturating_add(1);
 
             rsx! {
@@ -345,7 +322,7 @@ fn MatchResponseButtons(
                         visual_response: Some(v_resp),
                         response_time_ms: None,
                     };
-                    let _ = submit_nback_trial(sid, result, t.clone()).await; // clone: submit needs owned copy
+                    let _ = submit_nback_trial(sid, result).await;
                     let a_correct = a_resp == t.audio_match;
                     let v_correct = v_resp == t.visual_match;
                     on_respond.call((a_correct, v_correct));

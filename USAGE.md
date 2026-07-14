@@ -150,6 +150,25 @@ Ingest only CCMatrix and NLLB for English-German:
 wisecrow ingest -n en -f de --corpus "cc_matrix nllb"
 ```
 
+## Refresh word frequencies
+
+Corpus ingestion counts how often each phrase appears, which is a rough proxy for how common a word is. The `frequency` command replaces those counts with authoritative figures from the [Hermit Dave FrequencyWords](https://github.com/hermitdave/FrequencyWords) lists, so that new cards surface in true frequency order. It updates the `frequency` column for translations whose source phrase matches a listed word.
+
+```sh
+# Download and apply the Hermit Dave list for a language:
+wisecrow frequency --lang es
+# alias:
+wisecrow fr --lang es
+
+# Or apply a local `word count` file (one entry per line):
+wisecrow frequency --lang es --file es_50k.txt
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-l`, `--lang` | Language code whose frequencies to update (required) | — |
+| `--file` | Apply a local frequency file instead of downloading | — |
+
 ## Acquisition Loop Commands
 
 These commands turn the ingested corpus and your learning history into study material.

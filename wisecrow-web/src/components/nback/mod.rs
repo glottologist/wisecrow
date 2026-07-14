@@ -6,48 +6,9 @@ use wisecrow_dto::{
     DnbConfigDto, DnbModeDto, DnbSessionResultsDto, DnbTrialDto, DnbTrialResultDto,
 };
 
-#[cfg(feature = "server")]
-use crate::server::nback::{complete_nback_session, start_nback_session, submit_nback_trial};
-
-#[cfg(not(feature = "server"))]
-mod server_stubs {
-    use dioxus::prelude::*;
-    use wisecrow_dto::{
-        DnbAdaptationDto, DnbConfigDto, DnbSessionResultsDto, DnbTrialDto, DnbTrialResultDto,
-    };
-
-    #[server]
-    pub async fn start_nback_session(
-        config: DnbConfigDto,
-    ) -> Result<(i32, Vec<DnbTrialDto>), ServerFnError> {
-        Err(ServerFnError::new("server-only"))
-    }
-
-    #[server]
-    pub async fn submit_nback_trial(
-        session_id: i32,
-        trial_result: DnbTrialResultDto,
-        trial_dto: DnbTrialDto,
-    ) -> Result<DnbAdaptationDto, ServerFnError> {
-        Err(ServerFnError::new("server-only"))
-    }
-
-    #[server]
-    pub async fn complete_nback_session(
-        session_id: i32,
-        n_level: u8,
-        interval_ms: u32,
-        n_level_peak: u8,
-        trials_completed: u32,
-        accuracy_audio: f32,
-        accuracy_visual: f32,
-    ) -> Result<DnbSessionResultsDto, ServerFnError> {
-        Err(ServerFnError::new("server-only"))
-    }
-}
-
-#[cfg(not(feature = "server"))]
-use server_stubs::*;
+use crate::components::server_api::{
+    complete_nback_session, start_nback_session, submit_nback_trial,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -65,8 +26,6 @@ pub fn NbackPage(native: String, foreign: String) -> Element {
     let mut audio_correct = use_signal(|| 0u32);
     let mut visual_correct = use_signal(|| 0u32);
     let mut total_responded = use_signal(|| 0u32);
-    let mut n_level_peak = use_signal(|| 2u8);
-    let mut current_n = use_signal(|| 2u8);
     let mut final_results: Signal<Option<DnbSessionResultsDto>> = use_signal(|| None);
     let mut error_msg: Signal<Option<String>> = use_signal(|| None);
     let mut loading = use_signal(|| false);
@@ -126,8 +85,6 @@ pub fn NbackPage(native: String, foreign: String) -> Element {
                                                         audio_correct.set(0);
                                                         visual_correct.set(0);
                                                         total_responded.set(0);
-                                                        n_level_peak.set(2);
-                                                        current_n.set(2);
                                                         phase.set(Phase::Playing);
                                                     }
                                                     Err(e) => {
@@ -157,28 +114,10 @@ pub fn NbackPage(native: String, foreign: String) -> Element {
 
             if idx >= all_trials.len() {
                 let sid = session_id();
-                let n = current_n();
-                let peak = n_level_peak();
-                let count = total_responded();
-                let a_correct = audio_correct();
-                let v_correct = visual_correct();
-                let total = total_responded();
-                let a_acc = if total > 0 {
-                    a_correct as f32 / total as f32
-                } else {
-                    0.0
-                };
-                let v_acc = if total > 0 {
-                    v_correct as f32 / total as f32
-                } else {
-                    0.0
-                };
 
                 use_effect(move || {
                     spawn(async move {
-                        if let Ok(res) =
-                            complete_nback_session(sid, n, 4000, peak, count, a_acc, v_acc).await
-                        {
+                        if let Ok(res) = complete_nback_session(sid).await {
                             final_results.set(Some(res));
                             phase.set(Phase::Results);
                         }
@@ -195,16 +134,8 @@ pub fn NbackPage(native: String, foreign: String) -> Element {
             let trial = all_trials[idx].clone(); // clone: Dioxus component props require owned values
             let total = all_trials.len();
             let responded = total_responded();
-            let a_acc = if responded > 0 {
-                audio_correct() as f32 / responded as f32
-            } else {
-                0.0
-            };
-            let v_acc = if responded > 0 {
-                visual_correct() as f32 / responded as f32
-            } else {
-                0.0
-            };
+            let a_acc = wisecrow_dto::channel_ratio(audio_correct(), responded);
+            let v_acc = wisecrow_dto::channel_ratio(visual_correct(), responded);
 
             rsx! {
                 game::NbackGame {
@@ -229,7 +160,7 @@ pub fn NbackPage(native: String, foreign: String) -> Element {
                             }
                             total_responded.set(total_responded().saturating_add(1));
 
-                            let _ = submit_nback_trial(sid, result, t).await;
+                            let _ = submit_nback_trial(sid, result).await;
                             current_idx.set(current_idx().saturating_add(1));
                         }
                     },

@@ -3,7 +3,9 @@ use dioxus::prelude::*;
 use super::auth::current_user;
 use super::pool;
 
+#[cfg(feature = "images")]
 const MAX_IMAGE_BYTES: u64 = 5 * 1024 * 1024;
+#[cfg(feature = "audio")]
 const MAX_AUDIO_BYTES: u64 = 10 * 1024 * 1024;
 
 #[cfg(feature = "audio")]
@@ -55,12 +57,15 @@ pub async fn get_image_data(translation_id: i32, word: String) -> Result<String,
     let _ = current_user().await?;
     let api_key = {
         let settings = config::Config::builder()
-            .add_source(config::Environment::default())
+            .add_source(config::Environment::with_prefix("WISECROW").separator("__"))
             .build()
             .map_err(|e| ServerFnError::new(format!("Config error: {e}")))?;
-        settings
-            .get_string("UNSPLASH_API_KEY")
-            .map_err(|_| ServerFnError::new("UNSPLASH_API_KEY not configured"))?
+        let cfg: wisecrow::config::Config = settings
+            .try_deserialize()
+            .map_err(|e| ServerFnError::new(format!("Config error: {e}")))?;
+        cfg.unsplash_api_key
+            .map(|k| k.expose().to_owned())
+            .ok_or_else(|| ServerFnError::new("UNSPLASH_API_KEY not configured"))?
     };
 
     let db = pool()?;

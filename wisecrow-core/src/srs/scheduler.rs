@@ -47,7 +47,7 @@ pub enum CardStatus {
 
 impl CardStatus {
     #[must_use]
-    pub fn from_db(value: i16) -> Self {
+    pub const fn from_db(value: i16) -> Self {
         match value {
             1 => Self::Learning,
             2 => Self::Review,

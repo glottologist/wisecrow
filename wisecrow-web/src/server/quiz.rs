@@ -1,7 +1,6 @@
 use dioxus::prelude::*;
 
 use wisecrow::dto_convert::quizzes_to_dto;
-use wisecrow::grammar::quiz::{shuffle_options, QuizGenerator};
 use wisecrow_dto::QuizItemDto;
 
 use super::auth::current_user;
@@ -38,23 +37,7 @@ pub async fn generate_quiz(
 
     drop(tmp_file);
 
-    let cloze_quizzes = QuizGenerator::cloze_from_examples(
-        &content
-            .sections
-            .iter()
-            .flat_map(|s| s.examples.iter().cloned())
-            .collect::<Vec<_>>(),
-    );
-
-    let mc_quizzes =
-        QuizGenerator::multiple_choice_from_rules(&content.sections).unwrap_or_default();
-
-    let shuffled_mc: Vec<_> = mc_quizzes
-        .iter()
-        .enumerate()
-        .map(|(i, mc)| shuffle_options(mc, i))
-        .collect();
-
+    let (cloze_quizzes, shuffled_mc) = wisecrow::grammar::quiz::assemble_from_content(&content);
     let mut items = quizzes_to_dto(&cloze_quizzes, &shuffled_mc);
 
     let limit = usize::try_from(num_questions).unwrap_or(usize::MAX);

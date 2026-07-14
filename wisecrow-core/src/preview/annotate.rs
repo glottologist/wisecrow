@@ -53,19 +53,7 @@ pub async fn enrich_unknowns_with_llm(
     let prompt =
         crate::llm::prompts::unknown_words_prompt(&unknowns, foreign_lang_name, native_lang_name);
     let response = provider.generate(&prompt, 2048).await?;
-
-    let trimmed = response.trim();
-    let json_str = if trimmed.starts_with("```") {
-        trimmed
-            .trim_start_matches("```json")
-            .trim_start_matches("```")
-            .trim_end_matches("```")
-            .trim()
-    } else {
-        trimmed
-    };
-    let parsed: LlmGlossResponse = serde_json::from_str(json_str)
-        .map_err(|e| WisecrowError::LlmError(format!("Failed to parse unknown-words JSON: {e}")))?;
+    let parsed: LlmGlossResponse = crate::llm::parse_fenced_json(&response, "unknown-words JSON")?;
 
     let lookup: std::collections::HashMap<String, String> = parsed
         .glosses

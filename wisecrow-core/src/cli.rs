@@ -212,6 +212,16 @@ pub struct GenerateExercisesArgs {
 }
 
 #[derive(Args)]
+pub struct FrequencyArgs {
+    #[arg(short, long)]
+    pub lang: String,
+    /// Update from a local `word count` file (one entry per line) instead of
+    /// downloading the Hermit Dave frequency list.
+    #[arg(long)]
+    pub file: Option<String>,
+}
+
+#[derive(Args)]
 pub struct NbackArgs {
     #[arg(short, long)]
     pub native_lang: String,
@@ -352,6 +362,8 @@ pub enum Command {
     DownloadAll(DownloadAllArgs),
     #[command(aliases = ["ge"])]
     GenerateExercises(GenerateExercisesArgs),
+    #[command(aliases = ["fr"])]
+    Frequency(FrequencyArgs),
     #[command(aliases = ["gl"])]
     Gloss(GlossArgs),
     #[command(aliases = ["gr"])]
@@ -403,6 +415,7 @@ mod tests {
             (Command::Download(_), "Download")
                 | (Command::DownloadAll(_), "DownloadAll")
                 | (Command::GenerateExercises(_), "GenerateExercises")
+                | (Command::Frequency(_), "Frequency")
                 | (Command::Gloss(_), "Gloss")
                 | (Command::GradedReader(_), "GradedReader")
                 | (Command::ImportGrammar(_), "ImportGrammar")
@@ -436,6 +449,8 @@ mod tests {
     #[case(&["wisecrow", "s", "--remote", "https://example.com"], "Sync")]
     #[case(&["wisecrow", "generate-exercises", "--lang", "es", "--level", "B1"], "GenerateExercises")]
     #[case(&["wisecrow", "ge", "--lang", "es", "--level", "B1"], "GenerateExercises")]
+    #[case(&["wisecrow", "frequency", "--lang", "es"], "Frequency")]
+    #[case(&["wisecrow", "fr", "--lang", "es", "--file", "es_50k.txt"], "Frequency")]
     #[case(&["wisecrow", "nback", "-n", "en", "-f", "es"], "Nback")]
     #[case(&["wisecrow", "nb", "-n", "en", "-f", "de", "--mode", "word_translation"], "Nback")]
     #[case(&["wisecrow", "prefetch-media", "-n", "en", "-f", "es"], "PrefetchMedia")]

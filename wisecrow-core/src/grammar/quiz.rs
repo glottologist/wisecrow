@@ -1,5 +1,5 @@
 use crate::errors::WisecrowError;
-use crate::grammar::pdf::{ExampleSentence, GrammarSection};
+use crate::grammar::pdf::{ExampleSentence, GrammarContent, GrammarSection};
 
 #[derive(Debug, Clone)]
 pub struct ClozeQuiz {
@@ -109,6 +109,30 @@ impl QuizGenerator {
             rule_id: None,
         })
     }
+}
+
+/// Assembles the quizzes for a parsed grammar document: cloze deletions from the
+/// example sentences and deterministically shuffled multiple-choice questions
+/// from the rules. Each surface (the web DTO list, the TUI item list) applies its
+/// own final conversion and question-count truncation to the returned pair.
+#[must_use]
+pub fn assemble_from_content(
+    content: &GrammarContent,
+) -> (Vec<ClozeQuiz>, Vec<MultipleChoiceQuiz>) {
+    let cloze = QuizGenerator::cloze_from_examples(
+        &content
+            .sections
+            .iter()
+            .flat_map(|s| s.examples.iter().cloned())
+            .collect::<Vec<_>>(),
+    );
+    let shuffled_mc = QuizGenerator::multiple_choice_from_rules(&content.sections)
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+        .map(|(i, mc)| shuffle_options(mc, i))
+        .collect();
+    (cloze, shuffled_mc)
 }
 
 /// Shuffles quiz options deterministically based on a seed, preserving

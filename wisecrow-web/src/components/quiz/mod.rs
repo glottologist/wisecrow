@@ -6,25 +6,7 @@ use dioxus::prelude::*;
 
 use wisecrow_dto::QuizItemDto;
 
-#[cfg(feature = "server")]
-use crate::server::quiz::generate_quiz;
-
-#[cfg(not(feature = "server"))]
-mod server_stubs {
-    use dioxus::prelude::*;
-    use wisecrow_dto::QuizItemDto;
-
-    #[server]
-    pub async fn generate_quiz(
-        pdf_bytes: Vec<u8>,
-        num_questions: u32,
-    ) -> Result<Vec<QuizItemDto>, ServerFnError> {
-        Err(ServerFnError::new("server-only"))
-    }
-}
-
-#[cfg(not(feature = "server"))]
-use server_stubs::*;
+use crate::components::server_api::generate_quiz;
 
 #[component]
 pub fn QuizPage() -> Element {

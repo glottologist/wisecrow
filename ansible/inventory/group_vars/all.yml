@@ -38,10 +38,14 @@ wisecrow_tls_email: "jason@ridgway-taylor.co.uk"     # Let's Encrypt expiry-noti
 # deSEC delegation zone that holds the _acme-challenge TXT. Create it free at
 # desec.io, then add a one-off CNAME in IONOS:
 #   _acme-challenge.wisecrow  ->  _acme-challenge.<this value>
-wisecrow_desec_domain: ""    # e.g. wisecrow-acme.dedyn.io (required)
+wisecrow_desec_domain: "wisecrow.dedyn.io"
 
-# Seconds to wait after writing the TXT to deSEC before ACME validates.
-wisecrow_desec_propagation: 60
+# Seconds to wait after writing the TXT to deSEC before ACME validates. deSEC
+# serves the zone from ns1.desec.io and ns2.desec.org, which do not update in
+# lockstep: a write was visible on ns1 after 13s but took 40s to reach ns2.
+# Let's Encrypt validates from several perspectives, so a wait that only covers
+# ns1 fails secondary validation with NXDOMAIN. 180s leaves ample margin.
+wisecrow_desec_propagation: 180
 
 # Default Postgres identity. Password lives in vars/secrets.yml.
 postgres_user: wisecrow

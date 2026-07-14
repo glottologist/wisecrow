@@ -15,8 +15,9 @@ cd "{{ deploy_dir }}"
 cp -L "$RENEWED_LINEAGE/fullchain.pem" "{{ wisecrow_cert_dir }}/fullchain.pem"
 cp -L "$RENEWED_LINEAGE/privkey.pem" "{{ wisecrow_cert_dir }}/privkey.pem"
 
-chown "root:{{ wisecrow_cert_uid }}" "{{ wisecrow_cert_dir }}/privkey.pem"
-chmod 0640 "{{ wisecrow_cert_dir }}/privkey.pem"
+chown "{{ wisecrow_cert_uid }}:root" "{{ wisecrow_cert_dir }}/privkey.pem"
+chown "{{ wisecrow_cert_uid }}:root" "{{ wisecrow_cert_dir }}/fullchain.pem"
+chmod 0400 "{{ wisecrow_cert_dir }}/privkey.pem"
 chmod 0644 "{{ wisecrow_cert_dir }}/fullchain.pem"
 
 docker compose -f {{ compose_file }} restart wisecrow-web

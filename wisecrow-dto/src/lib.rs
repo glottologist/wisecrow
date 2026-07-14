@@ -1,6 +1,19 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Fraction `correct / total` in `[0.0, 1.0]`, returning `0.0` when `total` is
+/// zero. Shared by the web and mobile n-back views so the guarded division and
+/// its cast live in one place.
+#[must_use]
+pub fn channel_ratio(correct: u32, total: u32) -> f32 {
+    if total == 0 {
+        return 0.0;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let ratio = correct as f32 / total as f32;
+    ratio
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CardDto {
     pub card_id: i32,
@@ -43,13 +56,13 @@ pub struct SessionDto {
     pub cards: Vec<CardDto>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserDto {
     pub id: i32,
     pub display_name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClozeQuizDto {
     pub sentence_with_blank: String,
     pub answer: String,
@@ -57,7 +70,7 @@ pub struct ClozeQuizDto {
     pub rule_context: Option<RuleContextDto>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MultipleChoiceQuizDto {
     pub question: String,
     pub options: Vec<String>,
@@ -65,7 +78,7 @@ pub struct MultipleChoiceQuizDto {
     pub rule_context: Option<RuleContextDto>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuleContextDto {
     pub rule_title: String,
     pub rule_explanation: String,
@@ -73,7 +86,7 @@ pub struct RuleContextDto {
     pub extra_examples: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum QuizItemDto {
     Cloze(ClozeQuizDto),
     MultipleChoice(MultipleChoiceQuizDto),
@@ -85,41 +98,11 @@ pub enum ScriptDirection {
     Rtl,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LanguageInfo {
     pub code: String,
     pub name: String,
     pub script_direction: ScriptDirection,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SessionSummary {
-    pub cards_seen: usize,
-    pub total: usize,
-    pub streak: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CefrLevelDto {
-    pub code: String,
-    pub name: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct GrammarRuleDto {
-    pub id: i32,
-    pub title: String,
-    pub explanation: String,
-    pub cefr_level: String,
-    pub source: String,
-    pub examples: Vec<RuleExampleDto>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RuleExampleDto {
-    pub sentence: String,
-    pub translation: Option<String>,
-    pub is_correct: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -138,7 +121,7 @@ pub struct RuleExampleImport {
     pub is_correct: bool,
 }
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 
@@ -175,13 +158,6 @@ pub struct SyncRuleExampleDto {
     pub sentence: String,
     pub translation: Option<String>,
     pub is_correct: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncProgressDto {
-    pub table: String,
-    pub synced: usize,
-    pub total: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -226,7 +202,7 @@ pub enum SubtitleFormatDto {
     Ass,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DnbConfigDto {
     pub mode: DnbModeDto,
     pub n_level: u8,
@@ -235,7 +211,7 @@ pub struct DnbConfigDto {
     pub foreign_lang: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DnbTrialDto {
     pub trial_number: u32,
     pub n_level: u8,
@@ -248,7 +224,7 @@ pub struct DnbTrialDto {
     pub interval_ms: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DnbTrialResultDto {
     pub trial_number: u32,
     pub audio_response: Option<bool>,
@@ -283,7 +259,7 @@ const MIN_SPEED_MS: u32 = 500;
 const MAX_SPEED_MS: u32 = 10_000;
 const SPEED_STEP_MS: u32 = 500;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpeedController {
     interval_ms: u32,
     remaining_ms: u32,
@@ -302,7 +278,7 @@ impl SpeedController {
     }
 
     /// Advances the timer by `elapsed_ms`. Returns `true` if the timer expired.
-    pub fn tick(&mut self, elapsed_ms: u32) -> bool {
+    pub const fn tick(&mut self, elapsed_ms: u32) -> bool {
         if self.paused {
             return false;
         }
@@ -310,7 +286,7 @@ impl SpeedController {
         self.remaining_ms == 0
     }
 
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.remaining_ms = self.interval_ms;
     }
 
@@ -328,11 +304,11 @@ impl SpeedController {
             .min(MAX_SPEED_MS);
     }
 
-    pub fn pause(&mut self) {
+    pub const fn pause(&mut self) {
         self.paused = true;
     }
 
-    pub fn unpause(&mut self) {
+    pub const fn unpause(&mut self) {
         self.paused = false;
     }
 
@@ -357,5 +333,18 @@ impl SpeedController {
     #[must_use]
     pub const fn remaining_ms(&self) -> u32 {
         self.remaining_ms
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::channel_ratio;
+
+    #[test]
+    fn channel_ratio_guards_zero_and_computes_fraction() {
+        assert!((channel_ratio(0, 0) - 0.0).abs() < f32::EPSILON);
+        assert!((channel_ratio(3, 0) - 0.0).abs() < f32::EPSILON);
+        assert!((channel_ratio(1, 2) - 0.5).abs() < f32::EPSILON);
+        assert!((channel_ratio(4, 4) - 1.0).abs() < f32::EPSILON);
     }
 }

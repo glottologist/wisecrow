@@ -94,10 +94,15 @@
   become: true
   when: wisecrow_tls_obtain_cert | bool
 
+# The cert files are owned by the container's uid rather than made group-
+# readable: the image's user is created with `useradd --system --user-group`,
+# which takes its gid from the system range (999), not from --uid. Granting
+# access by gid would therefore need a second, base-image-dependent variable;
+# owning by uid needs only the uid and survives a base-image change.
 - name: Bootstrap the issued chain into the cert dir (renewals use the hook)
   ansible.builtin.command:
     cmd: >-
-      install -D -T -o root -g {{ wisecrow_cert_uid }} -m 0644
+      install -D -T -o {{ wisecrow_cert_uid }} -g root -m 0644
       /etc/letsencrypt/live/{{ wisecrow_tls_domain }}/fullchain.pem
       {{ deploy_dir }}/{{ wisecrow_cert_dir }}/fullchain.pem
     creates: "{{ deploy_dir }}/{{ wisecrow_cert_dir }}/fullchain.pem"
@@ -107,7 +112,7 @@
 - name: Bootstrap the issued key into the cert dir (renewals use the hook)
   ansible.builtin.command:
     cmd: >-
-      install -D -T -o root -g {{ wisecrow_cert_uid }} -m 0640
+      install -D -T -o {{ wisecrow_cert_uid }} -g root -m 0400
       /etc/letsencrypt/live/{{ wisecrow_tls_domain }}/privkey.pem
       {{ deploy_dir }}/{{ wisecrow_cert_dir }}/privkey.pem
     creates: "{{ deploy_dir }}/{{ wisecrow_cert_dir }}/privkey.pem"

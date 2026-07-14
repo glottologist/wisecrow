@@ -6,8 +6,7 @@ use dioxus::prelude::*;
 
 use wisecrow_dto::{ReviewRatingDto, SessionDto, SpeedController};
 
-#[cfg(feature = "server")]
-use crate::server::learn::{
+use crate::components::server_api::{
     answer_card, complete_session, create_session, pause_session, resume_session,
 };
 
@@ -16,52 +15,6 @@ use crate::server::media::get_audio_data;
 
 #[cfg(all(feature = "server", feature = "images"))]
 use crate::server::media::get_image_data;
-
-#[cfg(not(feature = "server"))]
-mod server_stubs {
-    use dioxus::prelude::*;
-    use wisecrow_dto::{CardDto, ReviewRatingDto, SessionDto};
-
-    #[server]
-    pub async fn create_session(
-        native: String,
-        foreign: String,
-        deck_size: u32,
-        speed_ms: u32,
-    ) -> Result<SessionDto, ServerFnError> {
-        Err(ServerFnError::new("server-only"))
-    }
-
-    #[server]
-    pub async fn resume_session(
-        native: String,
-        foreign: String,
-    ) -> Result<Option<SessionDto>, ServerFnError> {
-        Err(ServerFnError::new("server-only"))
-    }
-
-    #[server]
-    pub async fn answer_card(
-        session_id: i32,
-        card_id: i32,
-        rating: ReviewRatingDto,
-    ) -> Result<CardDto, ServerFnError> {
-        Err(ServerFnError::new("server-only"))
-    }
-
-    #[server]
-    pub async fn pause_session(session_id: i32) -> Result<(), ServerFnError> {
-        Err(ServerFnError::new("server-only"))
-    }
-
-    #[server]
-    pub async fn complete_session(session_id: i32) -> Result<(), ServerFnError> {
-        Err(ServerFnError::new("server-only"))
-    }
-}
-
-#[cfg(not(feature = "server"))]
-use server_stubs::*;
 
 #[cfg(not(feature = "audio"))]
 async fn get_audio_data(

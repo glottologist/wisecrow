@@ -5,7 +5,7 @@ use crate::components::layout::Layout;
 use crate::components::learn::LearnPage;
 use crate::components::nback::NbackPage;
 
-#[derive(Clone, Routable, Debug, PartialEq)]
+#[derive(Clone, Routable, Debug, PartialEq, Eq)]
 #[rustfmt::skip]
 pub enum Route {
     #[layout(Layout)]

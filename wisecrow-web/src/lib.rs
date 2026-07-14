@@ -15,8 +15,13 @@ pub mod server;
 use dioxus::prelude::*;
 
 /// Root component: mounts the application router.
+///
+/// The stylesheet is declared with `asset!` so the bundler emits it into the
+/// build manifest; the server only serves assets it knows about at build time,
+/// so a file merely present in `assets/` is never reachable.
 pub fn app() -> Element {
     rsx! {
+        document::Stylesheet { href: asset!("/assets/style.css") }
         Router::<router::Route> {}
     }
 }

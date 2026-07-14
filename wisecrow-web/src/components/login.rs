@@ -1,23 +1,7 @@
 use dioxus::prelude::*;
 
+use crate::components::server_api::login;
 use crate::router::Route;
-
-#[cfg(feature = "server")]
-use crate::server::auth::login;
-
-#[cfg(not(feature = "server"))]
-mod server_stubs {
-    use dioxus::prelude::*;
-    use wisecrow_dto::UserDto;
-
-    #[server]
-    pub async fn login(email: String, password: String) -> Result<UserDto, ServerFnError> {
-        Err(ServerFnError::new("server-only"))
-    }
-}
-
-#[cfg(not(feature = "server"))]
-use server_stubs::*;
 
 #[component]
 pub fn LoginPage() -> Element {

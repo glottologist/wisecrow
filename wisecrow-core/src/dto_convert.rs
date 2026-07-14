@@ -1,15 +1,14 @@
 use wisecrow_dto::{
     AnnotatedTokenDto, CardDto, CardStatusDto, ClozeQuizDto, DnbAdaptationDto, DnbModeDto,
-    DnbSessionResultsDto, DnbTrialDto, GlossaryEntryDto, GradedReaderDto, GrammarRuleDto,
-    LanguageInfo, MultipleChoiceQuizDto, QuizItemDto, ReviewRatingDto, RuleExampleDto,
-    ScriptDirection, SessionDto, TokenStatusDto, UserDto,
+    DnbSessionResultsDto, DnbTrialDto, GlossaryEntryDto, GradedReaderDto, LanguageInfo,
+    MultipleChoiceQuizDto, QuizItemDto, ReviewRatingDto, ScriptDirection, SessionDto,
+    TokenStatusDto, UserDto,
 };
 
 use crate::dnb::scoring::AdaptationState;
 use crate::dnb::{DnbMode, Trial};
 use crate::grammar::graded_reader::{GlossaryEntry, GradedReader};
 use crate::grammar::quiz::{ClozeQuiz, MultipleChoiceQuiz};
-use crate::grammar::rules::{GrammarRule, RuleExample};
 use crate::preview::annotate::{AnnotatedToken, Status};
 use crate::srs::scheduler::{CardState, CardStatus, ReviewRating};
 use crate::srs::session::Session;
@@ -96,30 +95,6 @@ impl From<&MultipleChoiceQuiz> for MultipleChoiceQuizDto {
             options: quiz.options.clone(),   // clone: building owned DTO
             correct_index: quiz.correct_index,
             rule_context: None,
-        }
-    }
-}
-
-/// Converts a grammar rule to its DTO representation.
-/// Requires the CEFR level code since the domain type stores only the level ID.
-#[must_use]
-pub fn grammar_rule_to_dto(rule: &GrammarRule, cefr_level_code: &str) -> GrammarRuleDto {
-    GrammarRuleDto {
-        id: rule.id,
-        title: rule.title.clone(), // clone: building owned DTO from borrowed domain type
-        explanation: rule.explanation.clone(), // clone: building owned DTO from borrowed domain type
-        cefr_level: cefr_level_code.to_owned(),
-        source: rule.source.as_str().to_owned(),
-        examples: rule.examples.iter().map(RuleExampleDto::from).collect(),
-    }
-}
-
-impl From<&RuleExample> for RuleExampleDto {
-    fn from(ex: &RuleExample) -> Self {
-        Self {
-            sentence: ex.sentence.clone(), // clone: building owned DTO from borrowed domain type
-            translation: ex.translation.clone(), // clone: building owned DTO from borrowed domain type
-            is_correct: ex.is_correct,
         }
     }
 }

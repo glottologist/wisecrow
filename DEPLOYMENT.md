@@ -27,8 +27,10 @@ already listening on the web port.
 ## Prerequisites
 
 - Docker and the Compose plugin on calypso.
-- A public DNS hostname for wisecrow and an IONOS DNS API key (for automated
-  DNS-01 issuance), or your own certificate to drop in (step 1).
+- A public DNS hostname for wisecrow, plus a free deSEC zone and token to hold
+  the `_acme-challenge` TXT and a one-off CNAME in the IONOS panel pointing at
+  it (for automated DNS-01 issuance), or your own certificate to drop in
+  (step 1).
 - Ansible on the control machine (to run the `ansible/` playbooks), or run
   `docker compose` directly on the host.
 
@@ -68,9 +70,13 @@ false` and place `fullchain.pem` + `privkey.pem` in the cert directory
 container runs as uid 10001, so the files must be readable by it:
 
 ```sh
-sudo chown root:10001 certs/privkey.pem && sudo chmod 0640 certs/privkey.pem
-sudo chmod 0644 certs/fullchain.pem
+sudo chown 10001:root certs/privkey.pem && sudo chmod 0400 certs/privkey.pem
+sudo chown 10001:root certs/fullchain.pem && sudo chmod 0644 certs/fullchain.pem
 ```
+
+The files are owned by uid 10001 rather than made group-readable because the
+image creates its user with `useradd --system --user-group`, which draws the
+gid from the system range (999) instead of matching `--uid`.
 
 The server loads certs only at start-up, so restart the container after any
 out-of-band renewal (set `wisecrow_tls_renewal_hook: false` to leave the

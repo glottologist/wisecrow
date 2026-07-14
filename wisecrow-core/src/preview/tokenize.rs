@@ -84,7 +84,7 @@ impl Tokenizer for JiebaTokenizer {
         self.inner
             .cut(text, false)
             .into_iter()
-            .map(|s| s.to_lowercase())
+            .map(str::to_lowercase)
             .filter(|s| !s.trim().is_empty())
             .collect()
     }

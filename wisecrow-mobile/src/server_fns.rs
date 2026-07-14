@@ -69,7 +69,6 @@ pub async fn start_nback_session(
 pub async fn submit_nback_trial(
     session_id: i32,
     trial_result: DnbTrialResultDto,
-    trial_dto: DnbTrialDto,
 ) -> Result<DnbAdaptationDto, ServerFnError> {
     Err(ServerFnError::new("client-side stub"))
 }
@@ -77,12 +76,6 @@ pub async fn submit_nback_trial(
 #[server]
 pub async fn complete_nback_session(
     session_id: i32,
-    n_level: u8,
-    interval_ms: u32,
-    n_level_peak: u8,
-    trials_completed: u32,
-    accuracy_audio: f32,
-    accuracy_visual: f32,
 ) -> Result<DnbSessionResultsDto, ServerFnError> {
     Err(ServerFnError::new("client-side stub"))
 }

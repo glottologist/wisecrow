@@ -12,10 +12,10 @@ use tokio::{
 use tracing::{error, info};
 use wisecrow::{
     cli::{
-        is_supported_language, Cli, Command, DownloadAllArgs, GenerateExercisesArgs, GlossArgs,
-        GradedReaderArgs, GradedReaderFormat, ImportGrammarArgs, ImportPdfArgs, LanguageArgs,
-        LearnArgs, NbackArgs, PrefetchMediaArgs, PreviewArgs, QuizArgs, SeedGrammarArgs, SyncArgs,
-        SyncClientCmd, UserCmd, SUPPORTED_LANGUAGE_INFO,
+        is_supported_language, Cli, Command, DownloadAllArgs, FrequencyArgs, GenerateExercisesArgs,
+        GlossArgs, GradedReaderArgs, GradedReaderFormat, ImportGrammarArgs, ImportPdfArgs,
+        LanguageArgs, LearnArgs, NbackArgs, PrefetchMediaArgs, PreviewArgs, QuizArgs,
+        SeedGrammarArgs, SyncArgs, SyncClientCmd, UserCmd, SUPPORTED_LANGUAGE_INFO,
     },
     config::Config,
     downloader::DownloadConfig,
@@ -192,58 +192,87 @@ async fn handle_download_all(args: DownloadAllArgs) -> Result<(), Error> {
         .filter(|code| *code != args.native_lang)
         .collect();
 
-    let total = foreign_codes.len();
     info!(
         "Downloading corpora for {} language pairs from {}",
-        total, args.native_lang
+        foreign_codes.len(),
+        args.native_lang
     );
 
-    for (idx, foreign) in foreign_codes.iter().enumerate() {
-        let pair_dir = root.join(format!("{}-{foreign}", args.native_lang));
-        if let Err(e) = std::fs::create_dir_all(&pair_dir) {
-            error!("Failed to create directory {}: {e}", pair_dir.display());
-            continue;
-        }
-
-        let langs = Langs::new(&args.native_lang, *foreign);
-        let files = match LanguageFiles::new(&langs, corpora.as_deref()) {
-            Ok(f) => f,
-            Err(e) => {
-                error!(
-                    "Failed to build file list for {}-{foreign}: {e}",
-                    args.native_lang
-                );
-                continue;
-            }
-        };
-
-        info!(
-            "[{}/{}] Downloading {} files for {}-{foreign}",
-            idx.saturating_add(1),
-            total,
-            files.files.len(),
-            args.native_lang,
-        );
-
-        let mut handles = Vec::new();
-        for file in files.files {
-            let cfg = download_config;
-            let dir = pair_dir.clone();
-            handles.push(tokio::spawn(async move {
-                if let Err(e) = Ingester::download_to_dir(&cfg, &file, &dir).await {
-                    error!("Download failed for {}: {e:?}", file.file_name);
-                }
-            }));
-        }
-
-        for handle in handles {
-            if let Err(e) = handle.await {
-                error!("Task panicked: {e}");
-            }
-        }
-    }
+    download_all_pairs(
+        &root,
+        &args.native_lang,
+        &foreign_codes,
+        corpora.as_deref(),
+        download_config,
+    )
+    .await;
 
     info!("Download-all complete");
+    Ok(())
+}
+
+/// Downloads every foreign pairing for `native` in turn, logging and skipping any
+/// pair whose setup fails rather than aborting the whole run.
+async fn download_all_pairs(
+    root: &std::path::Path,
+    native: &str,
+    foreign_codes: &[&str],
+    corpora: Option<&[Corpus]>,
+    download_config: DownloadConfig,
+) {
+    let total = foreign_codes.len();
+    for (idx, foreign) in foreign_codes.iter().enumerate() {
+        info!("[{}/{}] {native}-{foreign}", idx.saturating_add(1), total);
+        if let Err(e) =
+            download_language_pair(root, native, foreign, corpora, download_config).await
+        {
+            error!("Skipping {native}-{foreign}: {e}");
+        }
+    }
+}
+
+/// Downloads every corpus file for one language pair into its own subdirectory of
+/// `root`, awaiting all of them. Per-file download failures are logged; a failure
+/// to prepare the directory or file list is returned so the caller can skip the
+/// pair and continue.
+async fn download_language_pair(
+    root: &std::path::Path,
+    native: &str,
+    foreign: &str,
+    corpora: Option<&[Corpus]>,
+    download_config: DownloadConfig,
+) -> Result<(), Error> {
+    let pair_dir = root.join(format!("{native}-{foreign}"));
+    std::fs::create_dir_all(&pair_dir).map_err(|e| {
+        WisecrowError::InvalidInput(format!(
+            "Failed to create directory {}: {e}",
+            pair_dir.display()
+        ))
+    })?;
+
+    let langs = Langs::new(native, foreign);
+    let files = LanguageFiles::new(&langs, corpora)?;
+    info!(
+        "Downloading {} files for {native}-{foreign}",
+        files.files.len()
+    );
+
+    let mut handles = Vec::new();
+    for file in files.files {
+        let cfg = download_config;
+        let dir = pair_dir.clone();
+        handles.push(tokio::spawn(async move {
+            if let Err(e) = Ingester::download_to_dir(&cfg, &file, &dir).await {
+                error!("Download failed for {}: {e:?}", file.file_name);
+            }
+        }));
+    }
+
+    for handle in handles {
+        if let Err(e) = handle.await {
+            error!("Task panicked: {e}");
+        }
+    }
     Ok(())
 }
 
@@ -361,6 +390,22 @@ async fn handle_generate_exercises(args: GenerateExercisesArgs) -> Result<(), Er
         );
     }
 
+    Ok(())
+}
+
+async fn handle_frequency(args: FrequencyArgs) -> Result<(), Error> {
+    let (_config, pool) = load_config_and_pool().await?;
+    let count = match args.file {
+        Some(path) => {
+            wisecrow::frequency::FrequencyUpdater::update_from_file(&pool, &args.lang, &path)
+                .await?
+        }
+        None => {
+            wisecrow::frequency::FrequencyUpdater::update_from_hermit_dave(&pool, &args.lang)
+                .await?
+        }
+    };
+    info!("Updated {count} frequency entries for {}", args.lang);
     Ok(())
 }
 
@@ -504,7 +549,10 @@ async fn handle_prefetch_media(args: PrefetchMediaArgs) -> Result<(), Error> {
     validate_languages(&args.native_lang, &args.foreign_lang)?;
     let (config, pool) = load_config_and_pool().await?;
 
-    let api_key = config.unsplash_api_key.as_ref().map(|k| k.expose());
+    let api_key = config
+        .unsplash_api_key
+        .as_ref()
+        .map(wisecrow::config::SecureString::expose);
     let count = wisecrow::media::prefetch::prefetch_media(
         &pool,
         &args.native_lang,
@@ -531,6 +579,7 @@ async fn main() -> Result<(), Error> {
         Command::Download(args) => handle_download(args).await?,
         Command::DownloadAll(args) => handle_download_all(args).await?,
         Command::GenerateExercises(args) => handle_generate_exercises(args).await?,
+        Command::Frequency(args) => handle_frequency(args).await?,
         Command::Gloss(args) => handle_gloss(args).await?,
         Command::GradedReader(args) => handle_graded_reader(args).await?,
         Command::ImportGrammar(args) => handle_import_grammar(args).await?,
@@ -698,22 +747,7 @@ async fn handle_nback(args: NbackArgs) -> Result<(), Error> {
 
     let mut engine = wisecrow::dnb::DnbEngine::new(vocab, &config, seed)?;
 
-    crossterm::terminal::enable_raw_mode()?;
-    let mut stdout = std::io::stdout();
-    crossterm::execute!(
-        stdout,
-        crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
-        crossterm::cursor::MoveTo(0, 0)
-    )?;
-
-    print_line(
-        &mut stdout,
-        &format!(
-            "Dual N-Back ({mode}) | N={} | [A]=audio match  [L]=visual match  [Enter]=submit  [Q]=quit\r\n",
-            args.n_level
-        ),
-    )?;
-    print_line(&mut stdout, "\r\n")?;
+    let mut stdout = enter_nback_screen(mode, args.n_level)?;
 
     let mut trial_count = 0u32;
     let result = nback_game_loop(
@@ -734,22 +768,29 @@ async fn handle_nback(args: NbackArgs) -> Result<(), Error> {
         error!("Game loop error: {e}");
     }
 
+    finalize_nback_session(&pool, &engine, session_id, args.user_id, trial_count).await
+}
+
+/// Scores the completed dual-n-back session, persists its final stats, feeds the
+/// results back into the SRS scheduler, and prints a summary line.
+async fn finalize_nback_session(
+    pool: &PgPool,
+    engine: &wisecrow::dnb::DnbEngine,
+    session_id: i32,
+    user_id: i32,
+    trial_count: u32,
+) -> Result<(), Error> {
+    use wisecrow::dnb::scoring::{channel_accuracy, Channel};
+
     let state = engine.state();
-    let audio_acc = wisecrow::dnb::scoring::channel_accuracy(
-        engine.completed_trials(),
-        wisecrow::dnb::scoring::Channel::Audio,
-        engine.completed_trials().len(),
-    );
-    let visual_acc = wisecrow::dnb::scoring::channel_accuracy(
-        engine.completed_trials(),
-        wisecrow::dnb::scoring::Channel::Visual,
-        engine.completed_trials().len(),
-    );
+    let completed = engine.completed_trials();
+    let audio_acc = channel_accuracy(completed, Channel::Audio, completed.len());
+    let visual_acc = channel_accuracy(completed, Channel::Visual, completed.len());
 
     wisecrow::dnb::session::DnbSessionRepository::complete_session(
-        &pool,
+        pool,
         session_id,
-        args.user_id,
+        user_id,
         state,
         trial_count,
         #[expect(clippy::cast_possible_truncation)]
@@ -759,12 +800,10 @@ async fn handle_nback(args: NbackArgs) -> Result<(), Error> {
     )
     .await?;
 
-    wisecrow::dnb::feedback::apply_srs_feedback(&pool, args.user_id, engine.completed_trials())
-        .await?;
+    wisecrow::dnb::feedback::apply_srs_feedback(pool, user_id, completed).await?;
 
     println!(
-        "\r\nSession complete: {} trials, N peak={}, audio={:.0}%, visual={:.0}%",
-        trial_count,
+        "\r\nSession complete: {trial_count} trials, N peak={}, audio={:.0}%, visual={:.0}%",
         state.n_level_peak,
         audio_acc * 100.0,
         visual_acc * 100.0,
@@ -777,6 +816,26 @@ fn print_line(stdout: &mut std::io::Stdout, text: &str) -> Result<(), std::io::E
     use std::io::Write;
     write!(stdout, "{text}")?;
     stdout.flush()
+}
+
+/// Puts the terminal into raw mode, clears the screen, and prints the dual-n-back
+/// instructions, returning the stdout handle the game loop writes to.
+fn enter_nback_screen(mode: wisecrow::dnb::DnbMode, n_level: u8) -> Result<std::io::Stdout, Error> {
+    crossterm::terminal::enable_raw_mode()?;
+    let mut stdout = std::io::stdout();
+    crossterm::execute!(
+        stdout,
+        crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+        crossterm::cursor::MoveTo(0, 0)
+    )?;
+    print_line(
+        &mut stdout,
+        &format!(
+            "Dual N-Back ({mode}) | N={n_level} | [A]=audio match  [L]=visual match  [Enter]=submit  [Q]=quit\r\n"
+        ),
+    )?;
+    print_line(&mut stdout, "\r\n")?;
+    Ok(stdout)
 }
 
 async fn nback_game_loop(
@@ -895,39 +954,42 @@ async fn nback_game_loop(
     Ok(())
 }
 
+async fn resolve_learn_session(
+    pool: &PgPool,
+    args: &LearnArgs,
+) -> Result<wisecrow::srs::session::Session, WisecrowError> {
+    if let Some(session) =
+        SessionManager::resume(pool, args.user_id, &args.native_lang, &args.foreign_lang).await?
+    {
+        info!(
+            "Resuming session {} at card {}/{}",
+            session.id,
+            session.current_index,
+            session.cards.len()
+        );
+        Ok(session)
+    } else {
+        info!(
+            "Creating new session: {} -> {}, deck_size={}, speed={}ms",
+            args.native_lang, args.foreign_lang, args.deck_size, args.speed_ms
+        );
+        SessionManager::create(
+            pool,
+            args.user_id,
+            &args.native_lang,
+            &args.foreign_lang,
+            args.deck_size,
+            args.speed_ms,
+        )
+        .await
+    }
+}
+
 async fn handle_learn(args: LearnArgs) -> Result<(), Error> {
     validate_languages(&args.native_lang, &args.foreign_lang)?;
     let (config, pool) = load_config_and_pool().await?;
 
-    let session =
-        match SessionManager::resume(&pool, args.user_id, &args.native_lang, &args.foreign_lang)
-            .await?
-        {
-            Some(session) => {
-                info!(
-                    "Resuming session {} at card {}/{}",
-                    session.id,
-                    session.current_index,
-                    session.cards.len()
-                );
-                session
-            }
-            None => {
-                info!(
-                    "Creating new session: {} -> {}, deck_size={}, speed={}ms",
-                    args.native_lang, args.foreign_lang, args.deck_size, args.speed_ms
-                );
-                SessionManager::create(
-                    &pool,
-                    args.user_id,
-                    &args.native_lang,
-                    &args.foreign_lang,
-                    args.deck_size,
-                    args.speed_ms,
-                )
-                .await?
-            }
-        };
+    let session = resolve_learn_session(&pool, &args).await?;
 
     if session.cards.is_empty() {
         info!("No cards available. Ingest some data first with `wisecrow ingest`.");
@@ -936,7 +998,17 @@ async fn handle_learn(args: LearnArgs) -> Result<(), Error> {
 
     let foreign_lang_name = resolve_language_name(&args.foreign_lang)?.to_owned();
 
-    let gloss_ctx = match wisecrow::llm::create_provider(&config) {
+    let gloss_ctx = build_gloss_context(&config, &pool);
+    let media_ctx = build_media_context(pool.clone(), args.foreign_lang, config.unsplash_api_key);
+
+    app::run_tui(pool, session, media_ctx, gloss_ctx, foreign_lang_name).await?;
+    Ok(())
+}
+
+/// Builds the gloss overlay context if an LLM provider is configured, degrading
+/// gracefully (the overlay is simply unavailable) when it is not.
+fn build_gloss_context(config: &Config, pool: &PgPool) -> Option<wisecrow::tui::app::GlossContext> {
+    match wisecrow::llm::create_provider(config) {
         Ok(provider) => Some(wisecrow::tui::app::GlossContext {
             provider: provider.into(),
             pool: pool.clone(), // clone: PgPool is Arc-based
@@ -945,22 +1017,23 @@ async fn handle_learn(args: LearnArgs) -> Result<(), Error> {
             tracing::info!("LLM provider not configured; gloss overlay unavailable: {e}");
             None
         }
-    };
+    }
+}
 
-    let media_ctx = match MediaContext::new(
-        pool.clone(), // clone: PgPool is Arc-based
-        args.foreign_lang,
-        config.unsplash_api_key,
-    ) {
+/// Builds the media (audio/image) context, degrading gracefully to no media when
+/// the cache directory cannot be initialised.
+fn build_media_context(
+    pool: PgPool,
+    foreign_lang: String,
+    unsplash_api_key: Option<wisecrow::config::SecureString>,
+) -> Option<MediaContext> {
+    match MediaContext::new(pool, foreign_lang, unsplash_api_key) {
         Ok(ctx) => Some(ctx),
         Err(e) => {
             tracing::warn!("Media cache init failed, running without media: {e}");
             None
         }
-    };
-
-    app::run_tui(pool, session, media_ctx, gloss_ctx, foreign_lang_name).await?;
-    Ok(())
+    }
 }
 
 fn handle_quiz(args: QuizArgs) -> Result<(), Error> {

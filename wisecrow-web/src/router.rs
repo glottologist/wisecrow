@@ -7,7 +7,7 @@ use crate::components::login::LoginPage;
 use crate::components::nback::NbackPage;
 use crate::components::quiz::QuizPage;
 
-#[derive(Clone, Routable, Debug, PartialEq)]
+#[derive(Clone, Routable, Debug, PartialEq, Eq)]
 #[rustfmt::skip]
 pub enum Route {
     #[route("/login")]

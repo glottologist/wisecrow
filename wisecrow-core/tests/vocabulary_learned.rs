@@ -99,7 +99,7 @@ async fn learned_with_states_2_and_3() {
         .await
         .expect("query failed");
     let mut foreigns: Vec<&str> = entries.iter().map(|e| e.to_phrase.as_str()).collect();
-    foreigns.sort();
+    foreigns.sort_unstable();
     assert_eq!(foreigns, vec!["casa", "perro"]);
 
     cleanup(&pool).await;

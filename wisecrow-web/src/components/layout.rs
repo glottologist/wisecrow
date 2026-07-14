@@ -1,22 +1,7 @@
 use dioxus::prelude::*;
 
+use crate::components::server_api::logout;
 use crate::router::Route;
-
-#[cfg(feature = "server")]
-use crate::server::auth::logout;
-
-#[cfg(not(feature = "server"))]
-mod server_stubs {
-    use dioxus::prelude::*;
-
-    #[server]
-    pub async fn logout() -> Result<(), ServerFnError> {
-        Err(ServerFnError::new("server-only"))
-    }
-}
-
-#[cfg(not(feature = "server"))]
-use server_stubs::*;
 
 #[component]
 pub fn Layout() -> Element {

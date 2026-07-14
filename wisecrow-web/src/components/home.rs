@@ -2,24 +2,8 @@ use dioxus::prelude::*;
 
 use wisecrow_dto::LanguageInfo;
 
+use crate::components::server_api::list_languages;
 use crate::router::Route;
-
-#[cfg(feature = "server")]
-use crate::server::learn::list_languages;
-
-#[cfg(not(feature = "server"))]
-mod server_stubs {
-    use dioxus::prelude::*;
-    use wisecrow_dto::LanguageInfo;
-
-    #[server]
-    pub async fn list_languages() -> Result<Vec<LanguageInfo>, ServerFnError> {
-        Err(ServerFnError::new("server-only"))
-    }
-}
-
-#[cfg(not(feature = "server"))]
-use server_stubs::*;
 
 #[component]
 pub fn Home() -> Element {

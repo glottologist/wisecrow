@@ -12,7 +12,10 @@ reload_html = true
 watch_path = ["src", "assets"]
 
 [web.resource]
-style = ["/style.css"]
+# The stylesheet is registered via `asset!` in the root component instead: this
+# key only injects a <link> tag, it does not ship the file, so the browser would
+# request a stylesheet that was never bundled.
+style = []
 script = []
 
 [web.resource.dev]

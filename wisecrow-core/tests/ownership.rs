@@ -241,7 +241,7 @@ async fn dnb_trials_and_state_roundtrip() {
             .expect("save trial");
     }
 
-    let trials = DnbSessionRepository::load_trials(&pool, sid)
+    let trials = DnbSessionRepository::load_answered_trials(&pool, sid)
         .await
         .expect("load trials");
     assert_eq!(trials.len(), 5);
@@ -275,6 +275,109 @@ async fn dnb_trials_and_state_roundtrip() {
 
     sqlx::query("DELETE FROM users WHERE id = ANY($1)")
         .bind(vec![owner, other])
+        .execute(&pool)
+        .await
+        .expect("cleanup");
+    sqlx::query("DELETE FROM translations WHERE id = $1")
+        .bind(tid)
+        .execute(&pool)
+        .await
+        .expect("cleanup translation");
+}
+
+/// The web n-back flow must score against server-generated match flags, never a
+/// client assertion: trials are inserted with their flags at session start, the
+/// client only records responses, and a non-owner cannot record at all.
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn dnb_scoring_is_server_owned() {
+    let pool = test_pool().await;
+    let owner = make_user(&pool, "dnb-so@test.local").await;
+    let attacker = make_user(&pool, "dnb-so-attacker@test.local").await;
+
+    let en = ensure_lang(&pool, "en", "English").await;
+    let ru = ensure_lang(&pool, "ru", "Russian").await;
+    let tid: i32 = sqlx::query_scalar(
+        "INSERT INTO translations (from_language_id, to_language_id, from_phrase, to_phrase, frequency)
+         VALUES ($1, $2, 'server-owned', 'server-owned', 1) RETURNING id",
+    )
+    .bind(en)
+    .bind(ru)
+    .fetch_one(&pool)
+    .await
+    .expect("insert translation");
+
+    let sid: i32 = sqlx::query_scalar(
+        "INSERT INTO dnb_sessions (user_id, native_lang, foreign_lang, mode, interval_ms_start, interval_ms_end)
+         VALUES ($1, 'ru', 'en', 'audio_written', 4000, 4000) RETURNING id",
+    )
+    .bind(owner)
+    .fetch_one(&pool)
+    .await
+    .expect("insert dnb session");
+
+    let vocab = DnbVocab {
+        translation_id: tid,
+        from_phrase: "server-owned".to_owned(),
+        to_phrase: "server-owned".to_owned(),
+    };
+    // Both trials are audio-matches as far as the server is concerned.
+    let generated: Vec<Trial> = (1..=2u32)
+        .map(|i| Trial {
+            trial_number: i,
+            n_level: 2,
+            audio_vocab: vocab.clone(),
+            visual_vocab: vocab.clone(),
+            audio_match: true,
+            visual_match: true,
+            interval_ms: 4000,
+        })
+        .collect();
+    DnbSessionRepository::insert_generated_trials(&pool, sid, owner, &generated)
+        .await
+        .expect("insert generated trials");
+
+    // Nothing is answered yet, so no trial counts.
+    assert!(DnbSessionRepository::load_answered_trials(&pool, sid)
+        .await
+        .expect("load answered")
+        .is_empty());
+
+    let wrong = TrialResponse {
+        audio_response: Some(false),
+        visual_response: Some(false),
+        response_time_ms: None,
+    };
+    let right = TrialResponse {
+        audio_response: Some(true),
+        visual_response: Some(true),
+        response_time_ms: None,
+    };
+
+    // A non-owner cannot record a response into someone else's session.
+    assert!(matches!(
+        DnbSessionRepository::record_trial_response(&pool, sid, attacker, 1, &right).await,
+        Err(WisecrowError::Unauthorized)
+    ));
+
+    // The owner records a wrong answer to trial 1 and a right answer to trial 2.
+    DnbSessionRepository::record_trial_response(&pool, sid, owner, 1, &wrong)
+        .await
+        .expect("record trial 1");
+    DnbSessionRepository::record_trial_response(&pool, sid, owner, 2, &right)
+        .await
+        .expect("record trial 2");
+
+    // Accuracy is computed from the server's match flags against the recorded
+    // responses: one wrong, one right → 0.5. The client never supplied a flag.
+    let answered = DnbSessionRepository::load_answered_trials(&pool, sid)
+        .await
+        .expect("load answered");
+    assert_eq!(answered.len(), 2);
+    assert!((channel_accuracy(&answered, Channel::Audio, 2) - 0.5).abs() < f64::EPSILON);
+
+    sqlx::query("DELETE FROM users WHERE id = ANY($1)")
+        .bind(vec![owner, attacker])
         .execute(&pool)
         .await
         .expect("cleanup");

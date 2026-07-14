@@ -42,7 +42,7 @@ pub struct GlossState {
 
 impl GlossState {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             ctx: None,
             rx: None,
@@ -65,12 +65,12 @@ impl GlossState {
     }
 
     #[must_use]
-    pub fn is_loading(&self) -> bool {
+    pub const fn is_loading(&self) -> bool {
         self.loading
     }
 
     #[must_use]
-    pub fn current(&self) -> Option<&GlossOutcome> {
+    pub const fn current(&self) -> Option<&GlossOutcome> {
         self.current.as_ref()
     }
 
@@ -170,6 +170,9 @@ mod media_support {
         /// Drains pending media results. Returns `true` if new audio arrived
         /// during this drain (used to trigger auto-play).
         pub fn drain(&mut self) -> bool {
+            // `new_audio` is only reassigned in the audio arm; without the audio
+            // feature it stays `false`, so the `mut` is unused in that build.
+            #[cfg_attr(not(feature = "audio"), allow(unused_mut))]
             let mut new_audio = false;
             while let Ok(result) = self.rx.try_recv() {
                 match result {
@@ -314,11 +317,11 @@ impl App {
         self
     }
 
-    fn is_session_complete(&self) -> bool {
+    const fn is_session_complete(&self) -> bool {
         self.current_index >= self.session.cards.len()
     }
 
-    fn fetch_media_for_current_card(&self) {
+    const fn fetch_media_for_current_card(&self) {
         #[cfg(any(feature = "audio", feature = "images"))]
         if let Some(ref media) = self.media {
             if let Some(card) = self.session.cards.get(self.current_index) {
@@ -328,7 +331,7 @@ impl App {
     }
 
     /// Drains pending media results. Returns `true` if new audio arrived.
-    fn drain_media(&mut self) -> bool {
+    const fn drain_media(&mut self) -> bool {
         #[cfg(any(feature = "audio", feature = "images"))]
         if let Some(ref mut media) = self.media {
             return media.drain();
@@ -336,14 +339,14 @@ impl App {
         false
     }
 
-    fn clear_media(&mut self) {
+    const fn clear_media(&mut self) {
         #[cfg(any(feature = "audio", feature = "images"))]
         if let Some(ref mut media) = self.media {
             media.clear();
         }
     }
 
-    fn play_audio(&self) {
+    const fn play_audio(&self) {
         #[cfg(any(feature = "audio", feature = "images"))]
         if let Some(ref media) = self.media {
             media.play_audio();
@@ -668,7 +671,7 @@ mod gloss_state_tests {
 
     impl App {
         fn test_only_minimal() -> Self {
-            App::new(
+            Self::new(
                 lazy_pool(),
                 make_session_with_card(),
                 None,

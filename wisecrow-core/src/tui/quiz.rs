@@ -12,7 +12,7 @@ use ratatui::{
 
 use crate::errors::WisecrowError;
 use crate::grammar::pdf;
-use crate::grammar::quiz::{shuffle_options, ClozeQuiz, MultipleChoiceQuiz, QuizGenerator};
+use crate::grammar::quiz::{assemble_from_content, ClozeQuiz, MultipleChoiceQuiz};
 
 use super::TICK_RATE_MS;
 
@@ -34,7 +34,7 @@ struct QuizApp {
 }
 
 impl QuizApp {
-    fn new(items: Vec<QuizItem>) -> Self {
+    const fn new(items: Vec<QuizItem>) -> Self {
         Self {
             items,
             current_index: 0,
@@ -51,7 +51,7 @@ impl QuizApp {
         self.items.get(self.current_index)
     }
 
-    fn is_complete(&self) -> bool {
+    const fn is_complete(&self) -> bool {
         self.current_index >= self.items.len()
     }
 
@@ -274,21 +274,11 @@ impl QuizApp {
 pub fn run_quiz(pdf_path: &Path, num_questions: u32) -> Result<(), WisecrowError> {
     let content = pdf::extract(pdf_path)?;
 
-    let cloze_quizzes = QuizGenerator::cloze_from_examples(
-        &content
-            .sections
-            .iter()
-            .flat_map(|s| s.examples.iter().cloned())
-            .collect::<Vec<_>>(),
-    );
-
-    let mc_quizzes =
-        QuizGenerator::multiple_choice_from_rules(&content.sections).unwrap_or_default();
+    let (cloze_quizzes, shuffled_mc) = assemble_from_content(&content);
 
     let mut items: Vec<QuizItem> = Vec::new();
-
-    for (i, mc) in mc_quizzes.into_iter().enumerate() {
-        items.push(QuizItem::MultipleChoice(shuffle_options(&mc, i)));
+    for mc in shuffled_mc {
+        items.push(QuizItem::MultipleChoice(mc));
     }
     for cloze in cloze_quizzes {
         items.push(QuizItem::Cloze(cloze));

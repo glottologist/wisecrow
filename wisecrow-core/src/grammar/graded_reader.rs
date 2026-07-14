@@ -60,18 +60,7 @@ impl GradedReader {
 ///
 /// Returns `WisecrowError::LlmError` if the JSON cannot be parsed.
 pub fn parse_response(response: &str) -> Result<GradedReader, WisecrowError> {
-    let trimmed = response.trim();
-    let json_str = if trimmed.starts_with("```") {
-        trimmed
-            .trim_start_matches("```json")
-            .trim_start_matches("```")
-            .trim_end_matches("```")
-            .trim()
-    } else {
-        trimmed
-    };
-    serde_json::from_str(json_str)
-        .map_err(|e| WisecrowError::LlmError(format!("Failed to parse graded reader: {e}")))
+    crate::llm::parse_fenced_json(response, "graded reader")
 }
 
 pub struct GradedReaderRequest<'a> {

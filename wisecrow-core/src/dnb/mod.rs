@@ -23,7 +23,7 @@ pub enum DnbMode {
 
 impl DnbMode {
     #[must_use]
-    pub fn as_str(&self) -> &str {
+    pub const fn as_str(&self) -> &str {
         match self {
             Self::AudioWritten => "audio_written",
             Self::WordTranslation => "word_translation",
@@ -214,7 +214,7 @@ impl DnbEngine {
     }
 
     #[must_use]
-    pub fn state(&self) -> &AdaptationState {
+    pub const fn state(&self) -> &AdaptationState {
         &self.state
     }
 
@@ -224,7 +224,7 @@ impl DnbEngine {
     }
 
     #[must_use]
-    pub fn trial_count(&self) -> u32 {
+    pub const fn trial_count(&self) -> u32 {
         self.trial_counter
     }
 

@@ -12,7 +12,9 @@ use dioxus::fullstack::FullstackContext;
 use dioxus::prelude::*;
 use sqlx::PgPool;
 
-use wisecrow::auth::{generate_session_token, hash_token, verify_password};
+use std::sync::OnceLock;
+
+use wisecrow::auth::{generate_session_token, hash_password, hash_token, verify_password};
 use wisecrow_dto::UserDto;
 
 use super::pool;
@@ -20,6 +22,15 @@ use super::pool;
 const COOKIE_NAME: &str = "wisecrow_session";
 const SESSION_DAYS: i32 = 30;
 const SESSION_MAX_AGE_SECS: i32 = SESSION_DAYS * 24 * 60 * 60;
+
+/// A stable Argon2 hash of a throwaway secret, verified against when the supplied
+/// email has no account (or no password). Running the verification unconditionally
+/// keeps `login`'s response time independent of whether the email exists, closing
+/// the enumeration-by-timing oracle.
+fn dummy_password_hash() -> &'static str {
+    static DUMMY: OnceLock<String> = OnceLock::new();
+    DUMMY.get_or_init(|| hash_password("wisecrow-timing-equaliser").unwrap_or_default())
+}
 
 /// The authenticated user for a request, injected into request extensions by
 /// [`auth_enrich_layer`] and read back by [`current_user`].
@@ -68,10 +79,17 @@ pub async fn user_for_token(db: &PgPool, token: &str) -> Result<Option<AuthUser>
     .await?;
 
     if row.is_some() {
-        let _ = sqlx::query("UPDATE auth_sessions SET last_used_at = now() WHERE token_hash = $1")
-            .bind(&hash)
-            .execute(db)
-            .await;
+        // Throttle the bookkeeping write: refresh `last_used_at` at most once every
+        // few minutes per session so a valid cookie does not incur a write on every
+        // request (static assets included).
+        let _ = sqlx::query(
+            "UPDATE auth_sessions SET last_used_at = now()
+             WHERE token_hash = $1
+               AND (last_used_at IS NULL OR last_used_at < now() - interval '5 minutes')",
+        )
+        .bind(&hash)
+        .execute(db)
+        .await;
     }
     Ok(row.map(|(id, is_admin)| AuthUser { id, is_admin }))
 }
@@ -144,12 +162,17 @@ pub async fn login(email: String, password: String) -> Result<UserDto, ServerFnE
     .await
     .map_err(|e| ServerFnError::new(format!("login query failed: {e}")))?;
 
-    let Some((id, display_name, Some(hash))) = row else {
+    // Verify a password on every path — against the stored hash when the account
+    // exists, else a fixed dummy hash — so timing does not reveal whether the
+    // email is registered.
+    let (found, hash) = match row {
+        Some((id, display_name, Some(hash))) => (Some((id, display_name)), hash),
+        _ => (None, dummy_password_hash().to_owned()),
+    };
+    let password_ok = verify_password(&password, &hash);
+    let Some((id, display_name)) = found.filter(|_| password_ok) else {
         return Err(ServerFnError::new("Invalid email or password"));
     };
-    if !verify_password(&password, &hash) {
-        return Err(ServerFnError::new("Invalid email or password"));
-    }
 
     let token = issue_session(db, id)
         .await
