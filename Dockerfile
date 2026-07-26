@@ -17,24 +17,23 @@ RUN apt-get update \
         pkg-config libssl-dev ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# Dioxus CLI bundles the fullstack server + WASM client. Pinned to a 0.7
-# minor so dist layout stays predictable; bump together with the workspace
-# `dioxus = "0.7"` dependency.
-RUN cargo install --locked dioxus-cli@^0.7 \
+# Dioxus CLI bundles the fullstack server + WASM client. Keep its exact
+# version aligned with the resolved `dioxus` crate and bump both together.
+RUN cargo install --locked dioxus-cli@0.7.3 \
  && rustup target add wasm32-unknown-unknown
 
 WORKDIR /build
 COPY . .
 
-# CLI binary — default features only (no audio/images) so the runtime image
-# does not need alsa/system multimedia libs. Override --features at build
-# time via `--build-arg` if you need them on the server.
+# CLI binary — default features only, so the runtime image does not need
+# local audio playback or image-display libraries.
 RUN cargo build --release --bin wisecrow
 
 # Fullstack web bundle. `Dioxus.toml` configures `out_dir = "dist"` inside
 # the wisecrow-web crate, so artifacts land in /build/wisecrow-web/dist.
+# Web audio enables TTS generation without the CLI-only rodio playback stack.
 RUN cd wisecrow-web \
- && dx bundle --release --platform web
+ && dx bundle --release --platform web --features "audio images"
 
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime
 RUN apt-get update \

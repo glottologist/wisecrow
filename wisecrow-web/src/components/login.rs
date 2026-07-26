@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use crate::components::server_api::login;
+use crate::api::auth::login;
 use crate::router::Route;
 
 #[component]
@@ -45,7 +45,8 @@ pub fn LoginPage() -> Element {
                                     navigator.push(Route::Home {});
                                 }
                                 Err(_) => {
-                                    error_msg.set(Some("Invalid email or password".to_owned()));
+                                    error_msg
+                                        .set(Some(String::from("Invalid email or password")));
                                 }
                             }
                         }

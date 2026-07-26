@@ -1,6 +1,6 @@
 # CLI reference
 
-The `wisecrow` binary ships with sixteen subcommands. Every command has a
+The `wisecrow` binary ships with nineteen subcommands. Every command has a
 short alias (in parentheses below) for shell ergonomics.
 
 ## Synopsis
@@ -19,6 +19,7 @@ list.
 | [`download`](#download) | `d` | no | Fetch corpus files only. |
 | [`download-all`](#download-all) | `da` | no | Fetch every language pair against one native lang. |
 | [`ingest`](#ingest) | `i` | yes | Fetch + parse + persist translations. |
+| [`frequency`](#frequency) | `fr` | yes | Rank stored translations from a word-frequency list. |
 | [`learn`](#learn) | `r` | yes | Open the SRS flashcard TUI. |
 | [`nback`](#nback) | `nb` | yes | Run an adaptive dual n-back session. |
 | [`list-languages`](#list-languages) | `l` | no | Print the supported-language table. |
@@ -32,6 +33,8 @@ list.
 | [`gloss`](#gloss) | `gl` | yes + LLM | Leipzig interlinear gloss for a sentence (cached). |
 | [`graded-reader`](#graded-reader) | `gr` | yes + LLM | Generate a CEFR-graded passage from learned vocab. |
 | [`preview`](#preview) | `pv` | yes (+ LLM if `--gloss-unknowns`) | Annotate subtitle file tokens with corpus + SRS state. |
+| [`user`](#user) | `u` | yes | Manage accounts and web login. |
+| [`sync-client`](#sync-client) | `sc` | yes | Manage per-client corpus-sync API keys. |
 
 ## Common options
 
@@ -42,8 +45,9 @@ arguments:
 |------|--------:|-------------|
 | `-n`, `--native-lang` | _required_ | Your native language ISO 639 code. |
 | `-f`, `--foreign-lang` | _required_ | Target language code (must differ from native). |
-| `--corpus` | all | Space-delimited filter: `open_subtitles`, `cc_matrix`, `nllb`. |
+| `--corpus` | all | Space-delimited filter: `open_subtitles`, `cc_aligned`, `cc_matrix`, `paracrawl`, `nllb`. |
 | `--max-file-size-mb` | `102400` | Per-file ceiling for downloaded content length. |
+| `--max-decompressed-mb` | `8192` | Per-file ceiling for the expanded archive. |
 | `--unpack` | `true` | Decompress `.gz`/`.zip` after download. |
 
 > **Note:** Pass `--corpus "cc_matrix nllb"` (one shell argument). The clap
@@ -54,11 +58,11 @@ arguments:
 ## `download`
 
 ```sh
-wisecrow download -n <NATIVE> -f <FOREIGN> [--corpus ...] [--max-file-size-mb N] [--unpack BOOL]
+wisecrow download -n <NATIVE> -f <FOREIGN> [--corpus ...] [--max-file-size-mb N] [--max-decompressed-mb N] [--unpack BOOL]
 ```
 
-Downloads TMX and OPUS XML alignment files for every selected corpus and
-optionally decompresses them. **No database is required.** The files land in
+Downloads the TMX translation-memory release for every selected corpus and
+optionally decompresses it. **No database is required.** The files land in
 the current working directory (use `download-all` if you want a structured
 output tree).
 
@@ -70,7 +74,7 @@ abort.
 ## `download-all`
 
 ```sh
-wisecrow download-all -n <NATIVE> -o <DIR> [--corpus ...] [--max-file-size-mb N] [--unpack BOOL]
+wisecrow download-all -n <NATIVE> -o <DIR> [--corpus ...] [--max-file-size-mb N] [--max-decompressed-mb N] [--unpack BOOL]
 ```
 
 Downloads corpora for **every supported foreign language** against the given
@@ -87,12 +91,17 @@ and CI fixture preparation.
 ## `ingest`
 
 ```sh
-wisecrow ingest -n <NATIVE> -f <FOREIGN> [--corpus ...] [--max-file-size-mb N] [--unpack BOOL]
+wisecrow ingest -n <NATIVE> -f <FOREIGN> [--corpus ...] [--max-file-size-mb N] [--max-decompressed-mb N] [--unpack BOOL]
+wisecrow ingest --file <PATH> -n <NATIVE> -f <FOREIGN>
 ```
 
 Same shape as `download`, but each file is also parsed and its translation
 pairs persisted to PostgreSQL. Tasks run in parallel; the process aborts
 in-flight tasks on SIGINT/SIGTERM.
+
+| Flag | Default | Description |
+|------|--------:|-------------|
+| `--file` | — | Ingest this local TMX file instead of downloading. Must be decompressed; the corpus and download options are ignored. |
 
 Per-batch behaviour:
 
@@ -100,6 +109,46 @@ Per-batch behaviour:
 - `INSERT … ON CONFLICT DO UPDATE SET frequency = frequency + 1` makes
   re-runs cumulative, not destructive.
 - Languages are upserted lazily through `DatabasePersister::ensure_language`.
+
+---
+
+## `frequency`
+
+```sh
+wisecrow frequency --lang <CODE> [--file PATH | --from-corpus]
+```
+
+Replaces the `frequency` column with figures from a word-frequency list.
+Ingestion leaves new rows at 1, and deck selection skips rows at that value, so
+a corpus stays largely unusable until this has run. See
+[Frequency ranking](../guides/frequency-ranking.md) for the full workflow.
+
+| Flag | Default | Description |
+|------|--------:|-------------|
+| `-l`, `--lang` | _required_ | Language whose words the list holds. |
+| `--file` | — | Read a local list instead of downloading Hermit Dave's. |
+| `--from-corpus` | `false` | Derive counts from the stored phrases; conflicts with `--file`. |
+
+With neither flag the command fetches
+`hermitdave/FrequencyWords/…/<code>/<code>_50k.txt`, which exists for 62
+languages and none of the Celtic ones. With `--file` it reads any of three
+layouts, choosing per line rather than per file:
+
+| Layout | Shape | Source |
+|--------|-------|--------|
+| `word count` | space-separated pair | Hermit Dave |
+| `rank<TAB>word<TAB>count` | tab-separated triple | Leipzig Corpora Collection |
+| `word,count` | comma-separated pair | published CSV lists |
+
+`--from-corpus` needs no list at all: it tokenises the phrases already stored
+for the language and counts the forms, which is the route for languages nobody
+has published a list for. It requires a tokeniser for the language.
+
+Matching folds case and strips edge punctuation (`.,!?;:"'¡¿`), and applies to
+whichever side of a pair holds the listed language, so ingest direction is
+irrelevant. Only whole phrases match: a word list ranks single-word rows, not
+the sentences containing that word. A file that parses to no entries is an
+error rather than a silent no-op.
 
 ---
 
@@ -318,3 +367,34 @@ frequency-sorted table tagged with each token's SRS status.
 `--gloss-unknowns` LLM-translates corpus-misses inline.
 
 See [Subtitle preview](../guides/preview-subtitles.md) for the full guide.
+
+---
+
+## `user`
+
+```sh
+wisecrow user add --email <EMAIL> --display-name <NAME> [--admin]
+wisecrow user list
+wisecrow user passwd --email <EMAIL>
+wisecrow user disable --email <EMAIL>
+```
+
+Manages accounts for the web application; there is no public signup, so the
+first admin is created this way. `add` and `passwd` prompt for a password
+unless `WISECROW__INIT_PASSWORD` is set, which allows non-interactive
+provisioning. `disable` clears the password and revokes live sessions.
+
+---
+
+## `sync-client`
+
+```sh
+wisecrow sync-client add --name <NAME>
+wisecrow sync-client list
+wisecrow sync-client revoke --name <NAME>
+```
+
+Issues per-client keys for the corpus-sync endpoints. `add` prints the key
+once. Pullers send it as the `x-api-key` header; keys are individually
+revocable and compared in constant time. See
+[Sync workflow](../guides/sync-workflow.md).

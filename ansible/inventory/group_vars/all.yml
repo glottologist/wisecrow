@@ -53,7 +53,6 @@ postgres_db: wisecrow
 
 # Optional knobs — leave blank to omit from the generated .env.
 llm_provider: ""        # anthropic | openai
-unsplash_api_key: ""
 remote_url: ""
 remote_api_key: ""
 sync_api_key: ""

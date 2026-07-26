@@ -1,17 +1,15 @@
 pub mod acquisition;
 pub mod auth;
-pub mod learn;
-#[cfg(any(feature = "audio", feature = "images"))]
-pub mod media;
-pub mod nback;
-pub mod quiz;
 pub mod ratelimit;
 pub mod sync;
 pub mod tls;
 
 use sqlx::PgPool;
+use std::fmt::Debug;
 use std::sync::OnceLock;
 
+use axum::http::StatusCode;
+use dioxus::prelude::ServerFnError;
 use wisecrow::config::Config;
 
 static POOL: OnceLock<PgPool> = OnceLock::new();
@@ -22,11 +20,25 @@ pub fn pool() -> Result<&'static PgPool, dioxus::prelude::ServerFnError> {
         .ok_or_else(|| dioxus::prelude::ServerFnError::new("Database pool not initialized"))
 }
 
+pub(crate) fn client_error(status: StatusCode, message: &str) -> ServerFnError {
+    ServerFnError::ServerError {
+        message: String::from(message),
+        code: status.as_u16(),
+        details: None,
+    }
+}
+
+pub(crate) fn internal_error(operation: &str, error: &impl Debug) -> ServerFnError {
+    tracing::error!(?error, operation, "request failed");
+    client_error(StatusCode::INTERNAL_SERVER_ERROR, "Request failed")
+}
+
 pub fn validate_lang(code: &str) -> Result<(), dioxus::prelude::ServerFnError> {
     if !wisecrow::lang::is_valid_code(code) {
-        return Err(dioxus::prelude::ServerFnError::new(format!(
-            "Invalid language code: {code}"
-        )));
+        return Err(client_error(
+            StatusCode::BAD_REQUEST,
+            "Invalid language code",
+        ));
     }
     Ok(())
 }
@@ -62,7 +74,7 @@ pub async fn init_pool() -> Result<(), Box<dyn std::error::Error>> {
 
     POOL.set(db_pool).map_err(|_| "Pool already initialized")?;
 
-    let sync_key = cfg.sync_api_key.map(|k| k.expose().to_owned());
+    let sync_key = cfg.sync_api_key.map(|key| String::from(key.expose()));
     SYNC_API_KEY
         .set(sync_key)
         .map_err(|_| "Sync API key already initialized")?;

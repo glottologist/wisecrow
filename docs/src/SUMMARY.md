@@ -11,6 +11,7 @@
 # Guides
 
 - [Ingesting corpora](./guides/ingesting-corpora.md)
+- [Frequency ranking](./guides/frequency-ranking.md)
 - [Learn TUI](./guides/learn-tui.md)
 - [Leipzig glossing](./guides/glossing.md)
 - [Graded reader](./guides/graded-reader.md)
@@ -27,6 +28,7 @@
 - [Configuration reference](./reference/configuration.md)
 - [Database schema](./reference/database-schema.md)
 - [Troubleshooting](./reference/troubleshooting.md)
+- [Translating](./reference/translating.md)
 - [Contributing](./reference/contributing.md)
 
 # API

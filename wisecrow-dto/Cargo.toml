@@ -6,4 +6,5 @@ description = "WASM-safe shared types for Wisecrow"
 
 [dependencies]
 chrono = { version = ">=0.4,<0.4.44", features = ["serde"] }
+num-traits = "0.2"
 serde = { version = "1.0", features = ["derive"] }

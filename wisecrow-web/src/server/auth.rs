@@ -1,9 +1,10 @@
-//! Web authentication: opaque server-side sessions, the `login`/`logout` server
-//! functions, the `current_user` gate used by protected server functions, and an
-//! enrichment middleware that attaches the authenticated user to each request.
+//! Web authentication with opaque server-side sessions.
 
 use axum::extract::Request;
-use axum::http::{header::SET_COOKIE, HeaderValue, StatusCode};
+use axum::http::{
+    header::{AUTHORIZATION, SET_COOKIE},
+    HeaderValue, StatusCode,
+};
 use axum::middleware::Next;
 use axum::response::Response;
 use axum::Extension;
@@ -22,22 +23,55 @@ use super::pool;
 const COOKIE_NAME: &str = "wisecrow_session";
 const SESSION_DAYS: i32 = 30;
 const SESSION_MAX_AGE_SECS: i32 = SESSION_DAYS * 24 * 60 * 60;
+const SESSION_TOKEN_MAX_LENGTH: usize = 43;
+const EMAIL_MAX_LENGTH: usize = 255;
+const PASSWORD_MAX_LENGTH: usize = 1024;
 
-/// A stable Argon2 hash of a throwaway secret, verified against when the supplied
-/// email has no account (or no password). Running the verification unconditionally
-/// keeps `login`'s response time independent of whether the email exists, closing
-/// the enumeration-by-timing oracle.
-fn dummy_password_hash() -> &'static str {
-    static DUMMY: OnceLock<String> = OnceLock::new();
-    DUMMY.get_or_init(|| hash_password("wisecrow-timing-equaliser").unwrap_or_default())
+fn server_error(message: &str) -> ServerFnError {
+    ServerFnError::ServerError {
+        message: String::from(message),
+        code: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+        details: None,
+    }
 }
 
-/// The authenticated user for a request, injected into request extensions by
-/// [`auth_enrich_layer`] and read back by [`current_user`].
+fn unauthorized_error(message: &str) -> ServerFnError {
+    ServerFnError::ServerError {
+        message: String::from(message),
+        code: StatusCode::UNAUTHORIZED.as_u16(),
+        details: None,
+    }
+}
+
+fn dummy_password_hash() -> Result<&'static str, ServerFnError> {
+    static DUMMY: OnceLock<Result<String, ()>> = OnceLock::new();
+    match DUMMY.get_or_init(|| {
+        hash_password("wisecrow-timing-equaliser").map_err(|error| {
+            tracing::error!(?error, "failed to initialize password timing equalizer");
+        })
+    }) {
+        Ok(hash) => Ok(hash),
+        Err(()) => Err(server_error("Authentication service unavailable")),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AuthUser {
     pub id: i32,
     pub is_admin: bool,
+}
+
+#[derive(Clone)]
+pub struct AuthenticatedSession {
+    pub user: AuthUser,
+    token_hash: Vec<u8>,
+}
+
+impl AuthenticatedSession {
+    #[must_use]
+    pub fn token_hash(&self) -> &[u8] {
+        &self.token_hash
+    }
 }
 
 /// Issues a new session for `user_id`, returning the raw token (the caller sets
@@ -60,72 +94,172 @@ pub async fn issue_session(db: &PgPool, user_id: i32) -> Result<String, sqlx::Er
     Ok(token)
 }
 
-/// Resolves the live (unexpired) session for `token` to its user, bumping
-/// `last_used_at` on a hit. Returns `None` when the token is unknown or expired.
+/// Resolves a live session and bumps `last_used_at` on a hit.
 ///
 /// # Errors
 ///
 /// Returns the underlying [`sqlx::Error`] if the lookup fails.
-pub async fn user_for_token(db: &PgPool, token: &str) -> Result<Option<AuthUser>, sqlx::Error> {
-    let hash = hash_token(token);
+pub async fn user_session_for_token(
+    db: &PgPool,
+    token: &str,
+) -> Result<Option<AuthenticatedSession>, sqlx::Error> {
+    let token_hash = hash_token(token);
     let row = sqlx::query_as::<_, (i32, bool)>(
         "SELECT u.id, u.is_admin
          FROM auth_sessions s
          JOIN users u ON u.id = s.user_id
          WHERE s.token_hash = $1 AND s.expires_at > now()",
     )
-    .bind(&hash)
+    .bind(&token_hash)
     .fetch_optional(db)
     .await?;
 
     if row.is_some() {
-        // Throttle the bookkeeping write: refresh `last_used_at` at most once every
-        // few minutes per session so a valid cookie does not incur a write on every
-        // request (static assets included).
-        let _ = sqlx::query(
+        if let Err(error) = sqlx::query(
             "UPDATE auth_sessions SET last_used_at = now()
              WHERE token_hash = $1
                AND (last_used_at IS NULL OR last_used_at < now() - interval '5 minutes')",
         )
-        .bind(&hash)
+        .bind(&token_hash)
         .execute(db)
-        .await;
+        .await
+        {
+            tracing::warn!(?error, "failed to refresh session activity");
+        }
     }
-    Ok(row.map(|(id, is_admin)| AuthUser { id, is_admin }))
+    Ok(row.map(|(id, is_admin)| AuthenticatedSession {
+        user: AuthUser { id, is_admin },
+        token_hash,
+    }))
 }
 
-/// Deletes the session identified by `token`, if any.
+/// Deletes the session identified by its SHA-256 hash, if any.
 ///
 /// # Errors
 ///
 /// Returns the underlying [`sqlx::Error`] if the delete fails.
-pub async fn revoke_session(db: &PgPool, token: &str) -> Result<(), sqlx::Error> {
+pub async fn revoke_session_hash(db: &PgPool, token_hash: &[u8]) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM auth_sessions WHERE token_hash = $1")
-        .bind(hash_token(token))
+        .bind(token_hash)
         .execute(db)
         .await?;
     Ok(())
 }
 
-/// Returns the authenticated user for the current request, or a 401 error when
-/// no valid session cookie was presented. Protected server functions call this
-/// first and use the returned `id` instead of any client-supplied `user_id`.
+/// Deletes the session identified by a raw cookie token, if any.
 ///
 /// # Errors
 ///
-/// Returns a `ServerFnError` (after committing a 401 status) when the request
-/// has no authenticated user.
-pub async fn current_user() -> Result<AuthUser, ServerFnError> {
-    match FullstackContext::extract::<Extension<AuthUser>, _>().await {
-        Ok(Extension(user)) => Ok(user),
-        Err(_) => {
-            FullstackContext::commit_http_status(
-                StatusCode::UNAUTHORIZED,
-                Some("Unauthorized".into()),
-            );
-            Err(ServerFnError::new("Unauthorized"))
-        }
+/// Returns the underlying [`sqlx::Error`] if the delete fails.
+pub async fn revoke_session(db: &PgPool, token: &str) -> Result<(), sqlx::Error> {
+    let token_hash = hash_token(token);
+    revoke_session_hash(db, &token_hash).await
+}
+
+/// Verifies credentials without revealing whether an email is registered.
+///
+/// # Errors
+///
+/// Returns a sanitized server error when the query or password verifier fails,
+/// or an unauthorized error when the credentials are invalid.
+pub async fn verify_credentials(
+    db: &PgPool,
+    email: &str,
+    password: &str,
+) -> Result<UserDto, ServerFnError> {
+    let bounded = !email.is_empty()
+        && email.len() <= EMAIL_MAX_LENGTH
+        && !password.is_empty()
+        && password.len() <= PASSWORD_MAX_LENGTH;
+    let row = if bounded {
+        sqlx::query_as::<_, (i32, String, Option<String>)>(
+            "SELECT id, display_name, password_hash FROM users WHERE email = $1",
+        )
+        .bind(email)
+        .fetch_optional(db)
+        .await
+        .map_err(|error| {
+            tracing::error!(?error, "credential lookup failed");
+            server_error("Authentication service unavailable")
+        })?
+    } else {
+        None
+    };
+
+    let dummy_hash = dummy_password_hash()?;
+    let hash = row
+        .as_ref()
+        .and_then(|(_, _, hash)| hash.as_deref())
+        .unwrap_or(dummy_hash);
+    let candidate = if bounded {
+        password
+    } else {
+        "invalid-password"
+    };
+    let password_ok = verify_password(candidate, hash);
+    let Some((id, display_name, Some(_))) = row.filter(|_| bounded && password_ok) else {
+        return Err(unauthorized_error("Invalid email or password"));
+    };
+    Ok(UserDto { id, display_name })
+}
+
+/// Verifies credentials and creates a new opaque session.
+///
+/// # Errors
+///
+/// Returns the credential error or a sanitized session-store error.
+pub async fn login_session(
+    db: &PgPool,
+    email: &str,
+    password: &str,
+) -> Result<(String, UserDto), ServerFnError> {
+    let user = verify_credentials(db, email, password).await?;
+    let token = issue_session(db, user.id).await.map_err(|error| {
+        tracing::error!(?error, "session creation failed");
+        server_error("Authentication service unavailable")
+    })?;
+    Ok((token, user))
+}
+
+/// Resolves the public identity for an authenticated user ID.
+///
+/// # Errors
+///
+/// Returns a sanitized server error when the lookup fails, or unauthorized if
+/// the user no longer exists.
+pub async fn user_dto(db: &PgPool, user_id: i32) -> Result<UserDto, ServerFnError> {
+    let row =
+        sqlx::query_as::<_, (i32, String)>("SELECT id, display_name FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(db)
+            .await
+            .map_err(|error| {
+                tracing::error!(?error, "authenticated user lookup failed");
+                server_error("Authentication service unavailable")
+            })?;
+    row.map(|(id, display_name)| UserDto { id, display_name })
+        .ok_or_else(|| unauthorized_error("Unauthorized"))
+}
+
+/// Returns the authenticated session for the current request.
+///
+/// # Errors
+///
+/// Returns a 401 `ServerFnError` when no valid session was presented.
+pub async fn current_session() -> Result<AuthenticatedSession, ServerFnError> {
+    match FullstackContext::extract::<Extension<AuthenticatedSession>, _>().await {
+        Ok(Extension(session)) => Ok(session),
+        Err(_) => Err(unauthorized_error("Unauthorized")),
     }
+}
+
+/// Returns the authenticated user for the current request.
+///
+/// # Errors
+///
+/// Returns a 401 `ServerFnError` when no valid session was presented.
+pub async fn current_user() -> Result<AuthUser, ServerFnError> {
+    Ok(current_session().await?.user)
 }
 
 fn push_set_cookie(cookie: &str) -> Result<(), ServerFnError> {
@@ -137,7 +271,7 @@ fn push_set_cookie(cookie: &str) -> Result<(), ServerFnError> {
     Ok(())
 }
 
-fn set_session_cookie(token: &str) -> Result<(), ServerFnError> {
+pub(crate) fn set_session_cookie(token: &str) -> Result<(), ServerFnError> {
     push_set_cookie(&format!(
         "{COOKIE_NAME}={token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age={SESSION_MAX_AGE_SECS}"
     ))
@@ -149,65 +283,81 @@ fn clear_session_cookie() -> Result<(), ServerFnError> {
     ))
 }
 
-/// Authenticates an email/password, issues a session, and sets the session
-/// cookie. Returns the logged-in user.
-#[server]
-pub async fn login(email: String, password: String) -> Result<UserDto, ServerFnError> {
-    let db = pool()?;
-    let row = sqlx::query_as::<_, (i32, String, Option<String>)>(
-        "SELECT id, display_name, password_hash FROM users WHERE email = $1",
-    )
-    .bind(&email)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| ServerFnError::new(format!("login query failed: {e}")))?;
-
-    // Verify a password on every path — against the stored hash when the account
-    // exists, else a fixed dummy hash — so timing does not reveal whether the
-    // email is registered.
-    let (found, hash) = match row {
-        Some((id, display_name, Some(hash))) => (Some((id, display_name)), hash),
-        _ => (None, dummy_password_hash().to_owned()),
-    };
-    let password_ok = verify_password(&password, &hash);
-    let Some((id, display_name)) = found.filter(|_| password_ok) else {
-        return Err(ServerFnError::new("Invalid email or password"));
-    };
-
-    let token = issue_session(db, id)
-        .await
-        .map_err(|e| ServerFnError::new(format!("session creation failed: {e}")))?;
-    set_session_cookie(&token)?;
-
-    Ok(UserDto { id, display_name })
-}
-
-/// Revokes the current session and clears the cookie.
-#[server]
-pub async fn logout() -> Result<(), ServerFnError> {
+pub(crate) async fn revoke_browser_session() -> Result<(), ServerFnError> {
     let jar = FullstackContext::extract::<CookieJar, _>()
         .await
         .map_err(|_| ServerFnError::new("no request context"))?;
     if let Some(cookie) = jar.get(COOKIE_NAME) {
-        if let Ok(db) = pool() {
-            let _ = revoke_session(db, cookie.value()).await;
+        match pool() {
+            Ok(db) => {
+                if let Err(error) = revoke_session(db, cookie.value()).await {
+                    tracing::warn!(?error, "failed to revoke browser session");
+                }
+            }
+            Err(error) => tracing::warn!(?error, "session pool unavailable during logout"),
         }
     }
     clear_session_cookie()?;
     Ok(())
 }
 
-/// Enrichment middleware: if the request carries a valid session cookie, attach
-/// the [`AuthUser`] to the request extensions. Never rejects — the login page,
-/// static assets, and sync routes must stay reachable; rejection is enforced
-/// per-function by [`current_user`].
 pub async fn auth_enrich_layer(jar: CookieJar, mut req: Request, next: Next) -> Response {
-    if let Some(cookie) = jar.get(COOKIE_NAME) {
-        if let Ok(db) = pool() {
-            if let Ok(Some(user)) = user_for_token(db, cookie.value()).await {
-                req.extensions_mut().insert(user);
-            }
+    let token = match req.headers().get(AUTHORIZATION) {
+        Some(header) => bearer_token(Some(header)),
+        None => jar.get(COOKIE_NAME).map(|cookie| cookie.value()),
+    };
+    if let Some(token) = token {
+        match pool() {
+            Ok(db) => match user_session_for_token(db, token).await {
+                Ok(Some(session)) => {
+                    req.extensions_mut().insert(session);
+                }
+                Ok(None) => {}
+                Err(error) => tracing::warn!(?error, "failed to resolve request session"),
+            },
+            Err(error) => tracing::warn!(?error, "session pool unavailable"),
         }
     }
     next.run(req).await
+}
+
+fn bearer_token(header: Option<&HeaderValue>) -> Option<&str> {
+    let token = header?.to_str().ok()?.strip_prefix("Bearer ")?;
+    let valid = !token.is_empty()
+        && token.len() <= SESSION_TOKEN_MAX_LENGTH
+        && token
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'));
+    valid.then_some(token)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[rstest::rstest]
+    #[case(None, None)]
+    #[case(Some("Basic abc"), None)]
+    #[case(Some("Bearer"), None)]
+    #[case(Some("Bearer "), None)]
+    #[case(Some("Bearer  valid-token"), None)]
+    #[case(Some("Bearer valid-token extra"), None)]
+    #[case(Some("Bearer invalid/token"), None)]
+    #[case(Some("Bearer valid-token"), Some("valid-token"))]
+    fn bearer_token_cases(#[case] header: Option<&str>, #[case] expected: Option<&str>) {
+        let value = header.and_then(|raw| HeaderValue::from_str(raw).ok());
+        assert_eq!(bearer_token(value.as_ref()), expected);
+    }
+
+    #[test]
+    fn generated_token_fits_bearer_bound() {
+        let token = generate_session_token();
+        let raw = ["Bearer ", token.as_str()].concat();
+        let header = HeaderValue::from_str(&raw).expect("valid header");
+        assert_eq!(bearer_token(Some(&header)), Some(token.as_str()));
+
+        let oversized = [raw.as_str(), "a"].concat();
+        let header = HeaderValue::from_str(&oversized).expect("valid header");
+        assert_eq!(bearer_token(Some(&header)), None);
+    }
 }

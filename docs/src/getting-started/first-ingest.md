@@ -26,7 +26,7 @@ wisecrow ingest -n en -f es --corpus open_subtitles
 What happens, in order:
 
 1. The CLI validates language codes and constructs OPUS URLs.
-2. A Tokio task is spawned per file (TMX + XML alignment).
+2. A Tokio task is spawned per corpus, one per TMX release.
 3. Each task downloads (with retry/backoff), decompresses gzip, and streams
    the file through `quick-xml`.
 4. A bounded mpsc channel (capacity 1000) feeds parsed pairs to a writer

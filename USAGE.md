@@ -1,6 +1,6 @@
 # Wisecrow Usage Guide
 
-Wisecrow generates flashcard datasets from multilingual subtitle and translation corpora. It downloads data from OPUS (OpenSubtitles, CCMatrix, NLLB), parses TMX/XML alignment files, and stores translations in PostgreSQL.
+Wisecrow generates flashcard datasets from multilingual subtitle and translation corpora. It downloads data from OPUS (OpenSubtitles, CCAligned, CCMatrix, ParaCrawl, NLLB), parses the TMX translation-memory releases, and stores translations in PostgreSQL.
 
 ## Prerequisites
 
@@ -110,6 +110,21 @@ wisecrow ingest -n <native_lang> -f <foreign_lang> [OPTIONS]
 wisecrow i -n en -f ja
 ```
 
+### Ingest a local TMX file
+
+Pass `--file` to import a translation memory you already hold rather than
+fetching from OPUS. This is the route for sources OPUS does not carry, such as
+published government memories or a Tatoeba export converted to TMX. The corpus
+and download options are ignored.
+
+```sh
+wisecrow ingest --file ./welsh-legislation.tmx -n en -f cy
+```
+
+The file must be decompressed: pass the `.tmx`, not the `.tmx.gz`. Language
+codes must match the `xml:lang` attributes inside the file, since that is how
+each segment is assigned to a side of the pair.
+
 ## Options
 
 These options apply to both `download` and `ingest`:
@@ -119,16 +134,23 @@ These options apply to both `download` and `ingest`:
 | `-n`, `--native-lang` | Your native language code (required) | — |
 | `-f`, `--foreign-lang` | Target language code (required) | — |
 | `--corpus` | Filter corpora (space-delimited) | all |
-| `--max-file-size-mb` | Maximum file size in MB | `102400` |
+| `--max-file-size-mb` | Maximum download size in MB | `102400` |
+| `--max-decompressed-mb` | Maximum decompressed archive size in MB | `8192` |
 | `--unpack` | Decompress downloaded archives | `true` |
 
 ### Corpus filter values
 
 | Value | Source |
 |-------|--------|
-| `open_subtitles` | OpenSubtitles v2018 |
+| `open_subtitles` | OpenSubtitles v2024 |
+| `cc_aligned` | CCAligned v1 |
 | `cc_matrix` | CCMatrix v1 |
+| `paracrawl` | ParaCrawl v9 |
 | `nllb` | NLLB v1 |
+
+Coverage varies by corpus, and no corpus spans every pair. Where one has no
+release for the requested pair the download logs a 404 and the run continues
+with the others.
 
 ## Examples
 
@@ -152,7 +174,7 @@ wisecrow ingest -n en -f de --corpus "cc_matrix nllb"
 
 ## Refresh word frequencies
 
-Corpus ingestion counts how often each phrase appears, which is a rough proxy for how common a word is. The `frequency` command replaces those counts with authoritative figures from the [Hermit Dave FrequencyWords](https://github.com/hermitdave/FrequencyWords) lists, so that new cards surface in true frequency order. It updates the `frequency` column for translations whose source phrase matches a listed word.
+Corpus ingestion counts how often each phrase appears, which is a rough proxy for how common a word is. The `frequency` command replaces those counts with authoritative figures from the [Hermit Dave FrequencyWords](https://github.com/hermitdave/FrequencyWords) lists, so that new cards surface in true frequency order. It updates the `frequency` column for translations whose phrase on either side matches a listed word.
 
 ```sh
 # Download and apply the Hermit Dave list for a language:
@@ -168,6 +190,62 @@ wisecrow frequency --lang es --file es_50k.txt
 |------|-------------|---------|
 | `-l`, `--lang` | Language code whose frequencies to update (required) | — |
 | `--file` | Apply a local frequency file instead of downloading | — |
+| `--from-corpus` | Derive the counts from the ingested phrases themselves | `false` |
+
+### Local file formats
+
+`--file` reads two layouts and tells them apart by the separator:
+
+| Layout | Shape | Typical source |
+|--------|-------|----------------|
+| `word count` | space-separated, two fields | Hermit Dave FrequencyWords |
+| `rank<TAB>word<TAB>count` | tab-separated, three fields | Leipzig Corpora Collection |
+| `word,count` | comma-separated, trailing comma tolerated | published CSV lists |
+
+Each line is read under whichever layout fits, so mixed files and files with
+comment lines are handled without a flag.
+
+The Leipzig layout matters because Hermit Dave covers none of the Celtic
+languages. For Welsh or Irish, take the `*-words.txt` from a Leipzig corpus
+archive and pass it unaltered:
+
+```sh
+curl -O https://downloads.wortschatz-leipzig.de/corpora/cym_wikipedia_2021_100K.tar.gz
+tar xzf cym_wikipedia_2021_100K.tar.gz
+wisecrow frequency --lang cy \
+  --file cym_wikipedia_2021_100K/cym_wikipedia_2021_100K-words.txt
+```
+
+A file that yields no entries is rejected rather than reported as a successful
+update of nothing.
+
+### Deriving a list from the corpus
+
+Where nobody has published a list — Scottish Gaelic is the case in point — the
+corpus can supply its own. `--from-corpus` tokenises every phrase already
+stored for the language, counts the word forms, and applies the result:
+
+```sh
+wisecrow frequency --lang gd --from-corpus
+```
+
+The counts then reflect the material actually being studied rather than a
+corpus of another genre, and the vocabulary matches by construction. On the
+OpenSubtitles Gaelic release this ranked 725 rows against the 369 reached by
+the best published Gaelic list. It needs a tokeniser for the language, so
+Khmer, Lao and Burmese are refused.
+
+### How words are matched
+
+A listed word ranks a translation from whichever side of the pair it sits on,
+so a Welsh list reaches rows ingested as `-n en -f cy` (Welsh in `to_phrase`)
+and as `-n cy -f en` alike. Where both languages of a pair have had a list
+applied, the more recent one wins, since a row carries a single `frequency`.
+
+Matching folds case and strips edge punctuation from both sides, so the listed
+`beth` ranks the corpus phrase `Beth`, and `o` ranks `O.`. Only whole phrases
+match: a word list ranks single-word rows, not the sentences that contain the
+word.
 
 ## Acquisition Loop Commands
 
@@ -300,7 +378,7 @@ Run `wisecrow <command> --help` for the full flag list.
 The ingestion pipeline uses a producer-consumer pattern over async channels:
 
 1. **Download** — Fetches files with retry/backoff, decompresses gz/zip archives
-2. **Parse** — Streams TMX and XML alignment files via `quick-xml`
+2. **Parse** — Streams TMX translation-memory files via `quick-xml`
 3. **Persist** — Batches parsed translations (1000 per batch) and inserts into PostgreSQL within transactions
 
 Each file is processed in its own Tokio task. The process handles SIGTERM and SIGINT for graceful shutdown.

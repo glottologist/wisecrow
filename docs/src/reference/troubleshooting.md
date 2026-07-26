@@ -81,9 +81,39 @@ split your ingest by corpus:
 wisecrow ingest -n en -f de --corpus cc_matrix --max-file-size-mb 200000
 ```
 
-The 1 GiB decompression cap is **not** configurable via flags — change
-`MAX_DECOMPRESSED_BYTES` in `downloader.rs` if you understand the
-implication.
+### `No frequency entries parsed from ...`
+
+The file was in none of the supported layouts. `--file` reads `word count`
+pairs (Hermit Dave), `rank<TAB>word<TAB>count` triples (Leipzig) and
+`word,count` CSV; a list of bare words with no counts matches none of them.
+Check the separator first, since a tab-separated file that has been through an
+editor may have had its tabs expanded to spaces.
+
+### `frequency` reports `Updated 0 ...`
+
+The file parsed, but nothing matched. In order of likelihood:
+
+- The language has no row in `languages`. The command logs a warning saying
+  so; ingest a corpus for it first.
+- Nothing overlapped. Word lists rank whole single-word rows only, so on a
+  sentence-aligned corpus a small fraction is the expected outcome — see
+  [Frequency ranking](../guides/frequency-ranking.md). If the list comes from a
+  different genre to the corpus, `--from-corpus` will reach more rows.
+
+### `Decompressed output exceeds the ... byte limit`
+
+The `--max-decompressed-mb` ceiling (default `8192`) triggered while
+expanding the archive. This is a separate limit from `--max-file-size-mb`,
+which governs only the transfer; corpus TMX compresses four- or five-fold,
+so a download well inside the transfer ceiling can still overrun this one.
+Raise it to suit the release and the disk you have:
+
+```sh
+wisecrow ingest -n en -f ga --corpus nllb --max-decompressed-mb 16384
+```
+
+The partially-written output is deleted before the error is returned, so
+there is nothing to clean up beyond the downloaded archive itself.
 
 ### Inserts plateau under load
 

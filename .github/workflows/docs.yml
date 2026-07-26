@@ -4,26 +4,58 @@ on:
   push:
     paths:
       - docs/**
+      # Changes to the pipeline itself must exercise it, or a broken build
+      # step only surfaces on the next unrelated docs edit.
+      - .github/workflows/docs.yml
 jobs:
   deploy:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
         with:
           submodules: "true"
       - name: Setup mdBook
-        uses: peaceiris/actions-mdbook@v1
+        uses: peaceiris/actions-mdbook@v2
         with:
           mdbook-version: "latest"
+      # book.toml configures the gettext preprocessor, so mdbook cannot build
+      # without it on PATH. Pinned to the version the devshell provides so a
+      # local build and a CI build agree.
+      #
+      # The project publishes no prebuilt binaries and is not carried by
+      # install-action, so it has to be compiled; caching the resulting
+      # binaries keyed on the pinned version spares every later run that cost.
+      - name: Cache i18n helpers
+        id: cache-i18n
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/bin/mdbook-gettext
+            ~/.cargo/bin/mdbook-xgettext
+            ~/.cargo/bin/mdbook-i18n-normalize
+          key: mdbook-i18n-helpers-0.4.0-${{ runner.os }}-${{ runner.arch }}
+      - name: Setup i18n helpers
+        if: steps.cache-i18n.outputs.cache-hit != 'true'
+        run: cargo install mdbook-i18n-helpers --version 0.4.0 --locked
       - run: mdbook build docs/
+      # One book per translation, into a subdirectory of the English build.
+      # No-op until someone adds a PO file.
+      - name: Build translations
+        run: |
+          shopt -s nullglob
+          for po in docs/po/*.po; do
+            lang="$(basename "$po" .po)"
+            echo "Building $lang"
+            MDBOOK_BOOK__LANGUAGE="$lang" mdbook build docs/ -d "book/$lang"
+          done
       - name: store Artefact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v7
         with:
           name: "wisecrow-docs"
           path: ./docs/book
           retention-days: 1
       - name: deploy
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./docs/book

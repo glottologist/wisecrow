@@ -6,7 +6,7 @@ use dioxus::prelude::*;
 
 use wisecrow_dto::QuizItemDto;
 
-use crate::components::server_api::generate_quiz;
+use crate::api::quiz::generate_quiz;
 
 #[component]
 pub fn QuizPage() -> Element {
@@ -43,10 +43,12 @@ pub fn QuizPage() -> Element {
                                         error_msg.set(None);
                                         match file.read_bytes().await {
                                             Ok(bytes) => {
-                                                match generate_quiz(bytes.to_vec(), 20).await {
+                                                match generate_quiz(bytes.into(), 20).await {
                                                     Ok(quiz_items) => {
                                                         if quiz_items.is_empty() {
-                                                            error_msg.set(Some("No quiz questions could be generated from this PDF.".to_owned()));
+                                                            error_msg.set(Some(String::from(
+                                                                "No quiz questions could be generated from this PDF.",
+                                                            )));
                                                         } else {
                                                             items.set(quiz_items);
                                                             started.set(true);

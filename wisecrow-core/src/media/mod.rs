@@ -1,7 +1,7 @@
 pub mod cache;
 pub mod prefetch;
 
-#[cfg(feature = "audio")]
+#[cfg(feature = "tts")]
 pub mod audio;
 
 #[cfg(feature = "images")]

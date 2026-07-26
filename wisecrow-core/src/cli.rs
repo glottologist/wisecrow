@@ -127,8 +127,22 @@ pub struct LanguageArgs {
     pub corpus: Option<Vec<String>>,
     #[arg(long, default_value = "102400")]
     pub max_file_size_mb: u64,
+    /// Ceiling on the decompressed size of a single archive, in MB. Raise it
+    /// for the larger NLLB releases, which expand to several gigabytes.
+    #[arg(long, default_value = "8192")]
+    pub max_decompressed_mb: u64,
     #[arg(long, default_value = "true")]
     pub unpack: bool,
+}
+
+#[derive(Args)]
+pub struct IngestArgs {
+    #[command(flatten)]
+    pub langs: LanguageArgs,
+    /// Ingest an already-downloaded TMX file instead of fetching from OPUS.
+    /// The corpus and download options are ignored when this is given.
+    #[arg(long)]
+    pub file: Option<std::path::PathBuf>,
 }
 
 #[derive(Args)]
@@ -163,6 +177,10 @@ pub struct DownloadAllArgs {
     pub corpus: Option<Vec<String>>,
     #[arg(long, default_value = "102400")]
     pub max_file_size_mb: u64,
+    /// Ceiling on the decompressed size of a single archive, in MB. Raise it
+    /// for the larger NLLB releases, which expand to several gigabytes.
+    #[arg(long, default_value = "8192")]
+    pub max_decompressed_mb: u64,
     #[arg(long, default_value = "true")]
     pub unpack: bool,
 }
@@ -215,10 +233,16 @@ pub struct GenerateExercisesArgs {
 pub struct FrequencyArgs {
     #[arg(short, long)]
     pub lang: String,
-    /// Update from a local `word count` file (one entry per line) instead of
-    /// downloading the Hermit Dave frequency list.
-    #[arg(long)]
+    /// Update from a local frequency file instead of downloading the Hermit
+    /// Dave list. Reads `word count`, `rank<TAB>word<TAB>count` (Leipzig) and
+    /// `word,count` (CSV) layouts.
+    #[arg(long, conflicts_with = "from_corpus")]
     pub file: Option<String>,
+    /// Derive the frequencies from the phrases already ingested for this
+    /// language instead of using a published list. The route for languages
+    /// nobody has published a list for.
+    #[arg(long, default_value_t = false)]
+    pub from_corpus: bool,
 }
 
 #[derive(Args)]
@@ -369,7 +393,7 @@ pub enum Command {
     #[command(aliases = ["gr"])]
     GradedReader(GradedReaderArgs),
     #[command(aliases = ["i"])]
-    Ingest(LanguageArgs),
+    Ingest(IngestArgs),
     #[command(aliases = ["ig"])]
     ImportGrammar(ImportGrammarArgs),
     #[command(aliases = ["ip"])]

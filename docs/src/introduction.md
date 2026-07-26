@@ -2,7 +2,8 @@
 
 Wisecrow is an intensive language-cramming toolkit built around the idea that
 *frequency drives fluency*. It mines large multilingual subtitle and translation
-corpora from [OPUS](https://opus.nlpl.eu) — OpenSubtitles, CCMatrix, and NLLB —
+corpora from [OPUS](https://opus.nlpl.eu) — OpenSubtitles, CCAligned, CCMatrix,
+ParaCrawl and NLLB —
 and turns them into a frequency-ordered flashcard deck backed by an
 [FSRS](https://github.com/open-spaced-repetition/rs-fsrs) spaced-repetition
 scheduler.

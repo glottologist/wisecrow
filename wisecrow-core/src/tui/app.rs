@@ -172,8 +172,10 @@ mod media_support {
         pub fn drain(&mut self) -> bool {
             // `new_audio` is only reassigned in the audio arm; without the audio
             // feature it stays `false`, so the `mut` is unused in that build.
-            #[cfg_attr(not(feature = "audio"), allow(unused_mut))]
+            #[cfg(feature = "audio")]
             let mut new_audio = false;
+            #[cfg(not(feature = "audio"))]
+            let new_audio = false;
             while let Ok(result) = self.rx.try_recv() {
                 match result {
                     #[cfg(feature = "audio")]
@@ -203,7 +205,7 @@ mod media_support {
         }
 
         pub fn fetch_for_card(&self, translation_id: i32, to_phrase: &str) {
-            let to_phrase = to_phrase.to_owned();
+            let to_phrase = String::from(to_phrase);
             let ctx = Arc::clone(&self.ctx); // clone: Arc shared ownership for async task
             let tx = self.tx.clone(); // clone: sender for async task
 
@@ -234,7 +236,7 @@ mod media_support {
                         return;
                     };
                     let client = ctx.http_client.clone(); // clone: reqwest::Client is Arc-based
-                    let api_key = api_key.expose().to_owned(); // expose: SecureString -> String at point of HTTP use
+                    let api_key = String::from(api_key.expose());
                     let word = to_phrase;
                     let result = ctx
                         .cache
@@ -295,7 +297,7 @@ impl App {
         #[cfg(any(feature = "audio", feature = "images"))]
         let media = media_ctx.map(media_support::MediaState::new);
         #[cfg(not(any(feature = "audio", feature = "images")))]
-        let _ = media_ctx;
+        drop(media_ctx);
         Self {
             pool,
             session,
@@ -321,7 +323,7 @@ impl App {
         self.current_index >= self.session.cards.len()
     }
 
-    const fn fetch_media_for_current_card(&self) {
+    fn fetch_media_for_current_card(&self) {
         #[cfg(any(feature = "audio", feature = "images"))]
         if let Some(ref media) = self.media {
             if let Some(card) = self.session.cards.get(self.current_index) {
@@ -331,7 +333,7 @@ impl App {
     }
 
     /// Drains pending media results. Returns `true` if new audio arrived.
-    const fn drain_media(&mut self) -> bool {
+    fn drain_media(&mut self) -> bool {
         #[cfg(any(feature = "audio", feature = "images"))]
         if let Some(ref mut media) = self.media {
             return media.drain();
@@ -339,14 +341,14 @@ impl App {
         false
     }
 
-    const fn clear_media(&mut self) {
+    fn clear_media(&mut self) {
         #[cfg(any(feature = "audio", feature = "images"))]
         if let Some(ref mut media) = self.media {
             media.clear();
         }
     }
 
-    const fn play_audio(&self) {
+    fn play_audio(&self) {
         #[cfg(any(feature = "audio", feature = "images"))]
         if let Some(ref media) = self.media {
             media.play_audio();
@@ -358,10 +360,10 @@ impl App {
             return Ok(());
         }
 
-        let Some(card) = self.session.cards.get(self.current_index).cloned() else {
-            // clone: need owned copy because answer_card takes &CardState while we mutate self
+        let Some(card) = self.session.cards.get(self.current_index) else {
             return Ok(());
         };
+        let card = card.clone(); // clone: answer_card borrows while this app mutates afterward
 
         SessionManager::answer_card(
             &self.pool,

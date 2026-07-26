@@ -8,14 +8,38 @@ walkthrough.
 
 | Corpus | Source | Strengths | Weaknesses |
 |--------|--------|-----------|------------|
-| `open_subtitles` | OPUS-OpenSubtitles v2018 | Conversational; high colloquial coverage. | Profanity, OCR noise, alignment errors. |
-| `cc_matrix` | OPUS-CCMatrix v1 | Vast volume, formal register. | Longer sentences; slower to ingest. |
+| `open_subtitles` | OPUS-OpenSubtitles v2024 | Conversational; high colloquial coverage. | Profanity, OCR noise, alignment errors. |
+| `cc_aligned` | OPUS-CCAligned v1 | Broad web text at a modest download size. | No Irish or Gaelic release. |
+| `cc_matrix` | OPUS-CCMatrix v1 | Vast volume, formal register. | Longer sentences; slower to ingest. No Welsh release. |
+| `paracrawl` | OPUS-ParaCrawl v9 | Well-filtered web text; strong on EU languages. | European coverage only; no Welsh or Gaelic release. |
 | `nllb` | OPUS-NLLB v1 | Better for low-resource languages. | Heavier files; alignments are heuristic. |
 
 Start with OpenSubtitles for big, common languages (English, Spanish,
-French). Add CCMatrix once you have surface coverage and want to extend
-intermediate vocabulary. NLLB is most useful when one of your languages is
-not well represented in the other two.
+French). Add CCMatrix or ParaCrawl once you have surface coverage and want
+to extend intermediate vocabulary. NLLB is most useful when one of your
+languages is poorly represented elsewhere, though it is by far the heaviest
+to download and expand.
+
+Coverage is uneven and the gaps are not the ones you would guess: CCAligned
+carries Welsh but neither Goidelic language, while ParaCrawl carries Irish
+but no Welsh. Requesting a corpus that has no release for your pair is
+harmless — the download logs a 404, does not retry it, and the remaining
+corpora proceed — so running the default set costs you nothing but the
+failed requests.
+
+## Ingest a memory OPUS does not carry
+
+Where no corpus covers your pair well, `--file` imports a translation memory
+from disk:
+
+```sh
+wisecrow ingest --file ./cy-en-legislation.tmx -n en -f cy
+```
+
+Any TMX 1.4 file works provided its `<tuv>` elements carry `xml:lang`
+attributes matching the codes you pass, which is the shape OPUS, the Welsh
+Government memories and most CAT tools emit. Decompress the archive first —
+a `.gz` is rejected rather than silently parsed as empty.
 
 ## Filter at the CLI
 
@@ -37,6 +61,13 @@ runaway download does not fill your disk. The check happens in two places:
 - The `Content-Length` header is checked before any bytes are written.
 - The streaming write path also enforces the cap, so a server that
   withholds `Content-Length` cannot overflow it.
+
+A second ceiling, `--max-decompressed-mb` (default `8192`), applies to the
+expanded archive rather than the transfer. Compression ratios on corpus TMX
+run to four or five times, so the two limits are not interchangeable: the
+NLLB Irish release arrives as 1.3 GB and expands to roughly 5 GB. Raise this
+flag when a download completes but decompression reports that the output
+exceeds the limit.
 
 Decompression has its own ceiling: 1 GiB for gzip, plus path-traversal
 defences for ZIP.

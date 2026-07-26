@@ -6,9 +6,7 @@ use wisecrow_dto::{
     DnbConfigDto, DnbModeDto, DnbSessionResultsDto, DnbTrialDto, DnbTrialResultDto,
 };
 
-use crate::components::server_api::{
-    complete_nback_session, start_nback_session, submit_nback_trial,
-};
+use crate::api::nback::{complete_nback_session, start_nback_session, submit_nback_trial};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -117,9 +115,14 @@ pub fn NbackPage(native: String, foreign: String) -> Element {
 
                 use_effect(move || {
                     spawn(async move {
-                        if let Ok(res) = complete_nback_session(sid).await {
-                            final_results.set(Some(res));
-                            phase.set(Phase::Results);
+                        match complete_nback_session(sid).await {
+                            Ok(res) => {
+                                final_results.set(Some(res));
+                                phase.set(Phase::Results);
+                            }
+                            Err(error) => {
+                                error_msg.set(Some(format!("Failed to complete session: {error}")));
+                            }
                         }
                     });
                 });
@@ -148,20 +151,26 @@ pub fn NbackPage(native: String, foreign: String) -> Element {
                         let t = trial.clone(); // clone: captured by async closure
                         let sid = session_id();
                         async move {
-                            if let Some(audio_resp) = result.audio_response {
-                                if audio_resp == t.audio_match {
-                                    audio_correct.set(audio_correct().saturating_add(1));
+                            let audio_was_correct =
+                                result.audio_response == Some(t.audio_match);
+                            let visual_was_correct =
+                                result.visual_response == Some(t.visual_match);
+                            match submit_nback_trial(sid, result).await {
+                                Ok(_) => {
+                                    if audio_was_correct {
+                                        audio_correct.set(audio_correct().saturating_add(1));
+                                    }
+                                    if visual_was_correct {
+                                        visual_correct.set(visual_correct().saturating_add(1));
+                                    }
+                                    total_responded.set(total_responded().saturating_add(1));
+                                    current_idx.set(current_idx().saturating_add(1));
+                                }
+                                Err(error) => {
+                                    error_msg
+                                        .set(Some(format!("Failed to submit response: {error}")));
                                 }
                             }
-                            if let Some(visual_resp) = result.visual_response {
-                                if visual_resp == t.visual_match {
-                                    visual_correct.set(visual_correct().saturating_add(1));
-                                }
-                            }
-                            total_responded.set(total_responded().saturating_add(1));
-
-                            let _ = submit_nback_trial(sid, result).await;
-                            current_idx.set(current_idx().saturating_add(1));
                         }
                     },
                 }

@@ -1,9 +1,16 @@
 [book]
 authors = ["Jason Ridgway-Taylor"]
 language = "en"
-multilingual = true
 src = "src"
 title = "WiseCrow Documentation"
+
+# Translations are held as Gettext PO files under `po/`, not as duplicated
+# Markdown trees; this preprocessor substitutes them at build time. It is a
+# no-op for the source language, so the English build is unaffected. Running
+# `after = ["links"]` means included files are translated along with their
+# includer. See reference/translating.md for the workflow.
+[preprocessor.gettext]
+after = ["links"]
 
 [output.html]
 mathjax-support = true

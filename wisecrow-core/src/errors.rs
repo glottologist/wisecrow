@@ -6,6 +6,10 @@ use url::ParseError;
 pub enum WisecrowError {
     #[error("All download retries exhausted")]
     DownloadRetriesExhausted,
+    #[error("HTTP {status} for {url}")]
+    HttpStatus { status: u16, url: String },
+    #[error("File too large: {0}")]
+    FileTooLarge(String),
     #[error("Unable to parse url: {0}")]
     UnableToParseUrl(#[from] ParseError),
     #[error("Unable to get url: {0}")]

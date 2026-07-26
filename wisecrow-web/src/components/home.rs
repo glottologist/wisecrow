@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 
 use wisecrow_dto::LanguageInfo;
 
-use crate::components::server_api::list_languages;
+use crate::api::learn::list_languages;
 use crate::router::Route;
 
 #[component]

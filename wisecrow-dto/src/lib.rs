@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 /// Fraction `correct / total` in `[0.0, 1.0]`, returning `0.0` when `total` is
@@ -9,9 +10,10 @@ pub fn channel_ratio(correct: u32, total: u32) -> f32 {
     if total == 0 {
         return 0.0;
     }
-    #[allow(clippy::cast_precision_loss)]
-    let ratio = correct as f32 / total as f32;
-    ratio
+    let (Some(correct), Some(total)) = (correct.to_f32(), total.to_f32()) else {
+        return 0.0;
+    };
+    correct / total
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -60,6 +62,12 @@ pub struct SessionDto {
 pub struct UserDto {
     pub id: i32,
     pub display_name: String,
+}
+
+#[derive(PartialEq, Eq, Serialize, Deserialize)]
+pub struct MobileSessionDto {
+    pub token: String,
+    pub user: UserDto,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

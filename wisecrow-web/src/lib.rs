@@ -1,24 +1,16 @@
-//! Wisecrow web application (Dioxus fullstack).
-//!
-//! Exposes the client UI components and the router unconditionally, and—behind
-//! the `server` feature—the server functions, authentication, and the custom
-//! axum router that the binary serves. Splitting this out of `main.rs` gives the
-//! integration tests in `tests/` a seam to build the router and call the server
-//! helpers directly.
-
+pub mod api;
+#[cfg(any(feature = "server", feature = "web"))]
 pub mod components;
+#[cfg(any(feature = "server", feature = "web"))]
 pub mod router;
 
 #[cfg(feature = "server")]
 pub mod server;
 
+#[cfg(any(feature = "server", feature = "web"))]
 use dioxus::prelude::*;
 
-/// Root component: mounts the application router.
-///
-/// The stylesheet is declared with `asset!` so the bundler emits it into the
-/// build manifest; the server only serves assets it knows about at build time,
-/// so a file merely present in `assets/` is never reachable.
+#[cfg(any(feature = "server", feature = "web"))]
 pub fn app() -> Element {
     rsx! {
         document::Stylesheet { href: asset!("/assets/style.css") }
@@ -26,8 +18,6 @@ pub fn app() -> Element {
     }
 }
 
-/// Initialises the database pool, then serves the fullstack application with the
-/// custom axum router (auth-enrichment middleware layered on). Never returns.
 #[cfg(feature = "server")]
 pub fn run_server() -> ! {
     tracing::info!("Starting Wisecrow web UI");

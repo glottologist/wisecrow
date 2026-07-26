@@ -34,6 +34,7 @@ services:
       WISECROW__DB_PASSWORD: ${POSTGRES_PASSWORD}
       WISECROW__TLS_CERT_PATH: /certs/fullchain.pem
       WISECROW__TLS_KEY_PATH: /certs/privkey.pem
+      WISECROW__UNSPLASH_API_KEY: ${WISECROW__UNSPLASH_API_KEY:-}
       IP: 0.0.0.0
       PORT: 8443
     volumes:

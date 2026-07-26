@@ -1,11 +1,12 @@
 use dioxus::prelude::*;
 
-use crate::components::server_api::logout;
+use crate::api::auth::logout;
 use crate::router::Route;
 
 #[component]
 pub fn Layout() -> Element {
     let navigator = use_navigator();
+    let mut error_msg: Signal<Option<String>> = use_signal(|| None);
     rsx! {
         div { class: "min-h-screen bg-gray-900 text-white",
             nav { class: "bg-gray-800 border-b border-gray-700 px-6 py-4",
@@ -25,12 +26,21 @@ pub fn Layout() -> Element {
                         button {
                             class: "px-3 py-2 rounded hover:bg-gray-700 transition text-gray-300",
                             onclick: move |_| async move {
-                                let _ = logout().await;
-                                navigator.push(Route::LoginPage {});
+                                match logout().await {
+                                    Ok(()) => {
+                                        navigator.push(Route::LoginPage {});
+                                    }
+                                    Err(_) => {
+                                        error_msg.set(Some(String::from("Logout failed")));
+                                    }
+                                }
                             },
                             "Logout"
                         }
                     }
+                }
+                if let Some(error) = error_msg() {
+                    p { class: "max-w-6xl mx-auto pt-2 text-sm text-red-400", "{error}" }
                 }
             }
             main { class: "max-w-6xl mx-auto px-6 py-8",

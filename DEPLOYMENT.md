@@ -102,7 +102,9 @@ ansible-vault encrypt ansible/vars/secrets.yml
   compromised, and **rotate it** — change it in Postgres / on the host and
   update the vault.
 - `sync_api_key_secret` is the optional legacy single sync key; prefer per-client
-  keys (step 5).
+  keys (step 6).
+- `unsplash_api_key` enables optional learning-card images. Leave it blank to
+  keep image enrichment disabled; audio TTS does not require an API key.
 - `wisecrow_desec_token` is the deSEC API token used to write the DNS-01
   challenge record (step 1). Leave blank if `wisecrow_tls_obtain_cert` is false.
 
@@ -117,8 +119,10 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/start.yml
 ```
 
 `install.yml` syncs the repo, renders `.env` (mode 0600), builds the image, and
-brings the stack up; it waits for both containers to report healthy and runs a
-`list-languages` smoke test.
+brings the stack up. The production web bundle includes server-side TTS and
+optional Unsplash images without the CLI-only local audio playback dependency.
+The play waits for both containers to report healthy and runs a `list-languages`
+smoke test.
 
 Or directly on the host:
 
@@ -147,7 +151,136 @@ wisecrow user passwd --email user@example.com
 wisecrow user disable --email user@example.com   # clears the password, revokes sessions
 ```
 
-## 5. Sync-client keys (optional)
+## 5. Populate language data
+
+A freshly installed instance has an empty `translations` table, and every study
+flow refuses to start without one: `learn`, `nback` and the web equivalents
+report "Not enough vocabulary … Ingest data first". Populating the corpus is
+therefore a required step, not an optional one, and it is deliberately manual —
+no playbook does it, because which language pairs an instance carries is a
+decision rather than a default.
+
+The runtime image ships the full CLI at `/usr/local/bin/wisecrow` alongside the
+web server, and the compose service already exports every `WISECROW__DB_*`
+variable it needs. Everything below therefore runs through `exec` on the
+container that is already up.
+
+### Where the downloads land
+
+`ingest` writes each archive to its working directory and does not delete it
+afterwards. The container's `WORKDIR` is `/app/web`, which has no volume behind
+it, so an unqualified ingest quietly fills the container's writable layer with
+several gigabytes that `docker volume ls` will never show and the next
+`--build` will discard. Run ingests with an explicit working directory and
+clear it afterwards:
+
+```sh
+docker compose -f docker-compose.deploy.yml exec --workdir /tmp wisecrow-web \
+  wisecrow ingest -n en -f es
+docker compose -f docker-compose.deploy.yml exec wisecrow-web sh -c 'rm -f /tmp/*.tmx*'
+```
+
+Check free space first. A pair's archives are held compressed and expanded at
+the same time, and the NLLB releases are the heavy ones — the Irish TMX arrives
+as 1.3 GB and expands to roughly 5 GB.
+
+### Choose the corpora
+
+Five OPUS collections are available: `open_subtitles`, `cc_aligned`,
+`cc_matrix`, `paracrawl` and `nllb`. Omitting `--corpus` requests all five.
+Coverage is uneven, and no collection spans every pair; a pair a collection
+does not carry returns 404, which is logged once, not retried, and does not
+stop the others. For the Celtic languages the gaps are worth knowing in
+advance, since they are not the ones intuition suggests:
+
+| Pair | Best value | Notes |
+|------|-----------|-------|
+| `en`–`cy` | `cc_aligned` (837k pairs, 70 MB) | No CCMatrix release at all. |
+| `en`–`ga` | `paracrawl` (3.2M pairs, 320 MB) | No CCAligned release. |
+| `en`–`gd` | `cc_matrix` (310k pairs, 19 MB) | Thinnest of the three by far. |
+
+NLLB carries far more for each, but expands to between 1.6 GB and 5 GB per
+pair; raise `--max-decompressed-mb` above its 8192 default only if a release
+genuinely needs it.
+
+```sh
+docker compose -f docker-compose.deploy.yml exec --workdir /tmp wisecrow-web \
+  wisecrow ingest -n en -f cy --corpus "open_subtitles cc_aligned"
+```
+
+### Import a memory OPUS does not carry
+
+Where no collection covers a pair well, `--file` ingests a TMX from disk — a
+published government translation memory, say, or a Tatoeba export. Copy it in,
+decompressed, and point at it:
+
+```sh
+docker compose -f docker-compose.deploy.yml cp ./cy-en-legislation.tmx wisecrow-web:/tmp/
+docker compose -f docker-compose.deploy.yml exec wisecrow-web \
+  wisecrow ingest --file /tmp/cy-en-legislation.tmx -n en -f cy
+```
+
+Any TMX 1.4 file works provided its `<tuv>` elements carry `xml:lang`
+attributes matching the codes passed.
+
+### Apply frequencies
+
+Ingestion leaves every new row at a frequency of 1, and the deck query skips
+rows at that value, so a corpus is close to unusable until a frequency list has
+ranked it. For the languages Hermit Dave covers, one command suffices:
+
+```sh
+docker compose -f docker-compose.deploy.yml exec wisecrow-web \
+  wisecrow frequency --lang es
+```
+
+Hermit Dave publishes nothing for Welsh, Irish or Gaelic. Use a Leipzig Corpora
+Collection word list instead, which `--file` reads in its native
+`rank<TAB>word<TAB>count` layout:
+
+```sh
+curl -O https://downloads.wortschatz-leipzig.de/corpora/cym_wikipedia_2021_100K.tar.gz
+tar xzf cym_wikipedia_2021_100K.tar.gz
+docker compose -f docker-compose.deploy.yml cp cym_wikipedia_2021_100K wisecrow-web:/tmp/
+docker compose -f docker-compose.deploy.yml exec wisecrow-web \
+  wisecrow frequency --lang cy \
+  --file /tmp/cym_wikipedia_2021_100K/cym_wikipedia_2021_100K-words.txt
+```
+
+Leipzig has Welsh (`cym`) and Irish (`gle`) but no Gaelic corpus; for `gd` a
+list derived from a Wikipedia dump is the practical route. A list ranks a
+translation from whichever side of the pair its language sits on, so the
+ingest direction does not matter.
+
+### Grammar and media (optional)
+
+Grammar rules need an LLM provider configured (step 2); media pre-fetching
+avoids a first-session stall while audio is generated.
+
+```sh
+docker compose -f docker-compose.deploy.yml exec wisecrow-web \
+  wisecrow seed-grammar --lang cy --levels A1,A2,B1
+docker compose -f docker-compose.deploy.yml exec wisecrow-web \
+  wisecrow prefetch-media -n en -f cy
+```
+
+### Confirm what landed
+
+```sh
+docker compose -f docker-compose.deploy.yml exec postgres \
+  psql -U wisecrow -d wisecrow -c \
+  "SELECT lf.code AS from_lang, lt.code AS to_lang,
+          count(*) AS pairs, count(*) FILTER (WHERE frequency > 1) AS ranked
+     FROM translations t
+     JOIN languages lf ON lf.id = t.from_language_id
+     JOIN languages lt ON lt.id = t.to_language_id
+    GROUP BY 1, 2 ORDER BY 3 DESC;"
+```
+
+The `ranked` column is the one that matters: those are the rows a deck can
+draw on.
+
+## 6. Sync-client keys (optional)
 
 If another instance pulls the corpus from this one, provision a per-client key:
 
@@ -161,7 +294,7 @@ wisecrow sync-client revoke --name laptop
 The puller sends the key as the `x-api-key` header. Keys are individually
 revocable and compared in constant time.
 
-## 6. Verify
+## 7. Verify
 
 ```sh
 curl -sk https://<host>:8443/ -o /dev/null -w '%{http_code}\n'   # a response over TLS
@@ -179,6 +312,7 @@ Log in at `https://<host>:8443/login`.
 | `IP` / `PORT` | Bind address (default `0.0.0.0:8443`). |
 | `WISECROW__LLM_PROVIDER` / `WISECROW__LLM_API_KEY` | LLM provider for gloss / graded-reader / quizzes. |
 | `WISECROW__LLM_RATELIMIT_PER_MIN` | Per-user LLM request cap (default 20). |
+| `WISECROW__UNSPLASH_API_KEY` | Optional image enrichment key; omit to disable images gracefully. |
 | `WISECROW__SYNC_API_KEY` | Legacy single sync key (per-client keys preferred). |
 | `RUST_LOG` / `RUST_BACKTRACE` | Logging (backtrace off by default in the image). |
 

@@ -14,7 +14,7 @@ use wisecrow::{
     cli::{
         is_supported_language, Cli, Command, DownloadAllArgs, FrequencyArgs, GenerateExercisesArgs,
         GlossArgs, GradedReaderArgs, GradedReaderFormat, ImportGrammarArgs, ImportPdfArgs,
-        LanguageArgs, LearnArgs, NbackArgs, PrefetchMediaArgs, PreviewArgs, QuizArgs,
+        IngestArgs, LanguageArgs, LearnArgs, NbackArgs, PrefetchMediaArgs, PreviewArgs, QuizArgs,
         SeedGrammarArgs, SyncArgs, SyncClientCmd, UserCmd, SUPPORTED_LANGUAGE_INFO,
     },
     config::Config,
@@ -142,6 +142,7 @@ fn prepare_job(args: LanguageArgs) -> Result<PreparedJob, WisecrowError> {
     let files = LanguageFiles::new(&langs, corpora.as_deref())?;
     let download_config = DownloadConfig {
         max_file_size_mb: args.max_file_size_mb,
+        max_decompressed_mb: args.max_decompressed_mb,
         unpack: args.unpack,
         ..Default::default()
     };
@@ -182,6 +183,7 @@ async fn handle_download_all(args: DownloadAllArgs) -> Result<(), Error> {
     let corpora = parse_corpora(args.corpus.as_deref())?;
     let download_config = DownloadConfig {
         max_file_size_mb: args.max_file_size_mb,
+        max_decompressed_mb: args.max_decompressed_mb,
         unpack: args.unpack,
         ..Default::default()
     };
@@ -276,8 +278,12 @@ async fn download_language_pair(
     Ok(())
 }
 
-async fn handle_ingest(args: LanguageArgs) -> Result<(), Error> {
-    let job = prepare_job(args)?;
+async fn handle_ingest(args: IngestArgs) -> Result<(), Error> {
+    if let Some(path) = args.file {
+        return handle_ingest_file(&path, &args.langs.native_lang, &args.langs.foreign_lang).await;
+    }
+
+    let job = prepare_job(args.langs)?;
     let (_config, pool) = load_config_and_pool().await?;
 
     let mut handles = Vec::new();
@@ -290,6 +296,45 @@ async fn handle_ingest(args: LanguageArgs) -> Result<(), Error> {
         ));
     }
     run_until_done_or_signal(handles).await
+}
+
+/// Ingests a corpus file already on disk. This is the route for translation
+/// memories that OPUS does not carry — published government memories, Tatoeba
+/// exports, anything a script has converted to TMX.
+async fn handle_ingest_file(
+    path: &std::path::Path,
+    native_lang: &str,
+    foreign_lang: &str,
+) -> Result<(), Error> {
+    validate_languages(native_lang, foreign_lang)?;
+
+    if !path.is_file() {
+        return Err(
+            WisecrowError::InvalidInput(format!("No such file: {}", path.display())).into(),
+        );
+    }
+    // A compressed archive parses to zero pairs rather than failing, which
+    // reads as a successful but empty ingest. Reject it with the remedy.
+    if path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("gz") || ext.eq_ignore_ascii_case("zip"))
+    {
+        return Err(WisecrowError::InvalidInput(format!(
+            "{} is compressed. Decompress it first (for example `gunzip`) and pass the .tmx file.",
+            path.display()
+        ))
+        .into());
+    }
+    let path_str = path.to_str().ok_or_else(|| {
+        WisecrowError::InvalidInput(format!("Path is not valid UTF-8: {}", path.display()))
+    })?;
+
+    let (_config, pool) = load_config_and_pool().await?;
+    let ingester = Ingester::new(pool, DownloadConfig::default());
+    ingester
+        .ingest_from_file(path_str, path_str, native_lang, foreign_lang)
+        .await?;
+    Ok(())
 }
 
 async fn handle_seed_grammar(args: SeedGrammarArgs) -> Result<(), Error> {
@@ -395,12 +440,15 @@ async fn handle_generate_exercises(args: GenerateExercisesArgs) -> Result<(), Er
 
 async fn handle_frequency(args: FrequencyArgs) -> Result<(), Error> {
     let (_config, pool) = load_config_and_pool().await?;
-    let count = match args.file {
-        Some(path) => {
+    let count = match (args.file, args.from_corpus) {
+        (Some(path), _) => {
             wisecrow::frequency::FrequencyUpdater::update_from_file(&pool, &args.lang, &path)
                 .await?
         }
-        None => {
+        (None, true) => {
+            wisecrow::frequency::FrequencyUpdater::update_from_corpus(&pool, &args.lang).await?
+        }
+        (None, false) => {
             wisecrow::frequency::FrequencyUpdater::update_from_hermit_dave(&pool, &args.lang)
                 .await?
         }

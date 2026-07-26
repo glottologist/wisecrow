@@ -10137,6 +10137,7 @@ name = "wisecrow-dto"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "num-traits",
  "serde",
 ]
 
@@ -10146,8 +10147,11 @@ version = "0.1.0"
 dependencies = [
  "dioxus",
  "serde",
+ "thiserror 2.0.18",
  "tracing",
+ "url",
  "wisecrow-dto",
+ "wisecrow-web",
 ]
 
 [[package]]
@@ -10165,9 +10169,11 @@ dependencies = [
  "governor",
  "rcgen",
  "reqwest 0.12.28",
+ "rstest",
  "rustls 0.23.40",
  "rustls-pemfile 2.2.0",
  "serde",
+ "serde_json",
  "sqlx",
  "tempfile",
  "tokio",

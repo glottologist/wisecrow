@@ -119,7 +119,7 @@ Source: `wisecrow-core/src/errors.rs:5`.
 ## `files`
 
 ```rust,ignore
-pub enum Corpus { OpenSubtitles, CcMatrix, Nllb }
+pub enum Corpus { OpenSubtitles, CcAligned, CcMatrix, ParaCrawl, Nllb }
 pub enum Compression { GzCompressed, ZipCompressed }
 pub struct LanguageFileInfo { pub corpus, pub target_location, pub file_name, pub compressed }
 pub struct LanguageFiles { pub files: Vec<LanguageFileInfo> }
@@ -142,6 +142,7 @@ pub struct DownloadConfig {
     pub max_retries: u32,
     pub timeout_seconds: u64,
     pub max_file_size_mb: u64,
+    pub max_decompressed_mb: u64,
     pub unpack: bool,
 }
 

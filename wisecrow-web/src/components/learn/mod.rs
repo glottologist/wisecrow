@@ -6,29 +6,10 @@ use dioxus::prelude::*;
 
 use wisecrow_dto::{ReviewRatingDto, SessionDto, SpeedController};
 
-use crate::components::server_api::{
+use crate::api::learn::{
     answer_card, complete_session, create_session, pause_session, resume_session,
 };
-
-#[cfg(all(feature = "server", feature = "audio"))]
-use crate::server::media::get_audio_data;
-
-#[cfg(all(feature = "server", feature = "images"))]
-use crate::server::media::get_image_data;
-
-#[cfg(not(feature = "audio"))]
-async fn get_audio_data(
-    _translation_id: i32,
-    _foreign_phrase: String,
-    _foreign_lang: String,
-) -> Result<String, ServerFnError> {
-    Err(ServerFnError::new("audio feature not enabled"))
-}
-
-#[cfg(not(feature = "images"))]
-async fn get_image_data(_translation_id: i32, _word: String) -> Result<String, ServerFnError> {
-    Err(ServerFnError::new("images feature not enabled"))
-}
+use crate::api::media::{get_audio_data, get_image_data};
 
 const DEFAULT_DECK_SIZE: u32 = 50;
 const DEFAULT_SPEED_MS: u32 = 3000;
@@ -68,8 +49,9 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
         let native = native_clone.clone(); // clone: moving into async block
         let foreign = foreign_clone.clone(); // clone: moving into async block
         async move {
-            match resume_session(native.clone(), foreign.clone()).await {
-                // clone: resume may fail, need values for create
+            let resume_native = native.clone(); // clone: create fallback retains original
+            let resume_foreign = foreign.clone(); // clone: create fallback retains original
+            match resume_session(resume_native, resume_foreign).await {
                 Ok(Some(s)) => {
                     let idx = usize::try_from(s.current_index).unwrap_or(0);
                     current_index.set(idx);
@@ -117,7 +99,7 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
         });
     }
 
-    let _ = use_future(move || async move {
+    let _timer_task = use_future(move || async move {
         loop {
             async_sleep(TICK_INTERVAL_MS).await;
 
@@ -189,7 +171,7 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
             div { class: "lg:col-span-3 space-y-4",
                 timer::TimerBar { fraction: timer_fraction }
                 card::CardDisplay {
-                    card: current_card.clone(),
+                    card: current_card.clone(), // clone: component prop requires owned card data
                     flipped: is_flipped,
                     index: idx,
                     total: total,

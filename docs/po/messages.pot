@@ -1,0 +1,7033 @@
+
+msgid ""
+msgstr ""
+"Project-Id-Version: WiseCrow Documentation\n"
+"POT-Creation-Date: 2026-07-26T18:38:04+01:00\n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: en\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: src/SUMMARY.md:1
+msgid "Summary"
+msgstr ""
+
+#: src/SUMMARY.md:3 src/introduction.md:1
+msgid "Introduction"
+msgstr ""
+
+#: src/SUMMARY.md:5
+msgid "Getting started"
+msgstr ""
+
+#: src/SUMMARY.md:7 src/getting-started/installation.md:1
+msgid "Installation"
+msgstr ""
+
+#: src/SUMMARY.md:8 src/getting-started/configuration.md:1
+#: src/guides/glossing.md:49 src/reference/architecture.md:192
+#: src/reference/troubleshooting.md:6 src/api/wisecrow-web.md:85
+msgid "Configuration"
+msgstr ""
+
+#: src/SUMMARY.md:9 src/getting-started/first-ingest.md:1
+msgid "Your first ingest"
+msgstr ""
+
+#: src/SUMMARY.md:11
+msgid "Guides"
+msgstr ""
+
+#: src/SUMMARY.md:13 src/guides/ingesting-corpora.md:1
+msgid "Ingesting corpora"
+msgstr ""
+
+#: src/SUMMARY.md:14 src/guides/frequency-ranking.md:1
+msgid "Frequency ranking"
+msgstr ""
+
+#: src/SUMMARY.md:15 src/guides/learn-tui.md:1
+#: src/reference/troubleshooting.md:129
+msgid "Learn TUI"
+msgstr ""
+
+#: src/SUMMARY.md:16 src/guides/glossing.md:1
+msgid "Leipzig glossing"
+msgstr ""
+
+#: src/SUMMARY.md:17 src/guides/graded-reader.md:1
+msgid "Graded reader"
+msgstr ""
+
+#: src/SUMMARY.md:18 src/guides/preview-subtitles.md:1
+msgid "Subtitle preview"
+msgstr ""
+
+#: src/SUMMARY.md:19 src/guides/dual-n-back.md:1
+#: src/reference/architecture.md:127 src/reference/troubleshooting.md:152
+#: src/api/wisecrow-dto.md:169
+msgid "Dual n-back"
+msgstr ""
+
+#: src/SUMMARY.md:20 src/guides/grammar-workflows.md:1
+msgid "Grammar workflows"
+msgstr ""
+
+#: src/SUMMARY.md:21 src/guides/sync-workflow.md:1
+msgid "Sync workflow"
+msgstr ""
+
+#: src/SUMMARY.md:22 src/guides/library-integration.md:1
+msgid "Library integration"
+msgstr ""
+
+#: src/SUMMARY.md:24
+msgid "Reference"
+msgstr ""
+
+#: src/SUMMARY.md:26
+msgid "Architecture"
+msgstr ""
+
+#: src/SUMMARY.md:27 src/reference/cli-reference.md:1
+msgid "CLI reference"
+msgstr ""
+
+#: src/SUMMARY.md:28 src/reference/configuration.md:1
+msgid "Configuration reference"
+msgstr ""
+
+#: src/SUMMARY.md:29 src/reference/database-schema.md:1
+msgid "Database schema"
+msgstr ""
+
+#: src/SUMMARY.md:30 src/guides/ingesting-corpora.md:134
+#: src/reference/troubleshooting.md:1
+msgid "Troubleshooting"
+msgstr ""
+
+#: src/SUMMARY.md:31
+msgid "Translating"
+msgstr ""
+
+#: src/SUMMARY.md:32 src/reference/contributing.md:1
+msgid "Contributing"
+msgstr ""
+
+#: src/SUMMARY.md:34
+msgid "API"
+msgstr ""
+
+#: src/SUMMARY.md:36 src/api/wisecrow-core.md:1
+msgid "wisecrow-core"
+msgstr ""
+
+#: src/SUMMARY.md:37 src/api/wisecrow-dto.md:1
+msgid "wisecrow-dto"
+msgstr ""
+
+#: src/SUMMARY.md:38 src/api/wisecrow-web.md:1
+msgid "wisecrow-web"
+msgstr ""
+
+#: src/SUMMARY.md:39 src/api/wisecrow-mobile.md:1
+msgid "wisecrow-mobile"
+msgstr ""
+
+#: src/introduction.md:3
+msgid ""
+"Wisecrow is an intensive language-cramming toolkit built around the idea "
+"that _frequency drives fluency_. It mines large multilingual subtitle and "
+"translation corpora from [OPUS](https://opus.nlpl.eu) — OpenSubtitles, "
+"CCAligned, CCMatrix, ParaCrawl and NLLB — and turns them into a "
+"frequency-ordered flashcard deck backed by an "
+"[FSRS](https://github.com/open-spaced-repetition/rs-fsrs) spaced-repetition "
+"scheduler."
+msgstr ""
+
+#: src/introduction.md:11
+msgid ""
+"It is designed for learners who want to **front-load high-frequency "
+"vocabulary** in a target language, see it in subtitle context, and review it "
+"in a focused loop without leaving the terminal."
+msgstr ""
+
+#: src/introduction.md:15
+msgid "What Wisecrow does"
+msgstr ""
+
+#: src/introduction.md:17
+msgid ""
+"**Ingests** TMX and OPUS XML alignment archives directly from OPUS, with "
+"retry, decompression, and size limits."
+msgstr ""
+
+#: src/introduction.md:19
+msgid ""
+"**Persists** translation pairs into PostgreSQL with frequency counts and a "
+"unique `(from_phrase, to_phrase)` constraint that makes re-ingestion safe."
+msgstr ""
+
+#: src/introduction.md:21
+msgid ""
+"**Schedules** review using FSRS, with sessions that can be paused and "
+"resumed."
+msgstr ""
+
+#: src/introduction.md:22
+msgid ""
+"**Drills** with two TUI modes: a Leitner-style flashcard runner, and a "
+"research-grade dual n-back that uses your own vocabulary as stimuli."
+msgstr ""
+
+#: src/introduction.md:24
+msgid ""
+"**Generates** CEFR-graded grammar rules and quizzes via Anthropic or OpenAI "
+"LLM providers."
+msgstr ""
+
+#: src/introduction.md:26
+msgid ""
+"**Syncs** translations and grammar rules between Wisecrow instances over "
+"HTTP."
+msgstr ""
+
+#: src/introduction.md:28
+msgid ""
+"**Augments** cards with on-demand audio (Microsoft Edge TTS) and imagery "
+"(Unsplash) — both feature-gated and optional."
+msgstr ""
+
+#: src/introduction.md:31
+msgid "What it is not"
+msgstr ""
+
+#: src/introduction.md:33
+msgid ""
+"Wisecrow is **not a translator**. It assumes the target corpora already "
+"contain translations."
+msgstr ""
+
+#: src/introduction.md:35
+msgid ""
+"It is **not a course**. It will not teach you grammar progressively; it "
+"ranks by frequency and lets you grind."
+msgstr ""
+
+#: src/introduction.md:37
+msgid ""
+"The web and mobile front-ends in this workspace are **early-stage**. The TUI "
+"is the production interface today."
+msgstr ""
+
+#: src/introduction.md:40
+msgid "Workspace at a glance"
+msgstr ""
+
+#: src/introduction.md:42
+msgid "Crate"
+msgstr ""
+
+#: src/introduction.md:42 src/getting-started/configuration.md:37
+#: src/guides/dual-n-back.md:107 src/guides/sync-workflow.md:27
+#: src/reference/cli-reference.md:17 src/reference/database-schema.md:7
+#: src/api/wisecrow-web.md:63
+msgid "Purpose"
+msgstr ""
+
+#: src/introduction.md:44 src/reference/architecture.md:39
+msgid "`wisecrow-core`"
+msgstr ""
+
+#: src/introduction.md:44
+msgid ""
+"Library plus the `wisecrow` CLI binary. All ingestion, scheduling, drilling, "
+"and persistence lives here."
+msgstr ""
+
+#: src/introduction.md:45 src/reference/architecture.md:46
+msgid "`wisecrow-dto`"
+msgstr ""
+
+#: src/introduction.md:45
+msgid ""
+"Plain-old serializable types shared between the server and front-end clients."
+msgstr ""
+
+#: src/introduction.md:46 src/reference/architecture.md:54
+msgid "`wisecrow-web`"
+msgstr ""
+
+#: src/introduction.md:46
+msgid ""
+"[Dioxus](https://dioxuslabs.com) fullstack web UI. Server features gate the "
+"database-backed routes."
+msgstr ""
+
+#: src/introduction.md:47 src/reference/architecture.md:61
+msgid "`wisecrow-mobile`"
+msgstr ""
+
+#: src/introduction.md:47
+msgid "Dioxus mobile/desktop shell that calls into the web server functions."
+msgstr ""
+
+#: src/introduction.md:49
+msgid ""
+"**Note:** Wisecrow expects you to bring your own PostgreSQL database. The "
+"first `ingest` (or any database-touching command) automatically applies the "
+"bundled migrations from `wisecrow-core/migrations/`."
+msgstr ""
+
+#: src/introduction.md:53
+msgid "Where to start"
+msgstr ""
+
+#: src/introduction.md:55
+msgid ""
+"New here? Jump to [Installation](./getting-started/installation.md), then "
+"[Configuration](./getting-started/configuration.md)."
+msgstr ""
+
+#: src/introduction.md:57
+msgid ""
+"Trying to drill on existing data? See the [Learn TUI "
+"guide](./guides/learn-tui.md)."
+msgstr ""
+
+#: src/introduction.md:58
+msgid ""
+"Building on the library? Open the [Architecture "
+"overview](./reference/architecture.md) followed by the [API "
+"references](./api/wisecrow-core.md)."
+msgstr ""
+
+#: src/getting-started/installation.md:3 src/reference/translating.md:33
+msgid "Prerequisites"
+msgstr ""
+
+#: src/getting-started/installation.md:5
+msgid "Requirement"
+msgstr ""
+
+#: src/getting-started/installation.md:5
+msgid "Version"
+msgstr ""
+
+#: src/getting-started/installation.md:5 src/reference/contributing.md:8
+msgid "Why"
+msgstr ""
+
+#: src/getting-started/installation.md:7
+msgid "Rust toolchain"
+msgstr ""
+
+#: src/getting-started/installation.md:7
+msgid "stable (≥ 1.75)"
+msgstr ""
+
+#: src/getting-started/installation.md:7
+msgid ""
+"Workspace targets `edition = \"2021\"` and uses recent `clap`/`tokio`/`sqlx` "
+"features."
+msgstr ""
+
+#: src/getting-started/installation.md:8
+msgid "PostgreSQL"
+msgstr ""
+
+#: src/getting-started/installation.md:8
+msgid "15+"
+msgstr ""
+
+#: src/getting-started/installation.md:8
+msgid "Wisecrow uses `unnest` array bulk-inserts and `ON CONFLICT DO UPDATE`."
+msgstr ""
+
+#: src/getting-started/installation.md:9
+msgid "`pkg-config` and OpenSSL headers"
+msgstr ""
+
+#: src/getting-started/installation.md:9
+msgid "system-provided"
+msgstr ""
+
+#: src/getting-started/installation.md:9
+msgid "Required by transitive dependencies on Linux."
+msgstr ""
+
+#: src/getting-started/installation.md:10
+msgid "Optional: ALSA dev headers"
+msgstr ""
+
+#: src/getting-started/installation.md:10
+msgid "`libasound2-dev` (Debian)"
+msgstr ""
+
+#: src/getting-started/installation.md:10
+msgid "Only when building with the `audio` feature."
+msgstr ""
+
+#: src/getting-started/installation.md:12
+msgid ""
+"**Note:** The repository ships a `flake.nix` and `devbox.json`. If you use "
+"Nix or [Devbox](https://www.jetify.com/devbox), `nix develop` or `devbox "
+"shell` gives you a ready toolchain."
+msgstr ""
+
+#: src/getting-started/installation.md:16
+msgid "Clone the repository"
+msgstr ""
+
+#: src/getting-started/installation.md:23
+msgid "Build the CLI"
+msgstr ""
+
+#: src/getting-started/installation.md:25
+msgid ""
+"The default build produces only the `wisecrow` binary; the workspace also "
+"contains the experimental web and mobile front-ends."
+msgstr ""
+
+#: src/getting-started/installation.md:32
+msgid ""
+"The release binary ends up at `target/release/wisecrow`. Add it to your "
+"`$PATH` or invoke via `./target/release/wisecrow`."
+msgstr ""
+
+#: src/getting-started/installation.md:35
+msgid "Optional features"
+msgstr ""
+
+#: src/getting-started/installation.md:37
+msgid "`wisecrow-core` exposes two cargo features:"
+msgstr ""
+
+#: src/getting-started/installation.md:39 src/reference/configuration.md:75
+#: src/reference/configuration.md:82 src/api/wisecrow-web.md:32
+#: src/api/wisecrow-mobile.md:25
+msgid "Feature"
+msgstr ""
+
+#: src/getting-started/installation.md:39
+msgid "Adds"
+msgstr ""
+
+#: src/getting-started/installation.md:39
+msgid "Cost"
+msgstr ""
+
+#: src/getting-started/installation.md:41 src/reference/configuration.md:77
+#: src/reference/configuration.md:86 src/api/wisecrow-web.md:36
+msgid "`audio`"
+msgstr ""
+
+#: src/getting-started/installation.md:41
+msgid "Microsoft Edge TTS streaming via `msedge-tts`, playback via `rodio`."
+msgstr ""
+
+#: src/getting-started/installation.md:41
+msgid "Pulls ALSA on Linux."
+msgstr ""
+
+#: src/getting-started/installation.md:42 src/reference/configuration.md:78
+#: src/reference/configuration.md:87 src/api/wisecrow-web.md:37
+msgid "`images`"
+msgstr ""
+
+#: src/getting-started/installation.md:42
+msgid "Unsplash image fetch and inline rendering via `ratatui-image`."
+msgstr ""
+
+#: src/getting-started/installation.md:42
+msgid "Pulls `image` decoders."
+msgstr ""
+
+#: src/getting-started/installation.md:44
+msgid "Enable them at build time:"
+msgstr ""
+
+#: src/getting-started/installation.md:47
+msgid "\"audio images\""
+msgstr ""
+
+#: src/getting-started/installation.md:50
+msgid "Build the web UI (experimental)"
+msgstr ""
+
+#: src/getting-started/installation.md:52
+msgid "The web crate uses Dioxus fullstack and requires the `dioxus-cli`:"
+msgstr ""
+
+#: src/getting-started/installation.md:60
+msgid ""
+"The `server` feature pulls in `wisecrow-core`, so you need a configured "
+"PostgreSQL connection (see [Configuration](./configuration.md))."
+msgstr ""
+
+#: src/getting-started/installation.md:63
+msgid "Verify the install"
+msgstr ""
+
+#: src/getting-started/installation.md:70
+msgid ""
+"You should see the full subcommand list and the first lines of the "
+"102-language table."
+msgstr ""
+
+#: src/getting-started/installation.md:73
+#: src/getting-started/configuration.md:78
+msgid "Next step"
+msgstr ""
+
+#: src/getting-started/installation.md:75
+msgid ""
+"Continue with [Configuration](./configuration.md) to wire Wisecrow up to "
+"PostgreSQL."
+msgstr ""
+
+#: src/getting-started/configuration.md:3
+msgid ""
+"Wisecrow reads its configuration from environment variables prefixed with "
+"`WISECROW__` (note the **double underscore**: `config-rs` uses it as the key "
+"separator). Variables can also be placed in a `.env` file in the working "
+"directory; `dotenvy::dotenv()` is called at start-up."
+msgstr ""
+
+#: src/getting-started/configuration.md:8 src/reference/troubleshooting.md:30
+msgid "Database"
+msgstr ""
+
+#: src/getting-started/configuration.md:10
+msgid "You can supply the connection in either of two equivalent forms."
+msgstr ""
+
+#: src/getting-started/configuration.md:12
+msgid "Option A — full URL"
+msgstr ""
+
+#: src/getting-started/configuration.md:15
+msgid "postgres://user:password@localhost/wisecrow"
+msgstr ""
+
+#: src/getting-started/configuration.md:18
+msgid "When `db_url` is set it takes precedence over the component fields."
+msgstr ""
+
+#: src/getting-started/configuration.md:20
+msgid "Option B — component fields"
+msgstr ""
+
+#: src/getting-started/configuration.md:23
+msgid "localhost:5432"
+msgstr ""
+
+#: src/getting-started/configuration.md:24
+#: src/getting-started/configuration.md:25
+msgid "wisecrow"
+msgstr ""
+
+#: src/getting-started/configuration.md:26 src/reference/configuration.md:18
+#: src/reference/configuration.md:20 src/reference/configuration.md:21
+#: src/reference/configuration.md:23 src/reference/configuration.md:24
+msgid "secret"
+msgstr ""
+
+#: src/getting-started/configuration.md:29
+msgid ""
+"**Warning:** `WISECROW__DB_PASSWORD`, `WISECROW__LLM_API_KEY`, "
+"`WISECROW__UNSPLASH_API_KEY`, `WISECROW__REMOTE_API_KEY`, and "
+"`WISECROW__SYNC_API_KEY` are wrapped in a `SecureString` that zeroes its "
+"backing buffer on drop. Even so, keep them out of shell history and "
+"committed `.env` files."
+msgstr ""
+
+#: src/getting-started/configuration.md:35
+msgid "Optional integrations"
+msgstr ""
+
+#: src/getting-started/configuration.md:37 src/reference/configuration.md:12
+msgid "Variable"
+msgstr ""
+
+#: src/getting-started/configuration.md:37 src/reference/configuration.md:12
+msgid "Used by"
+msgstr ""
+
+#: src/getting-started/configuration.md:39
+msgid "`WISECROW__LLM_PROVIDER`"
+msgstr ""
+
+#: src/getting-started/configuration.md:39
+msgid "`anthropic` or `openai`."
+msgstr ""
+
+#: src/getting-started/configuration.md:39
+#: src/getting-started/configuration.md:40 src/reference/configuration.md:19
+msgid "`seed-grammar`, `generate-exercises`"
+msgstr ""
+
+#: src/getting-started/configuration.md:40
+msgid "`WISECROW__LLM_API_KEY`"
+msgstr ""
+
+#: src/getting-started/configuration.md:40
+msgid "API key for the chosen provider."
+msgstr ""
+
+#: src/getting-started/configuration.md:41
+msgid "`WISECROW__UNSPLASH_API_KEY`"
+msgstr ""
+
+#: src/getting-started/configuration.md:41
+msgid "Unsplash access key for card imagery."
+msgstr ""
+
+#: src/getting-started/configuration.md:41
+msgid "`learn`, `prefetch-media` (when built with `images`)"
+msgstr ""
+
+#: src/getting-started/configuration.md:42
+msgid "`WISECROW__REMOTE_URL`"
+msgstr ""
+
+#: src/getting-started/configuration.md:42
+msgid "Remote Wisecrow base URL."
+msgstr ""
+
+#: src/getting-started/configuration.md:42
+msgid "reserved for future remote-fetch flows"
+msgstr ""
+
+#: src/getting-started/configuration.md:43
+msgid "`WISECROW__REMOTE_API_KEY`"
+msgstr ""
+
+#: src/getting-started/configuration.md:43
+msgid "API key for the remote URL."
+msgstr ""
+
+#: src/getting-started/configuration.md:43 src/reference/configuration.md:22
+#: src/reference/configuration.md:23
+msgid "reserved"
+msgstr ""
+
+#: src/getting-started/configuration.md:44
+msgid "`WISECROW__SYNC_API_KEY`"
+msgstr ""
+
+#: src/getting-started/configuration.md:44
+msgid "API key sent as `x-api-key` to a sync remote."
+msgstr ""
+
+#: src/getting-started/configuration.md:44 src/reference/cli-reference.md:308
+#: src/reference/configuration.md:24 src/api/wisecrow-core.md:370
+msgid "`sync`"
+msgstr ""
+
+#: src/getting-started/configuration.md:46
+msgid ""
+"The defaults file in the repo is `.env.example`; copy it to `.env` and edit:"
+msgstr ""
+
+#: src/getting-started/configuration.md:53 src/reference/configuration.md:60
+msgid "Logging"
+msgstr ""
+
+#: src/getting-started/configuration.md:55
+msgid "Wisecrow uses the `tracing` crate. Verbosity is set by `RUST_LOG`:"
+msgstr ""
+
+#: src/getting-started/configuration.md:58 src/reference/troubleshooting.md:225
+msgid "wisecrow=debug,info"
+msgstr ""
+
+#: src/getting-started/configuration.md:59 src/guides/dual-n-back.md:116
+msgid "1"
+msgstr ""
+
+#: src/getting-started/configuration.md:62
+msgid "Use `wisecrow=trace` for the very chatty download/parse messages."
+msgstr ""
+
+#: src/getting-started/configuration.md:64
+msgid "Database setup"
+msgstr ""
+
+#: src/getting-started/configuration.md:66
+msgid ""
+"Create the database once. Migrations run automatically on the first command "
+"that opens a pool:"
+msgstr ""
+
+#: src/getting-started/configuration.md:74
+msgid ""
+"The migrations live in `wisecrow-core/migrations/` and are embedded into the "
+"binary by `sqlx::migrate!`. See the [Database schema "
+"reference](../reference/database-schema.md) for the resulting tables."
+msgstr ""
+
+#: src/getting-started/configuration.md:80
+msgid "Run your [first ingest](./first-ingest.md) to populate vocabulary."
+msgstr ""
+
+#: src/getting-started/first-ingest.md:3
+msgid ""
+"This walkthrough takes you from an empty database to a learning session in "
+"under ten minutes. We will use English (`en`) as the native language and "
+"Spanish (`es`) as the foreign language; substitute any pair from `wisecrow "
+"list-languages`."
+msgstr ""
+
+#: src/getting-started/first-ingest.md:8
+msgid "1. Verify the database is reachable"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:11 src/reference/troubleshooting.md:49
+msgid "\"$WISECROW__DB_URL\""
+msgstr ""
+
+#: src/getting-started/first-ingest.md:11
+msgid "'\\dt'"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:14
+msgid ""
+"You should connect successfully. The table list may be empty — that is fine, "
+"migrations run on first ingest."
+msgstr ""
+
+#: src/getting-started/first-ingest.md:17
+msgid "2. Pull a small corpus"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:19
+msgid ""
+"OpenSubtitles is the smallest of the three corpora and the fastest to test. "
+"The `ingest` command downloads, parses, and persists in one pass."
+msgstr ""
+
+#: src/getting-started/first-ingest.md:26
+msgid "What happens, in order:"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:28
+msgid "The CLI validates language codes and constructs OPUS URLs."
+msgstr ""
+
+#: src/getting-started/first-ingest.md:29
+msgid "A Tokio task is spawned per corpus, one per TMX release."
+msgstr ""
+
+#: src/getting-started/first-ingest.md:30
+msgid ""
+"Each task downloads (with retry/backoff), decompresses gzip, and streams the "
+"file through `quick-xml`."
+msgstr ""
+
+#: src/getting-started/first-ingest.md:32
+msgid ""
+"A bounded mpsc channel (capacity 1000) feeds parsed pairs to a writer task, "
+"which batches them in groups of 1000 and writes them transactionally."
+msgstr ""
+
+#: src/getting-started/first-ingest.md:34
+msgid ""
+"SIGINT and SIGTERM trigger a graceful shutdown; in-flight batches finish "
+"before exit."
+msgstr ""
+
+#: src/getting-started/first-ingest.md:37
+msgid ""
+"Progress bars appear during download. When a file completes you will see a "
+"log line like `Ingested 12345 items from es_OpenSubtitles.tmx`."
+msgstr ""
+
+#: src/getting-started/first-ingest.md:40
+msgid "3. Inspect the data"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:43
+msgid ""
+"\"$WISECROW__DB_URL\" <<'SQL'\n"
+"SELECT count(*) FROM translations;\n"
+"SELECT count(*) FROM languages;\n"
+"SELECT from_phrase, to_phrase, frequency\n"
+"  FROM translations\n"
+"  ORDER BY frequency DESC\n"
+"  LIMIT 10;\n"
+"SQL\n"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:53
+msgid ""
+"The most frequent rows tend to be short stop-word phrases: this is normal "
+"and exactly the signal SRS card selection relies on."
+msgstr ""
+
+#: src/getting-started/first-ingest.md:56
+msgid "4. Start a learning session"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:62
+msgid ""
+"The TUI opens. Use the keyboard to rate cards (`Again`, `Hard`, `Good`, "
+"`Easy`). Pressing `q` pauses and saves the session — `wisecrow learn` with "
+"the same language pair next time will resume it."
+msgstr ""
+
+#: src/getting-started/first-ingest.md:66
+msgid "What just happened"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:68
+msgid "Step"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:68
+msgid "Code path"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:70
+msgid "URL construction"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:70
+msgid "`wisecrow_core::files::LanguageFiles::new`"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:71
+msgid "Download + decompress"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:71
+msgid "`wisecrow_core::downloader::Downloader::download_to`"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:72
+msgid "Parse"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:72
+msgid "`wisecrow_core::ingesting::parsing::CorpusParser`"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:73
+msgid "Persist"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:73
+msgid "`wisecrow_core::ingesting::persisting::DatabasePersister::consume`"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:74
+msgid "Session creation"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:74
+msgid "`wisecrow_core::srs::session::SessionManager::create`"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:75
+msgid "Card scheduling"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:75
+msgid "`wisecrow_core::srs::scheduler::CardManager::review`"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:77
+msgid "Where to next"
+msgstr ""
+
+#: src/getting-started/first-ingest.md:79
+msgid ""
+"Drill more cards or practise differently — see the [Learn TUI "
+"guide](../guides/learn-tui.md) and the [Dual n-back "
+"guide](../guides/dual-n-back.md)."
+msgstr ""
+
+#: src/getting-started/first-ingest.md:81
+msgid ""
+"Add structured grammar rules to your deck — see [Grammar "
+"workflows](../guides/grammar-workflows.md)."
+msgstr ""
+
+#: src/getting-started/first-ingest.md:82
+msgid ""
+"Move data between machines — see [Sync workflow](../guides/sync-workflow.md)."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:3
+msgid ""
+"`ingest` is Wisecrow's main data-acquisition command. This guide covers the "
+"trade-offs and patterns you will hit once you move past the introductory "
+"walkthrough."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:7
+msgid "Pick the right corpus"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:9
+msgid "Corpus"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:9 src/reference/cli-reference.md:137
+msgid "Source"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:9
+msgid "Strengths"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:9
+msgid "Weaknesses"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:11
+msgid "`open_subtitles`"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:11
+msgid "OPUS-OpenSubtitles v2024"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:11
+msgid "Conversational; high colloquial coverage."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:11
+msgid "Profanity, OCR noise, alignment errors."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:12
+msgid "`cc_aligned`"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:12
+msgid "OPUS-CCAligned v1"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:12
+msgid "Broad web text at a modest download size."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:12
+msgid "No Irish or Gaelic release."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:13
+msgid "`cc_matrix`"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:13
+msgid "OPUS-CCMatrix v1"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:13
+msgid "Vast volume, formal register."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:13
+msgid "Longer sentences; slower to ingest. No Welsh release."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:14
+msgid "`paracrawl`"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:14
+msgid "OPUS-ParaCrawl v9"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:14
+msgid "Well-filtered web text; strong on EU languages."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:14
+msgid "European coverage only; no Welsh or Gaelic release."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:15
+msgid "`nllb`"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:15
+msgid "OPUS-NLLB v1"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:15
+msgid "Better for low-resource languages."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:15
+msgid "Heavier files; alignments are heuristic."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:17
+msgid ""
+"Start with OpenSubtitles for big, common languages (English, Spanish, "
+"French). Add CCMatrix or ParaCrawl once you have surface coverage and want "
+"to extend intermediate vocabulary. NLLB is most useful when one of your "
+"languages is poorly represented elsewhere, though it is by far the heaviest "
+"to download and expand."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:23
+msgid ""
+"Coverage is uneven and the gaps are not the ones you would guess: CCAligned "
+"carries Welsh but neither Goidelic language, while ParaCrawl carries Irish "
+"but no Welsh. Requesting a corpus that has no release for your pair is "
+"harmless — the download logs a 404, does not retry it, and the remaining "
+"corpora proceed — so running the default set costs you nothing but the "
+"failed requests."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:30
+msgid "Ingest a memory OPUS does not carry"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:32
+msgid ""
+"Where no corpus covers your pair well, `--file` imports a translation memory "
+"from disk:"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:39
+msgid ""
+"Any TMX 1.4 file works provided its `<tuv>` elements carry `xml:lang` "
+"attributes matching the codes you pass, which is the shape OPUS, the Welsh "
+"Government memories and most CAT tools emit. Decompress the archive first — "
+"a `.gz` is rejected rather than silently parsed as empty."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:44
+msgid "Filter at the CLI"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:46
+msgid "The `--corpus` flag accepts a single space-delimited argument:"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:49
+msgid "\"open_subtitles cc_matrix\""
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:52
+msgid ""
+"Internally the value is split on spaces (`clap` `value_delimiter = ' '`) and "
+"each token is converted via `Corpus::try_from`. Unknown values produce a "
+"clear error, not a silent skip."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:56
+msgid "Cap file size"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:58
+msgid ""
+"`--max-file-size-mb` (default `102_400`) caps the response body so a runaway "
+"download does not fill your disk. The check happens in two places:"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:61
+msgid "The `Content-Length` header is checked before any bytes are written."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:62
+msgid ""
+"The streaming write path also enforces the cap, so a server that withholds "
+"`Content-Length` cannot overflow it."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:65
+msgid ""
+"A second ceiling, `--max-decompressed-mb` (default `8192`), applies to the "
+"expanded archive rather than the transfer. Compression ratios on corpus TMX "
+"run to four or five times, so the two limits are not interchangeable: the "
+"NLLB Irish release arrives as 1.3 GB and expands to roughly 5 GB. Raise this "
+"flag when a download completes but decompression reports that the output "
+"exceeds the limit."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:72
+msgid ""
+"Decompression has its own ceiling: 1 GiB for gzip, plus path-traversal "
+"defences for ZIP."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:75
+msgid "Run multiple pairs in parallel"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:77
+msgid ""
+"`ingest` already parallelises files **within** one language pair. To "
+"parallelise across pairs, run the command in a shell loop:"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:82
+msgid "\"$f\""
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:87
+msgid ""
+"The shared `WISECROW__DB_*` configuration is fine — each invocation gets its "
+"own pool with `MAX_DB_CONNECTIONS = 5`. Watch your disk and bandwidth budget."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:90
+msgid "Re-ingest is idempotent"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:92
+msgid "Re-running `ingest` over the same pair is safe. The persister upserts:"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:101
+msgid ""
+"So existing pairs gain frequency rather than getting re-inserted. You can "
+"schedule a periodic ingest as a quick frequency refresh."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:104
+msgid "Keep downloads but skip persistence"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:106
+msgid ""
+"If you want to mirror corpus files (for backups, offline labs, or "
+"reproducibility) without writing them into the database, use:"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:113
+msgid ""
+"`--no-unpack=false` keeps the gzipped/zipped archives. The `download-all` "
+"command takes an `--output-dir` and walks all foreign languages — useful for "
+"fixture preparation:"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:118
+msgid "\"open_subtitles\""
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:121
+msgid "Layer external frequency lists"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:123
+msgid ""
+"If you find OPUS frequencies too noisy, layer a Hermit Dave list on top. "
+"This is not a CLI command yet, but the function is exposed in the library:"
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:128 src/guides/library-integration.md:101
+msgid "\"es\""
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:131
+msgid ""
+"It rewrites `translations.frequency` in batches of 1000 with values from the "
+"public 50k-word frequency lists. Source: `wisecrow-core/src/frequency.rs`."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:136
+msgid ""
+"**Stuck at \"Downloading…\"** — check egress to `object.pouta.csc.fi`. The "
+"default connect timeout is 30 s; the per-attempt read timeout is 5 min."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:138
+msgid ""
+"**`HTTP 404` for an obscure pair** — not every pair exists in every corpus. "
+"Try with `--corpus open_subtitles` only or pick a different corpus."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:140
+msgid ""
+"**`File too large` error** — bump `--max-file-size-mb` or split your ingest "
+"by corpus."
+msgstr ""
+
+#: src/guides/ingesting-corpora.md:142
+msgid ""
+"**Slow inserts** — the bottleneck is usually disk-flush in the PostgreSQL "
+"WAL. Check `SELECT * FROM pg_stat_activity` while a run is in flight; use a "
+"tuned `postgresql.conf` for bulk loads if needed."
+msgstr ""
+
+#: src/guides/frequency-ranking.md:3
+msgid ""
+"Wisecrow is built on the premise that frequency drives fluency, so the order "
+"in which cards reach you is not a cosmetic detail — it is the product. This "
+"guide covers where that ordering comes from, why a freshly ingested corpus "
+"produces almost no cards until it has been ranked, and what to do for "
+"languages whose frequency lists nobody has published."
+msgstr ""
+
+#: src/guides/frequency-ranking.md:9
+msgid "Why ranking is a required step"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:11
+msgid ""
+"Ingestion sets each new translation's `frequency` to 1 and increments it "
+"when the same pair arrives again, so the column starts as a duplicate count "
+"rather than a measure of commonality. Deck selection then asks for rows with "
+"`frequency > 1`, which means a corpus ingested once and never ranked offers "
+"the learner almost nothing: on a 25,000-pair Welsh sample, ten rows cleared "
+"that filter. Running `frequency` is what turns a pile of aligned sentences "
+"into an ordered curriculum."
+msgstr ""
+
+#: src/guides/frequency-ranking.md:23
+msgid ""
+"With no `--file`, the command fetches the Hermit Dave FrequencyWords list "
+"for the language, which is derived from OpenSubtitles and covers 62 "
+"languages."
+msgstr ""
+
+#: src/guides/frequency-ranking.md:26
+msgid "What a list can and cannot reach"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:28
+msgid ""
+"Two properties of the matching are worth understanding before you judge the "
+"results, because both bound how much of a corpus a list can touch."
+msgstr ""
+
+#: src/guides/frequency-ranking.md:31
+msgid ""
+"The first is that matching applies to **whole phrases**. A list holds single "
+"words; a subtitle corpus holds sentences. A row is ranked only when its "
+"entire phrase equals a listed word, so a word list reaches the single-word "
+"rows and leaves the sentences alone. On the Welsh sample above, 749 of "
+"25,000 rows were single words. This is a real ceiling, not a defect to work "
+"around: sentence-level ranking would need a scoring function over each row's "
+"tokens."
+msgstr ""
+
+#: src/guides/frequency-ranking.md:38
+msgid ""
+"The second is that matching **folds case and edge punctuation**. Corpus "
+"phrases arrive as `Beth` and `O.` where lists hold `beth` and `o`, and "
+"comparing them raw would discard most of the overlap. Both sides are "
+"lower-cased and stripped of leading and trailing `.,!?;:\"'¡¿` before "
+"comparison. Migration `016_normalised_phrase_indexes.sql` maintains "
+"expression indexes over exactly that normalisation, so the update stays "
+"index-driven; if you change the character set in `frequency.rs`, change the "
+"migration to match, and a unit test will hold you to it."
+msgstr ""
+
+#: src/guides/frequency-ranking.md:47
+msgid "Either side of the pair"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:49
+msgid ""
+"A list ranks a translation from whichever side of the pair its language sits "
+"on. A Welsh list therefore reaches rows ingested as `-n en -f cy`, where "
+"Welsh is the target, just as it reaches rows ingested as `-n cy -f en`. "
+"Ingest direction is irrelevant, which matters because the ordinary direction "
+"for an English speaker studying Welsh puts Welsh in `to_phrase`."
+msgstr ""
+
+#: src/guides/frequency-ranking.md:55
+msgid ""
+"One consequence follows from a row carrying a single `frequency` column: if "
+"you apply lists for both languages of a pair, the later application wins. "
+"Rank by the language you are studying, and apply the other only if you want "
+"the deck ordered by the prompt language instead."
+msgstr ""
+
+#: src/guides/frequency-ranking.md:60
+msgid "Languages Hermit Dave does not cover"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:62
+msgid ""
+"Welsh, Irish and Scottish Gaelic are all absent from the FrequencyWords "
+"collection, so `frequency --lang cy` fails with a 404 and `--file` becomes "
+"the only route. The [Leipzig Corpora "
+"Collection](https://wortschatz.uni-leipzig.de/en/download) fills the gap for "
+"two of the three, and its word files are read in their native layout without "
+"reshaping:"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:76
+msgid ""
+"Leipzig publishes Welsh (`cym`) and Irish (`gle`) Wikipedia corpora but no "
+"Scottish Gaelic one, which the next two sections address."
+msgstr ""
+
+#: src/guides/frequency-ranking.md:79
+msgid ""
+"`--file` accepts three layouts, choosing per line rather than per file, so a "
+"list carrying comment rows or a stray blank causes no trouble:"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:82 src/reference/cli-reference.md:137
+msgid "Layout"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:82 src/reference/cli-reference.md:137
+msgid "Shape"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:82
+msgid "Typical source"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:84 src/reference/cli-reference.md:139
+msgid "`word count`"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:84
+msgid "space-separated, two fields"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:84
+msgid "Hermit Dave FrequencyWords"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:85 src/reference/cli-reference.md:140
+msgid "`rank<TAB>word<TAB>count`"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:85
+msgid "tab-separated, three fields"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:85 src/reference/cli-reference.md:140
+msgid "Leipzig Corpora Collection"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:86 src/reference/cli-reference.md:141
+msgid "`word,count`"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:86
+msgid "comma-separated, trailing comma tolerated"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:86 src/reference/cli-reference.md:141
+msgid "published CSV lists"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:88
+msgid ""
+"A line is accepted under the first layout whose count parses as a number, "
+"which keeps a `word count` entry containing a comma from being mangled by "
+"the CSV rule. Anything matching none of the three is skipped, and a file "
+"that yields no entries at all is rejected rather than reported as a "
+"successful update of nothing."
+msgstr ""
+
+#: src/guides/frequency-ranking.md:94
+msgid "Scottish Gaelic"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:96
+msgid ""
+"Gaelic is absent from both of the usual collections, but two community lists "
+"exist. "
+"[`innesmck/GaelicFrequencyLists`](https://github.com/innesmck/GaelicFrequencyLists) "
+"is the better of them: 10,000 word forms with counts, MIT licensed, built "
+"from LearnGaelic's _Litir do Luchd-ionnsachaidh_ and _Watch Gaelic_ BBC ALBA "
+"transcripts. It counts surface forms rather than lemmas, which is what the "
+"matcher wants, and its CSV loads without conversion:"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:108
+msgid ""
+"A second list from "
+"[iGàidhlig](http://www.igaidhlig.net/en/gaelic-word-frequencies/) offers "
+"12,800 forms drawn from a web corpus, but it ships as an ODS spreadsheet "
+"with the columns reversed, states no licence, and skews towards "
+"institutional vocabulary. Prefer the first."
+msgstr ""
+
+#: src/guides/frequency-ranking.md:113
+msgid "Deriving a list from the corpus"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:115
+msgid ""
+"Where no list exists, or where a published one comes from the wrong genre, "
+"the ingested corpus can supply its own counts:"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:122
+msgid ""
+"This tokenises every phrase stored for the language, counts the word forms, "
+"and applies the result through the same matching path a file would take. Two "
+"things recommend it. The counts describe the material actually being studied "
+"rather than a corpus of another register, and the vocabulary matches by "
+"construction, since every word counted came from a phrase already in the "
+"table. Measured on the OpenSubtitles Gaelic release, it ranked 725 rows "
+"where the best published Gaelic list reached 369."
+msgstr ""
+
+#: src/guides/frequency-ranking.md:130
+msgid ""
+"It changes where the counts come from, not what they can rank: matching "
+"remains whole-phrase, so this ranks single-word rows and leaves the "
+"sentences containing those words alone. A tokeniser is required, so Khmer, "
+"Lao and Burmese are refused rather than mis-segmented."
+msgstr ""
+
+#: src/guides/frequency-ranking.md:135
+msgid "Checking the result"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:137
+msgid ""
+"The command reports how many rows it updated, and the count of rows that "
+"clear the deck filter is the figure that matters:"
+msgstr ""
+
+#: src/guides/frequency-ranking.md:146
+msgid ""
+"If the update reports zero, work through three causes in order: the language "
+"has no row in `languages` at all, in which case the command logs a warning "
+"and does nothing; the list parsed but nothing matched, which on a sentence "
+"corpus with a word list is expected to be a small fraction; or the file was "
+"in neither supported layout, which is now an error rather than a silent "
+"success."
+msgstr ""
+
+#: src/guides/learn-tui.md:3
+msgid ""
+"`wisecrow learn` opens a `ratatui`\\-based flashcard runner. This guide "
+"documents the key bindings, the auto-advance pacing model, and the "
+"session-resume contract."
+msgstr ""
+
+#: src/guides/learn-tui.md:7
+msgid "Start a session"
+msgstr ""
+
+#: src/guides/learn-tui.md:13 src/guides/glossing.md:23
+#: src/guides/graded-reader.md:25 src/guides/preview-subtitles.md:23
+#: src/guides/dual-n-back.md:13 src/guides/sync-workflow.md:27
+#: src/reference/cli-reference.md:44 src/reference/cli-reference.md:84
+#: src/reference/cli-reference.md:102 src/reference/cli-reference.md:126
+#: src/reference/cli-reference.md:164 src/reference/cli-reference.md:184
+#: src/reference/cli-reference.md:272 src/reference/cli-reference.md:288
+msgid "Flag"
+msgstr ""
+
+#: src/guides/learn-tui.md:13 src/guides/glossing.md:23
+#: src/guides/graded-reader.md:25 src/guides/preview-subtitles.md:23
+#: src/guides/dual-n-back.md:13 src/reference/cli-reference.md:44
+#: src/reference/cli-reference.md:102 src/reference/cli-reference.md:126
+#: src/reference/cli-reference.md:164 src/reference/cli-reference.md:184
+#: src/reference/cli-reference.md:272 src/reference/cli-reference.md:288
+#: src/reference/configuration.md:75 src/reference/configuration.md:82
+msgid "Default"
+msgstr ""
+
+#: src/guides/learn-tui.md:13 src/guides/glossing.md:23
+#: src/guides/graded-reader.md:25 src/guides/preview-subtitles.md:23
+msgid "Effect"
+msgstr ""
+
+#: src/guides/learn-tui.md:15 src/reference/cli-reference.md:166
+msgid "`--deck-size`"
+msgstr ""
+
+#: src/guides/learn-tui.md:15 src/reference/cli-reference.md:166
+msgid "`50`"
+msgstr ""
+
+#: src/guides/learn-tui.md:15
+msgid "Number of cards in the session."
+msgstr ""
+
+#: src/guides/learn-tui.md:16 src/reference/cli-reference.md:167
+msgid "`--speed-ms`"
+msgstr ""
+
+#: src/guides/learn-tui.md:16 src/reference/cli-reference.md:167
+msgid "`3000`"
+msgstr ""
+
+#: src/guides/learn-tui.md:16
+msgid "Auto-advance interval. Clamped to `[500, 10000]` by `SpeedController`."
+msgstr ""
+
+#: src/guides/learn-tui.md:17 src/guides/dual-n-back.md:17
+#: src/reference/cli-reference.md:168 src/reference/cli-reference.md:188
+msgid "`--user-id`"
+msgstr ""
+
+#: src/guides/learn-tui.md:17 src/guides/learn-tui.md:42
+#: src/guides/dual-n-back.md:17 src/reference/cli-reference.md:168
+#: src/reference/cli-reference.md:188 src/reference/database-schema.md:83
+msgid "`1`"
+msgstr ""
+
+#: src/guides/learn-tui.md:17
+msgid "Per-user session scope."
+msgstr ""
+
+#: src/guides/learn-tui.md:19
+msgid ""
+"If a paused session exists for `(user_id, native, foreign)` it is resumed "
+"silently — the CLI logs which session is being resumed and where in the deck "
+"it picked up."
+msgstr ""
+
+#: src/guides/learn-tui.md:23
+msgid "Deck composition"
+msgstr ""
+
+#: src/guides/learn-tui.md:25
+msgid ""
+"`SessionManager::create` first asks `CardManager::due_cards` for cards that "
+"are due to review. If that does not fill the deck size, the remainder is "
+"filled from `VocabularyQuery::unlearned`, ordered by frequency descending. "
+"`CardManager::ensure_cards` materialises a `cards` row for each new "
+"translation so the FSRS scheduler has somewhere to write state."
+msgstr ""
+
+#: src/guides/learn-tui.md:31
+msgid ""
+"The deck order is **Relearning > Learning > New > Review**, breaking ties by "
+"`due ASC`. New cards drift to the back so you always see the riskiest stuff "
+"first."
+msgstr ""
+
+#: src/guides/learn-tui.md:35
+msgid "Key bindings"
+msgstr ""
+
+#: src/guides/learn-tui.md:37
+msgid ""
+"The TUI is single-pane. All bindings are in `wisecrow-core/src/tui/app.rs`."
+msgstr ""
+
+#: src/guides/learn-tui.md:39 src/guides/dual-n-back.md:39
+msgid "Key"
+msgstr ""
+
+#: src/guides/learn-tui.md:39 src/guides/dual-n-back.md:39
+#: src/guides/dual-n-back.md:69
+msgid "Action"
+msgstr ""
+
+#: src/guides/learn-tui.md:41
+msgid "`Space`"
+msgstr ""
+
+#: src/guides/learn-tui.md:41
+msgid "Reveal answer if hidden, otherwise advance."
+msgstr ""
+
+#: src/guides/learn-tui.md:42
+msgid "Rate `Again` (the card just lapsed)."
+msgstr ""
+
+#: src/guides/learn-tui.md:43 src/guides/graded-reader.md:30
+#: src/guides/dual-n-back.md:16 src/reference/cli-reference.md:187
+#: src/reference/database-schema.md:84
+msgid "`2`"
+msgstr ""
+
+#: src/guides/learn-tui.md:43
+msgid "Rate `Hard`."
+msgstr ""
+
+#: src/guides/learn-tui.md:44 src/reference/database-schema.md:85
+msgid "`3`"
+msgstr ""
+
+#: src/guides/learn-tui.md:44
+msgid "Rate `Good`."
+msgstr ""
+
+#: src/guides/learn-tui.md:45
+msgid "`4`"
+msgstr ""
+
+#: src/guides/learn-tui.md:45
+msgid "Rate `Easy`."
+msgstr ""
+
+#: src/guides/learn-tui.md:46
+msgid "`g`"
+msgstr ""
+
+#: src/guides/learn-tui.md:46
+msgid ""
+"Open the Leipzig gloss overlay for the current card. Press `g` again or "
+"`Esc` to close. Auto-advance pauses while the overlay is open. Requires an "
+"LLM provider configured via `WISECROW__LLM_PROVIDER` and "
+"`WISECROW__LLM_API_KEY`."
+msgstr ""
+
+#: src/guides/learn-tui.md:47
+msgid "`Esc`"
+msgstr ""
+
+#: src/guides/learn-tui.md:47
+msgid "Close the gloss overlay (when open)."
+msgstr ""
+
+#: src/guides/learn-tui.md:48
+msgid "`+` / `=`"
+msgstr ""
+
+#: src/guides/learn-tui.md:48
+msgid "Slow down the auto-advance by 500 ms."
+msgstr ""
+
+#: src/guides/learn-tui.md:49
+msgid "`-`"
+msgstr ""
+
+#: src/guides/learn-tui.md:49
+msgid "Speed up the auto-advance by 500 ms."
+msgstr ""
+
+#: src/guides/learn-tui.md:50
+msgid "`p`"
+msgstr ""
+
+#: src/guides/learn-tui.md:50
+msgid "Pause / unpause the auto-advance timer."
+msgstr ""
+
+#: src/guides/learn-tui.md:51 src/reference/cli-reference.md:30
+msgid "`q`"
+msgstr ""
+
+#: src/guides/learn-tui.md:51
+msgid "Pause the session and exit."
+msgstr ""
+
+#: src/guides/learn-tui.md:52
+msgid "`Ctrl+C`"
+msgstr ""
+
+#: src/guides/learn-tui.md:52
+msgid "Same as `q` but with a hard stop."
+msgstr ""
+
+#: src/guides/learn-tui.md:54
+msgid "Auto-advance pacing"
+msgstr ""
+
+#: src/guides/learn-tui.md:56
+msgid ""
+"A `SpeedController` lives in `wisecrow-dto`. It ticks down `remaining_ms` on "
+"each TUI frame (~10 Hz, 100 ms tick rate). When the timer expires:"
+msgstr ""
+
+#: src/guides/learn-tui.md:59
+msgid ""
+"The current card is rated `Good` if untouched, otherwise the explicit rating "
+"is used."
+msgstr ""
+
+#: src/guides/learn-tui.md:61
+msgid ""
+"The card is persisted via `SessionManager::answer_card` which delegates to "
+"`CardManager::review`."
+msgstr ""
+
+#: src/guides/learn-tui.md:63
+msgid "The next card is fetched and `SpeedController::reset` is called."
+msgstr ""
+
+#: src/guides/learn-tui.md:65
+msgid ""
+"The bottom of the screen shows a thin progress bar with "
+"`SpeedController::remaining_fraction` so you can see how long until the "
+"auto-advance fires."
+msgstr ""
+
+#: src/guides/learn-tui.md:69
+msgid "Pause and resume"
+msgstr ""
+
+#: src/guides/learn-tui.md:71
+msgid ""
+"The TUI never destroys session state. `q` calls `SessionManager::pause(pool, "
+"session_id)` which sets `paused_at = NOW()`. The next invocation:"
+msgstr ""
+
+#: src/guides/learn-tui.md:79
+msgid ""
+"…runs `SessionManager::resume`. Resume returns the most recent paused "
+"session for the user/lang triple and sets `paused_at = NULL`. Cards already "
+"answered (`session_cards.answered = TRUE`) are skipped; the resumed "
+"`current_index` is the count of answered cards."
+msgstr ""
+
+#: src/guides/learn-tui.md:84
+msgid ""
+"You will rarely lose more than a card or two: each rating commits before the "
+"next card draws."
+msgstr ""
+
+#: src/guides/learn-tui.md:87
+msgid "Optional media"
+msgstr ""
+
+#: src/guides/learn-tui.md:89
+msgid ""
+"`wisecrow learn` accepts no media flags — they are configured at build time "
+"and runtime:"
+msgstr ""
+
+#: src/guides/learn-tui.md:92
+msgid "Build the binary with `--features \"audio images\"`."
+msgstr ""
+
+#: src/guides/learn-tui.md:93
+msgid "Set `WISECROW__UNSPLASH_API_KEY` for image fetch."
+msgstr ""
+
+#: src/guides/learn-tui.md:94
+msgid "Run `wisecrow prefetch-media` ahead of time to warm the cache."
+msgstr ""
+
+#: src/guides/learn-tui.md:96
+msgid ""
+"When media is unavailable the TUI logs a warning and falls back to text-only "
+"cards. There is no error path that aborts the session because of a media "
+"miss."
+msgstr ""
+
+#: src/guides/learn-tui.md:100
+msgid "What the screen shows"
+msgstr ""
+
+#: src/guides/learn-tui.md:115
+msgid ""
+"The footer reflects the current card's state and frequency, so you can keep "
+"an eye on which slice of the deck you are working on."
+msgstr ""
+
+#: src/guides/glossing.md:3
+msgid ""
+"`wisecrow gloss` produces a Leipzig interlinear gloss of a sentence in any "
+"supported language using a configured LLM provider. The result is cached in "
+"the `glosses` table keyed by SHA-256 of the sentence and the language code, "
+"so re-glossing the same sentence is instant."
+msgstr ""
+
+#: src/guides/glossing.md:8 src/guides/graded-reader.md:8
+#: src/guides/preview-subtitles.md:8
+msgid "Use this when:"
+msgstr ""
+
+#: src/guides/glossing.md:10
+msgid ""
+"You're staring at a card and don't understand _why_ a word takes the form it "
+"does (case, gender, tense, mood)."
+msgstr ""
+
+#: src/guides/glossing.md:12
+msgid ""
+"You want to break a longer source sentence into morphemes before deciding "
+"whether to flashcard one of its constituent words."
+msgstr ""
+
+#: src/guides/glossing.md:15 src/guides/graded-reader.md:17
+#: src/guides/preview-subtitles.md:15
+msgid "CLI"
+msgstr ""
+
+#: src/guides/glossing.md:18
+msgid "\"Меня зовут Иван\""
+msgstr ""
+
+#: src/guides/glossing.md:21
+msgid "Aliases: `wisecrow gl ...`."
+msgstr ""
+
+#: src/guides/glossing.md:23 src/guides/graded-reader.md:25
+#: src/guides/preview-subtitles.md:23 src/guides/sync-workflow.md:27
+#: src/reference/cli-reference.md:84 src/reference/configuration.md:12
+msgid "Required"
+msgstr ""
+
+#: src/guides/glossing.md:25
+msgid "`--sentence` / `-s`"
+msgstr ""
+
+#: src/guides/glossing.md:25 src/guides/glossing.md:26
+#: src/guides/graded-reader.md:27 src/guides/graded-reader.md:28
+#: src/guides/graded-reader.md:29 src/guides/preview-subtitles.md:25
+#: src/guides/preview-subtitles.md:26 src/guides/preview-subtitles.md:27
+#: src/guides/sync-workflow.md:29 src/reference/cli-reference.md:21
+#: src/reference/cli-reference.md:22 src/reference/cli-reference.md:23
+#: src/reference/cli-reference.md:24 src/reference/cli-reference.md:27
+#: src/reference/cli-reference.md:28 src/reference/cli-reference.md:31
+#: src/reference/cli-reference.md:32 src/reference/cli-reference.md:36
+#: src/reference/cli-reference.md:37 src/reference/cli-reference.md:86
+#: src/reference/cli-reference.md:87
+msgid "yes"
+msgstr ""
+
+#: src/guides/glossing.md:25 src/guides/glossing.md:26
+#: src/guides/graded-reader.md:27 src/guides/graded-reader.md:28
+#: src/guides/graded-reader.md:29 src/guides/preview-subtitles.md:25
+#: src/guides/preview-subtitles.md:26 src/guides/preview-subtitles.md:27
+#: src/reference/cli-reference.md:104 src/reference/cli-reference.md:129
+msgid "—"
+msgstr ""
+
+#: src/guides/glossing.md:25
+msgid "The sentence to gloss. Quote it if it contains spaces."
+msgstr ""
+
+#: src/guides/glossing.md:26
+msgid "`--lang` / `-l`"
+msgstr ""
+
+#: src/guides/glossing.md:26
+msgid ""
+"ISO-ish language code (`ru`, `es`, `ja`, etc.). Must match `wisecrow "
+"list-languages`."
+msgstr ""
+
+#: src/guides/glossing.md:27
+msgid "`--refresh`"
+msgstr ""
+
+#: src/guides/glossing.md:27 src/guides/graded-reader.md:30
+#: src/guides/graded-reader.md:31 src/guides/graded-reader.md:32
+#: src/guides/graded-reader.md:33 src/guides/graded-reader.md:34
+#: src/guides/graded-reader.md:35 src/guides/preview-subtitles.md:28
+#: src/guides/preview-subtitles.md:29 src/guides/preview-subtitles.md:30
+#: src/guides/preview-subtitles.md:31 src/guides/sync-workflow.md:30
+#: src/reference/cli-reference.md:19 src/reference/cli-reference.md:20
+#: src/reference/cli-reference.md:25 src/reference/cli-reference.md:30
+msgid "no"
+msgstr ""
+
+#: src/guides/glossing.md:27 src/guides/preview-subtitles.md:28
+#: src/guides/preview-subtitles.md:29 src/guides/preview-subtitles.md:31
+#: src/reference/cli-reference.md:130
+msgid "`false`"
+msgstr ""
+
+#: src/guides/glossing.md:27
+msgid ""
+"Bypass and overwrite the cached gloss for this `(sentence, lang)` pair. "
+"Forces a fresh LLM call."
+msgstr ""
+
+#: src/guides/glossing.md:29
+msgid "Output is plain text — four lines, in Leipzig conventions:"
+msgstr ""
+
+#: src/guides/glossing.md:31
+msgid ""
+"```\n"
+"Меня     зовут           Иван\n"
+"я-ACC    звать-3PL       Иван\n"
+"1SG-ACC  call-3PL.PRES   Ivan(NOM)\n"
+"\"My name is Ivan.\"\n"
+"```"
+msgstr ""
+
+#: src/guides/glossing.md:38
+msgid "TUI overlay"
+msgstr ""
+
+#: src/guides/glossing.md:40
+msgid ""
+"While `wisecrow learn` is running, press `g` on any card to open a modal "
+"that glosses the foreign-language side of the current card (`to_phrase`, in "
+"the `foreign_lang` of the session). Auto-advance pauses while the modal is "
+"open. Press `g` again or `Esc` to dismiss."
+msgstr ""
+
+#: src/guides/glossing.md:45
+msgid ""
+"The TUI overlay shares the same `glosses` cache as the CLI — gloss a "
+"sentence once and it's instant in both surfaces, on every device that points "
+"at the same database."
+msgstr ""
+
+#: src/guides/glossing.md:51
+msgid "Requires:"
+msgstr ""
+
+#: src/guides/glossing.md:53
+msgid "`WISECROW__LLM_PROVIDER` set to `anthropic` or `openai`"
+msgstr ""
+
+#: src/guides/glossing.md:54
+msgid "`WISECROW__LLM_API_KEY` set to the corresponding API key"
+msgstr ""
+
+#: src/guides/glossing.md:56
+msgid ""
+"If neither is set the CLI errors fast; the TUI logs an info message and the "
+"`g` keypress simply does nothing."
+msgstr ""
+
+#: src/guides/glossing.md:59
+msgid "Cache"
+msgstr ""
+
+#: src/guides/glossing.md:61
+msgid "The `glosses` table (migration `010_glosses.sql`) holds:"
+msgstr ""
+
+#: src/guides/glossing.md:63
+msgid "Column"
+msgstr ""
+
+#: src/guides/glossing.md:63 src/reference/configuration.md:12
+msgid "Type"
+msgstr ""
+
+#: src/guides/glossing.md:63 src/guides/preview-subtitles.md:37
+#: src/guides/dual-n-back.md:13
+msgid "Notes"
+msgstr ""
+
+#: src/guides/glossing.md:65
+msgid "`id`"
+msgstr ""
+
+#: src/guides/glossing.md:65
+msgid "`SERIAL`"
+msgstr ""
+
+#: src/guides/glossing.md:65
+msgid "primary key"
+msgstr ""
+
+#: src/guides/glossing.md:66
+msgid "`sentence_hash`"
+msgstr ""
+
+#: src/guides/glossing.md:66
+msgid "`CHAR(64)`"
+msgstr ""
+
+#: src/guides/glossing.md:66
+msgid "SHA-256 hex of the sentence"
+msgstr ""
+
+#: src/guides/glossing.md:67
+msgid "`lang_code`"
+msgstr ""
+
+#: src/guides/glossing.md:67
+msgid "`VARCHAR(16)`"
+msgstr ""
+
+#: src/guides/glossing.md:67
+msgid "foreign-language code"
+msgstr ""
+
+#: src/guides/glossing.md:68
+msgid "`gloss_text`"
+msgstr ""
+
+#: src/guides/glossing.md:68
+msgid "`TEXT`"
+msgstr ""
+
+#: src/guides/glossing.md:68
+msgid "the gloss returned by the LLM"
+msgstr ""
+
+#: src/guides/glossing.md:69
+msgid "`created_at`"
+msgstr ""
+
+#: src/guides/glossing.md:69
+msgid "`TIMESTAMP WITH TIME ZONE`"
+msgstr ""
+
+#: src/guides/glossing.md:69
+msgid "row creation timestamp"
+msgstr ""
+
+#: src/guides/glossing.md:71
+msgid ""
+"`(sentence_hash, lang_code)` is a unique constraint, so the cache is shared "
+"across all CLI invocations and TUI sessions for the same sentence/language "
+"pair. Hash-keying lets the same row serve both the freeform CLI path "
+"(arbitrary input string) and the TUI path (a card's `to_phrase`) without "
+"needing a foreign key to `translations`."
+msgstr ""
+
+#: src/guides/glossing.md:77
+msgid ""
+"`--refresh` forces an `INSERT … ON CONFLICT DO UPDATE`, replacing any cached "
+"row with the freshly-prompted gloss and bumping `created_at` to the current "
+"time."
+msgstr ""
+
+#: src/guides/glossing.md:81 src/guides/graded-reader.md:88
+#: src/guides/preview-subtitles.md:92 src/guides/sync-workflow.md:81
+msgid "Limitations"
+msgstr ""
+
+#: src/guides/glossing.md:83
+msgid "Cache never expires automatically; rely on `--refresh` for invalidation."
+msgstr ""
+
+#: src/guides/glossing.md:84
+msgid ""
+"Quality depends entirely on the LLM. Inspect the gloss before trusting it "
+"for unusual constructions or low-resource languages."
+msgstr ""
+
+#: src/guides/graded-reader.md:3
+msgid ""
+"`wisecrow graded-reader` generates a personalised CEFR-graded passage in the "
+"foreign language, seeded from the vocabulary you've actually learned. The "
+"LLM is instructed to reuse most of your seed words and add only a small "
+"amount of new vocabulary at the level you specify."
+msgstr ""
+
+#: src/guides/graded-reader.md:10
+msgid ""
+"You're between A2 and B2 and want reading material that isn't humiliating or "
+"insultingly easy."
+msgstr ""
+
+#: src/guides/graded-reader.md:12
+msgid ""
+"You want to consolidate vocabulary you've already drilled, in connected "
+"prose rather than isolated cards."
+msgstr ""
+
+#: src/guides/graded-reader.md:14
+msgid ""
+"You want a glossary of the new words side-by-side, ready to feed back into "
+"your SRS deck."
+msgstr ""
+
+#: src/guides/graded-reader.md:23
+msgid "Alias: `wisecrow gr ...`."
+msgstr ""
+
+#: src/guides/graded-reader.md:27 src/guides/preview-subtitles.md:26
+msgid "`--native-lang` / `-n`"
+msgstr ""
+
+#: src/guides/graded-reader.md:27
+msgid "Native language code (used in glossary)."
+msgstr ""
+
+#: src/guides/graded-reader.md:28 src/guides/preview-subtitles.md:27
+msgid "`--foreign-lang` / `-f`"
+msgstr ""
+
+#: src/guides/graded-reader.md:28
+msgid "Foreign language code (passage language)."
+msgstr ""
+
+#: src/guides/graded-reader.md:29
+msgid "`--cefr`"
+msgstr ""
+
+#: src/guides/graded-reader.md:29
+msgid "CEFR level: `A1`, `A2`, `B1`, `B2`, `C1`, or `C2`."
+msgstr ""
+
+#: src/guides/graded-reader.md:30
+msgid "`--seed-states`"
+msgstr ""
+
+#: src/guides/graded-reader.md:30
+msgid ""
+"FSRS states that count as \"learned\". Comma-separated `i16` list. `2` = "
+"Review only. Pass `2,3` to also include Relearning (lapsed) cards."
+msgstr ""
+
+#: src/guides/graded-reader.md:31
+msgid "`--seed-min-stability`"
+msgstr ""
+
+#: src/guides/graded-reader.md:31 src/guides/preview-subtitles.md:30
+msgid "`None`"
+msgstr ""
+
+#: src/guides/graded-reader.md:31
+msgid ""
+"Optional FSRS-stability threshold. Cards below this stability are excluded "
+"from the seed list."
+msgstr ""
+
+#: src/guides/graded-reader.md:32
+msgid "`--seed-limit`"
+msgstr ""
+
+#: src/guides/graded-reader.md:32
+msgid "`30`"
+msgstr ""
+
+#: src/guides/graded-reader.md:32
+msgid "Max number of seed words pulled from the database."
+msgstr ""
+
+#: src/guides/graded-reader.md:33
+msgid "`--length-words`"
+msgstr ""
+
+#: src/guides/graded-reader.md:33
+msgid "`200`"
+msgstr ""
+
+#: src/guides/graded-reader.md:33
+msgid "Approximate target length of the passage."
+msgstr ""
+
+#: src/guides/graded-reader.md:34
+msgid "`--format`"
+msgstr ""
+
+#: src/guides/graded-reader.md:34
+msgid "`md`"
+msgstr ""
+
+#: src/guides/graded-reader.md:34
+msgid "Output format: `md` (Markdown) or `html` (self-contained HTML page)."
+msgstr ""
+
+#: src/guides/graded-reader.md:35
+msgid "`--output`"
+msgstr ""
+
+#: src/guides/graded-reader.md:35
+msgid "stdout"
+msgstr ""
+
+#: src/guides/graded-reader.md:35
+msgid "Write to a file instead of stdout."
+msgstr ""
+
+#: src/guides/graded-reader.md:37
+msgid "How \"learned\" is defined"
+msgstr ""
+
+#: src/guides/graded-reader.md:39
+msgid ""
+"The seed-vocab query (`VocabularyQuery::learned`) joins `cards` against "
+"`translations` filtered by:"
+msgstr ""
+
+#: src/guides/graded-reader.md:42
+msgid ""
+"`cards.state = ANY($seed_states)` — defaults to `[2]` (FSRS Review state)."
+msgstr ""
+
+#: src/guides/graded-reader.md:43
+msgid ""
+"Optional `cards.stability >= $seed_min_stability` — extra filter for \"I've "
+"actually internalised this,\" not just \"FSRS marked it Review.\""
+msgstr ""
+
+#: src/guides/graded-reader.md:45
+msgid ""
+"Ordered by `translations.frequency DESC` — corpus-frequency ranking so the "
+"most useful learned words seed the passage."
+msgstr ""
+
+#: src/guides/graded-reader.md:48
+msgid "This means:"
+msgstr ""
+
+#: src/guides/graded-reader.md:50
+msgid ""
+"A fresh `wisecrow learn` user will get an empty seed list and the command "
+"will error with `No learned vocabulary found for the given filters`."
+msgstr ""
+
+#: src/guides/graded-reader.md:52
+msgid ""
+"The seed list is **language-pair-agnostic per user — currently** (see "
+"Limitations)."
+msgstr ""
+
+#: src/guides/graded-reader.md:55
+msgid "Output formats"
+msgstr ""
+
+#: src/guides/graded-reader.md:57
+msgid "**Markdown** (`--format md`):"
+msgstr ""
+
+#: src/guides/graded-reader.md:70
+msgid "**HTML** (`--format html`):"
+msgstr ""
+
+#: src/guides/graded-reader.md:72
+msgid ""
+"A self-contained `<!doctype html>` page with `<h1>`/`<p>`/`<h2>`/`<ul>`. "
+"User content is HTML-escaped (`&`, `<`, `>`, `\"`). No external CSS or JS — "
+"open the file in any browser. Pipe to a printer-CSS preprocessor for print "
+"output, or render via `pandoc` for PDF."
+msgstr ""
+
+#: src/guides/graded-reader.md:77
+msgid "Tips"
+msgstr ""
+
+#: src/guides/graded-reader.md:79
+msgid ""
+"Use `--seed-min-stability` once you've been learning for a while to avoid "
+"the LLM being \"fed\" cards you technically passed once but haven't actually "
+"retained."
+msgstr ""
+
+#: src/guides/graded-reader.md:82
+msgid ""
+"For a denser passage, raise `--seed-limit` (more vocabulary diversity) and "
+"`--length-words` together."
+msgstr ""
+
+#: src/guides/graded-reader.md:84
+msgid ""
+"For a more challenging text, set the CEFR level one notch above your comfort "
+"zone and pass a larger `--seed-limit` so the LLM has more to work with."
+msgstr ""
+
+#: src/guides/graded-reader.md:90
+msgid ""
+"v1 operates on a single-user assumption: the `cards` table has no `user_id`. "
+"\"Learned\" means \"any card row in this state, regardless of who reviewed "
+"it.\" Multi-user-aware semantics is a follow-up."
+msgstr ""
+
+#: src/guides/graded-reader.md:93
+msgid ""
+"Quality depends on the LLM. The first paragraph is usually best; later "
+"paragraphs sometimes drift in style or introduce more new vocabulary than "
+"asked."
+msgstr ""
+
+#: src/guides/graded-reader.md:96
+msgid ""
+"Length is approximate — the LLM may overshoot or undershoot `--length-words` "
+"by ~30%."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:3
+msgid ""
+"`wisecrow preview --file <path>` parses an `.srt`, `.vtt`, `.ass`, or `.ssa` "
+"subtitle file, tokenises the text, and produces an annotated frequency table "
+"showing which words you already know, which you're currently learning, and "
+"which are entirely new."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:10
+msgid ""
+"You're about to watch tonight's episode of a show in your target language "
+"and want to triage vocabulary first."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:12
+msgid ""
+"You want to know which lemmata in a script are corpus-rare so you can "
+"pre-load them as cards before they ambush you."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:21
+msgid "Alias: `wisecrow pv ...`."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:25 src/reference/cli-reference.md:104
+#: src/reference/cli-reference.md:129
+msgid "`--file`"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:25
+msgid ""
+"Path to the subtitle file. Format inferred from extension: `.vtt`, `.ass`, "
+"`.ssa`, or default to SRT."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:26
+msgid "Native language code (used by `--gloss-unknowns`)."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:27
+msgid "Foreign language code (selects tokenizer + drives DB lookups)."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:28
+msgid "`--unknown-only`"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:28
+msgid "Print only tokens not in your SRS deck (`[new]` and `[?]`)."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:29
+msgid "`--no-srs`"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:29
+msgid "Skip the SRS state lookup. Only deduplicates tokens."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:30
+msgid "`--top-n`"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:30
+msgid "Limit output to the N highest-frequency rows."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:31
+msgid "`--gloss-unknowns`"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:31
+msgid ""
+"LLM-translate corpus-unknown tokens (`[?]`) into your native language. "
+"Requires LLM provider configured."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:33
+msgid "Tokenizers"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:35
+msgid "The preview pipeline picks a tokenizer per `--foreign-lang`:"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:37
+msgid "Lang"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:37
+msgid "Tokenizer"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:39
+msgid "`zh`"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:39
+msgid "`jieba-rs`"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:39
+msgid "Chinese word segmentation, always available."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:40
+msgid "`ja`"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:40
+msgid "`lindera` 3.x with embedded IPADIC"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:40
+msgid "Japanese morphological analysis, dict embedded at compile time."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:41
+msgid "`th`"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:41
+msgid "`kham-core`"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:41
+msgid "Pure-Rust Thai segmenter."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:42
+msgid "`km`, `lo`, `my`"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:42
+msgid "None"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:42
+msgid ""
+"Returns `UnsupportedLanguage` error — these languages need segmenters not "
+"yet integrated."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:43
+msgid "Everything else"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:43
+msgid "Whitespace + punctuation strip"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:43
+msgid ""
+"Correct for ~90 languages: Latin, Cyrillic, Arabic, Devanagari, Hangul "
+"(eojeol-level), etc."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:45
+msgid "Annotation legend"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:47
+msgid "Each token is tagged with one of:"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:49
+msgid ""
+"`[known]` — present in `translations` AND has a `cards` row in FSRS state 2 "
+"(Review). You've internalised this word."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:50
+msgid ""
+"`[learning]` — present in `translations` AND has a `cards` row in FSRS state "
+"1 (Learning) or 3 (Relearning)."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:51
+msgid ""
+"`[new]` — present in `translations` AND has either no `cards` row, or a row "
+"in state 0 (New)."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:52
+msgid ""
+"`[?]` — not present in `translations` for this language pair. You haven't "
+"ingested this word, the corpus doesn't contain it, or it's an inflected form "
+"not in the corpus's surface-form index."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:54
+msgid "Status semantics"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:56
+msgid ""
+"Output is sorted by corpus frequency descending. With `--top-n 30` you get "
+"the 30 highest-frequency tokens in the file. With `--unknown-only`, only "
+"`[new]` and `[?]` tokens are included — that's \"what does this script "
+"demand of me that I haven't yet drilled.\""
+msgstr ""
+
+#: src/guides/preview-subtitles.md:61
+msgid "LLM gloss for corpus-unknowns"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:63
+msgid ""
+"`--gloss-unknowns` collects all `[?]` tokens (those completely missing from "
+"the `translations` table for this language pair), sends them to the LLM in "
+"one batch with a \"translate these foreign words to <native>\" prompt, and "
+"appends the returned gloss inline:"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:73
+msgid ""
+"This catches words from the script that your corpus simply doesn't cover — "
+"inflected forms not in the surface-form index, slang, names, or rare lemmata."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:76
+msgid ""
+"`--gloss-unknowns` requires `WISECROW__LLM_PROVIDER` and "
+"`WISECROW__LLM_API_KEY` set; without them the CLI errors fast."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:79
+msgid "Examples"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:82
+msgid "# Triage tonight's Spanish episode, top 30 unknowns.\n"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:84
+msgid "# Same, but also LLM-translate corpus-misses.\n"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:87
+msgid "# Japanese ass file with full annotation.\n"
+msgstr ""
+
+#: src/guides/preview-subtitles.md:94
+msgid ""
+"v1 is corpus-only by default — no fuzzy matching of inflected forms, no "
+"lemmatisation. A Spanish word like `casas` might tag `[?]` even if `casa` is "
+"in your deck. Use `--gloss-unknowns` to bridge the gap."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:97
+msgid ""
+"The `translations.to_phrase` join is exact match (case-folded by the "
+"tokenizer). Multi-word phrases in the corpus won't match single tokens."
+msgstr ""
+
+#: src/guides/preview-subtitles.md:99
+msgid ""
+"`[new]` vs `[learning]` distinguishes \"I haven't seen it\" from \"I'm "
+"actively drilling it\" — both are useful signals but they're FSRS-state "
+"driven, not based on actual review history."
+msgstr ""
+
+#: src/guides/dual-n-back.md:3
+msgid ""
+"`wisecrow nback` runs an adaptive dual n-back session that uses your "
+"ingested vocabulary as audio and visual stimuli. It is independent of the "
+"SRS but feeds back into it."
+msgstr ""
+
+#: src/guides/dual-n-back.md:7
+msgid "Quick start"
+msgstr ""
+
+#: src/guides/dual-n-back.md:15 src/reference/cli-reference.md:186
+msgid "`--mode`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:15 src/guides/dual-n-back.md:26
+#: src/reference/cli-reference.md:186
+msgid "`audio_written`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:15
+msgid "One of `audio_written`, `word_translation`, `audio_image`."
+msgstr ""
+
+#: src/guides/dual-n-back.md:16 src/reference/cli-reference.md:187
+msgid "`--n-level`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:16
+msgid "Initial n-level. Clamped to `[1, 9]`."
+msgstr ""
+
+#: src/guides/dual-n-back.md:17
+msgid "FK into `users`."
+msgstr ""
+
+#: src/guides/dual-n-back.md:19
+msgid ""
+"The session needs at least 8 vocabulary items for the language pair — ingest "
+"first."
+msgstr ""
+
+#: src/guides/dual-n-back.md:22
+msgid "Stimuli per mode"
+msgstr ""
+
+#: src/guides/dual-n-back.md:24
+msgid "Mode"
+msgstr ""
+
+#: src/guides/dual-n-back.md:24
+msgid "Audio channel"
+msgstr ""
+
+#: src/guides/dual-n-back.md:24
+msgid "Visual channel"
+msgstr ""
+
+#: src/guides/dual-n-back.md:26 src/guides/dual-n-back.md:27
+#: src/guides/dual-n-back.md:28
+msgid "Foreign-language phrase, spoken"
+msgstr ""
+
+#: src/guides/dual-n-back.md:26
+msgid "Native-language phrase, written"
+msgstr ""
+
+#: src/guides/dual-n-back.md:27
+msgid "`word_translation`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:27
+msgid "Foreign phrase, written"
+msgstr ""
+
+#: src/guides/dual-n-back.md:28
+msgid "`audio_image`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:28
+msgid "Image associated with the translation"
+msgstr ""
+
+#: src/guides/dual-n-back.md:30
+msgid ""
+"Audio uses the `audio` feature (Microsoft Edge TTS, no API key). The "
+"`audio_image` mode also requires the `images` feature and an Unsplash API "
+"key."
+msgstr ""
+
+#: src/guides/dual-n-back.md:34
+msgid "Controls"
+msgstr ""
+
+#: src/guides/dual-n-back.md:36
+msgid ""
+"This command does not use ratatui — it draws directly with crossterm so that "
+"key-press latency is as low as possible. Bindings during a trial:"
+msgstr ""
+
+#: src/guides/dual-n-back.md:41
+msgid "`A`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:41
+msgid "Toggle audio match for the current trial."
+msgstr ""
+
+#: src/guides/dual-n-back.md:42
+msgid "`L`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:42
+msgid "Toggle visual match for the current trial."
+msgstr ""
+
+#: src/guides/dual-n-back.md:43
+msgid "`Enter`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:43
+msgid "Submit the trial early (otherwise the timer fires)."
+msgstr ""
+
+#: src/guides/dual-n-back.md:44
+msgid "`Q`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:44
+msgid "Abort the session."
+msgstr ""
+
+#: src/guides/dual-n-back.md:46
+msgid ""
+"The screen shows the trial number, the current n-level, and a one-line "
+"result after each trial (`Result: audio=correct, visual=wrong`)."
+msgstr ""
+
+#: src/guides/dual-n-back.md:49
+msgid "Trial generation"
+msgstr ""
+
+#: src/guides/dual-n-back.md:51
+msgid "For each trial:"
+msgstr ""
+
+#: src/guides/dual-n-back.md:53
+msgid ""
+"The engine picks `audio_match` and `visual_match` independently with "
+"probability `MATCH_PROBABILITY = 0.30`."
+msgstr ""
+
+#: src/guides/dual-n-back.md:55
+msgid ""
+"If the chosen channel is meant to match, the engine returns the same vocab "
+"item that appeared n trials ago."
+msgstr ""
+
+#: src/guides/dual-n-back.md:57
+msgid ""
+"If it is meant to be a non-match, a random different item is chosen (the "
+"engine retries until it picks an item that is **not** the n-back target)."
+msgstr ""
+
+#: src/guides/dual-n-back.md:61
+msgid ""
+"The first n trials per channel are forced to be non-matches because there is "
+"no n-back history yet."
+msgstr ""
+
+#: src/guides/dual-n-back.md:64
+msgid "Adaptation"
+msgstr ""
+
+#: src/guides/dual-n-back.md:66
+msgid ""
+"`apply_adaptation` runs at the end of every 5-trial window. It reads the "
+"rolling accuracy on each channel and decides:"
+msgstr ""
+
+#: src/guides/dual-n-back.md:69
+msgid "Audio acc."
+msgstr ""
+
+#: src/guides/dual-n-back.md:69
+msgid "Visual acc."
+msgstr ""
+
+#: src/guides/dual-n-back.md:71
+msgid "≥ 0.80"
+msgstr ""
+
+#: src/guides/dual-n-back.md:71
+msgid "Increase `n_level` by 1 (cap 9), drop interval by 200 ms (floor 1500)."
+msgstr ""
+
+#: src/guides/dual-n-back.md:72 src/guides/dual-n-back.md:73
+msgid "\\< 0.50"
+msgstr ""
+
+#: src/guides/dual-n-back.md:72 src/guides/dual-n-back.md:73
+msgid "any"
+msgstr ""
+
+#: src/guides/dual-n-back.md:72
+msgid "Decrease `n_level` by 1 (floor 1), bump interval by 200 ms (cap 5000)."
+msgstr ""
+
+#: src/guides/dual-n-back.md:73
+msgid "Same as above."
+msgstr ""
+
+#: src/guides/dual-n-back.md:74
+msgid "else"
+msgstr ""
+
+#: src/guides/dual-n-back.md:74
+msgid "Hold."
+msgstr ""
+
+#: src/guides/dual-n-back.md:76
+msgid ""
+"The engine also tracks how many windows in a row n has been below the "
+"session's starting level — see [Termination](#termination)."
+msgstr ""
+
+#: src/guides/dual-n-back.md:79
+msgid "Termination"
+msgstr ""
+
+#: src/guides/dual-n-back.md:81
+msgid "A session ends when:"
+msgstr ""
+
+#: src/guides/dual-n-back.md:83
+msgid "50 trials elapse (`MAX_TRIALS` in `bin/wisecrow.rs`), or"
+msgstr ""
+
+#: src/guides/dual-n-back.md:84
+msgid ""
+"`consecutive_below_start >= 3` — three windows in a row below the starting "
+"n-level signal you are not at your stretch zone today, or"
+msgstr ""
+
+#: src/guides/dual-n-back.md:86
+msgid ""
+"both channels' rolling accuracy drops below 40 % over the last 5 trials — "
+"there is no point continuing if you have lost the thread."
+msgstr ""
+
+#: src/guides/dual-n-back.md:89
+msgid "After termination:"
+msgstr ""
+
+#: src/guides/dual-n-back.md:91
+msgid ""
+"The session row is updated with peak/end n-levels and final accuracy figures."
+msgstr ""
+
+#: src/guides/dual-n-back.md:93
+msgid "`dnb::feedback::apply_srs_feedback` sweeps the trial log:"
+msgstr ""
+
+#: src/guides/dual-n-back.md:94
+msgid ""
+"For each translation that appeared as a stimulus, count `(correct, "
+"incorrect)` recognitions across both channels."
+msgstr ""
+
+#: src/guides/dual-n-back.md:96
+msgid "If net-correct, apply a `Good` review with weight 0.5."
+msgstr ""
+
+#: src/guides/dual-n-back.md:97
+msgid "If net-incorrect, apply an `Again` review with weight 0.5."
+msgstr ""
+
+#: src/guides/dual-n-back.md:98
+msgid "Equal counts: skip the card."
+msgstr ""
+
+#: src/guides/dual-n-back.md:100
+msgid ""
+"The fractional weighting prevents one tough n-back from torpedoing your SRS "
+"schedule."
+msgstr ""
+
+#: src/guides/dual-n-back.md:103
+msgid "Tuning"
+msgstr ""
+
+#: src/guides/dual-n-back.md:105
+msgid "The hard-coded constants live in `wisecrow-core/src/dnb/scoring.rs`:"
+msgstr ""
+
+#: src/guides/dual-n-back.md:107 src/reference/configuration.md:94
+msgid "Constant"
+msgstr ""
+
+#: src/guides/dual-n-back.md:107 src/reference/configuration.md:94
+#: src/reference/database-schema.md:80
+msgid "Value"
+msgstr ""
+
+#: src/guides/dual-n-back.md:109
+msgid "`ACCURACY_INCREASE_THRESHOLD`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:109
+msgid "0.80"
+msgstr ""
+
+#: src/guides/dual-n-back.md:109
+msgid "Both channels must hit this to increase n."
+msgstr ""
+
+#: src/guides/dual-n-back.md:110
+msgid "`ACCURACY_DECREASE_THRESHOLD`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:110
+msgid "0.50"
+msgstr ""
+
+#: src/guides/dual-n-back.md:110
+msgid "Either channel below triggers a decrease."
+msgstr ""
+
+#: src/guides/dual-n-back.md:111
+msgid "`ACCURACY_TERMINATE_THRESHOLD`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:111
+msgid "0.40"
+msgstr ""
+
+#: src/guides/dual-n-back.md:111
+msgid "Both channels below ends the session early."
+msgstr ""
+
+#: src/guides/dual-n-back.md:112
+msgid "`ADAPTATION_WINDOW`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:112 src/reference/configuration.md:96
+msgid "5"
+msgstr ""
+
+#: src/guides/dual-n-back.md:112
+msgid "Trials per evaluation window."
+msgstr ""
+
+#: src/guides/dual-n-back.md:113
+msgid "`TIMING_STEP_MS`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:113
+msgid "200"
+msgstr ""
+
+#: src/guides/dual-n-back.md:113
+msgid "Interval delta on increase/decrease."
+msgstr ""
+
+#: src/guides/dual-n-back.md:114
+msgid "`MIN_INTERVAL_MS`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:114
+msgid "1500"
+msgstr ""
+
+#: src/guides/dual-n-back.md:114 src/guides/dual-n-back.md:116
+msgid "Floor."
+msgstr ""
+
+#: src/guides/dual-n-back.md:115
+msgid "`MAX_INTERVAL_MS`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:115
+msgid "5000"
+msgstr ""
+
+#: src/guides/dual-n-back.md:115 src/guides/dual-n-back.md:117
+msgid "Ceiling."
+msgstr ""
+
+#: src/guides/dual-n-back.md:116
+msgid "`MIN_N_LEVEL`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:117
+msgid "`MAX_N_LEVEL`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:117
+msgid "9"
+msgstr ""
+
+#: src/guides/dual-n-back.md:118
+msgid "`CONSECUTIVE_BELOW_START_LIMIT`"
+msgstr ""
+
+#: src/guides/dual-n-back.md:118 src/reference/configuration.md:97
+msgid "3"
+msgstr ""
+
+#: src/guides/dual-n-back.md:118
+msgid "Termination trigger."
+msgstr ""
+
+#: src/guides/dual-n-back.md:120
+msgid ""
+"These are deliberately conservative compared to the original n-back "
+"literature; tighten them with care."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:3
+msgid ""
+"Wisecrow stores graded grammar rules per language and CEFR level. Three "
+"ingestion paths are available — pick whichever matches the source you have."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:6
+msgid "Path"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:6
+msgid "Best for"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:6
+msgid "Source field"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:8 src/reference/cli-reference.md:207
+msgid "`seed-grammar`"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:8
+msgid "Bootstrap a brand-new language."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:8
+msgid "`ai`"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:9 src/reference/cli-reference.md:221
+msgid "`import-grammar`"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:9
+msgid "Curated rules you already wrote in JSON."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:9
+msgid "`manual`"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:10 src/reference/cli-reference.md:250
+msgid "`import-pdf`"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:10
+msgid "Course materials, textbook PDFs."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:10
+msgid "`pdf`"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:12
+msgid "Bootstrap with an LLM"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:14
+msgid ""
+"`seed-grammar` asks the configured LLM provider for 15 rules per CEFR level."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:17
+msgid "anthropic"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:18
+msgid "sk-ant-..."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:22
+msgid "Behind the scenes:"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:24
+msgid ""
+"The driver builds one `grammar_seed_prompt(language_name, level, count)` per "
+"level (`wisecrow-core/src/llm/prompts.rs:3`)."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:26
+msgid "It calls `LlmProvider::generate(prompt, 4096)`."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:27
+msgid ""
+"`seed_grammar::parse_llm_json` strips Markdown fences and deserialises the "
+"array."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:29
+msgid ""
+"Each rule is upserted via `RuleRepository::upsert_rule` keyed on "
+"`(language_id, cefr_level_id, title)`."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:32
+msgid ""
+"The upsert key makes re-running safe — refining a level's rules just "
+"overwrites the previous run."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:35
+msgid "Import from JSON"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:37
+msgid "`import-grammar` consumes a `[GrammarRuleImport]` JSON array:"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:42 src/reference/cli-reference.md:237
+msgid "\"title\""
+msgstr ""
+
+#: src/guides/grammar-workflows.md:42
+msgid "\"Definite articles\""
+msgstr ""
+
+#: src/guides/grammar-workflows.md:43 src/reference/cli-reference.md:238
+msgid "\"explanation\""
+msgstr ""
+
+#: src/guides/grammar-workflows.md:43
+msgid "\"Spanish has four definite articles: el, la, los, las.\""
+msgstr ""
+
+#: src/guides/grammar-workflows.md:44 src/reference/cli-reference.md:239
+msgid "\"cefr_level\""
+msgstr ""
+
+#: src/guides/grammar-workflows.md:44 src/reference/cli-reference.md:239
+msgid "\"A1\""
+msgstr ""
+
+#: src/guides/grammar-workflows.md:45 src/reference/cli-reference.md:240
+msgid "\"examples\""
+msgstr ""
+
+#: src/guides/grammar-workflows.md:46 src/guides/grammar-workflows.md:47
+#: src/reference/cli-reference.md:241 src/reference/cli-reference.md:242
+msgid "\"sentence\""
+msgstr ""
+
+#: src/guides/grammar-workflows.md:46
+msgid "\"El libro está en la mesa.\""
+msgstr ""
+
+#: src/guides/grammar-workflows.md:46 src/guides/grammar-workflows.md:47
+#: src/reference/cli-reference.md:241 src/reference/cli-reference.md:242
+msgid "\"translation\""
+msgstr ""
+
+#: src/guides/grammar-workflows.md:46
+msgid "\"The book is on the table.\""
+msgstr ""
+
+#: src/guides/grammar-workflows.md:46 src/guides/grammar-workflows.md:47
+#: src/reference/cli-reference.md:241 src/reference/cli-reference.md:242
+msgid "\"is_correct\""
+msgstr ""
+
+#: src/guides/grammar-workflows.md:47
+msgid "\"La libro está en la mesa.\""
+msgstr ""
+
+#: src/guides/grammar-workflows.md:47
+msgid "\"(incorrect: noun is masculine)\""
+msgstr ""
+
+#: src/guides/grammar-workflows.md:53
+msgid "Field reference: `wisecrow-dto/src/lib.rs:126`."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:59
+msgid ""
+"The flow shares the upsert key with `seed-grammar`, so a manual edit can "
+"override an AI-seeded rule simply by reusing its title."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:62
+msgid "Import from PDF"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:64
+msgid ""
+"`import-pdf` runs `pdf-extract` over the file, splits it into sections, and "
+"upserts a rule per detected paragraph. It is best-effort:"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:71
+msgid "Two things to know:"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:73
+msgid ""
+"The extracted titles are clipped at 100 characters with a UTF-8 boundary "
+"check, so long headings get truncated rather than corrupting the row."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:75
+msgid ""
+"PDF examples are imported as `is_correct = true` because there is no "
+"reliable signal in unstructured text."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:78
+msgid ""
+"If the result is messy, export the rules with a SQL query, edit them, and "
+"re-import via `import-grammar` — `manual` overrides `pdf` on the next upsert."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:82
+msgid "Generate quizzes from rules"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:84
+msgid ""
+"Once rules exist for a `(language, level)` pair, you can ask the LLM to turn "
+"them into exercises:"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:91
+msgid ""
+"Each exercise has a `rule_id` linking back to the source rule (so you can "
+"display \"this question tests rule X\" in a UI). The flow:"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:94
+msgid "Load all rules for the level via `RuleRepository::rules_for_level`."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:95
+msgid ""
+"Build the `exercise_generation_prompt` (a strict spec asking for a JSON "
+"array of cloze and multiple-choice items)."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:97
+msgid "Parse the response, tolerating fenced code-blocks."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:98
+msgid "Truncate to the requested count, splitting evenly between cloze and MC."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:100
+msgid ""
+"The output is printed to stdout. Pipe it into `jq` if you want to feed it "
+"into another tool."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:103
+msgid "Inspect what's stored"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:113
+msgid "Useful for spotting gaps before you start drilling."
+msgstr ""
+
+#: src/guides/grammar-workflows.md:115
+msgid "Cleaning up"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:117
+msgid "To drop everything and start over for a language:"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:121
+msgid "'es'"
+msgstr ""
+
+#: src/guides/grammar-workflows.md:121
+msgid "-- rule_examples cascade-delete via FK\n"
+msgstr ""
+
+#: src/guides/sync-workflow.md:3
+msgid ""
+"The `sync` command pulls `languages`, `translations`, and `grammar_rules` "
+"from a remote Wisecrow instance and merges them into your local database. It "
+"is one-way (pull-only) and idempotent: running it twice in a row is a no-op "
+"the second time."
+msgstr ""
+
+#: src/guides/sync-workflow.md:8
+msgid "Concept"
+msgstr ""
+
+#: src/guides/sync-workflow.md:17
+msgid ""
+"The cursor is the remote primary key (`after_id`). Each page is upserted "
+"into the local database in code-not-id space, so the local PKs can drift "
+"freely from the remote."
+msgstr ""
+
+#: src/guides/sync-workflow.md:21
+msgid "Run it"
+msgstr ""
+
+#: src/guides/sync-workflow.md:24
+msgid "\"$WISECROW_REMOTE_KEY\""
+msgstr ""
+
+#: src/guides/sync-workflow.md:29
+msgid "`--remote`"
+msgstr ""
+
+#: src/guides/sync-workflow.md:29
+msgid "Base URL of the remote. The path components are joined via `Url::join`."
+msgstr ""
+
+#: src/guides/sync-workflow.md:30
+msgid "`--api-key`"
+msgstr ""
+
+#: src/guides/sync-workflow.md:30
+msgid "Sent verbatim as the `x-api-key` header."
+msgstr ""
+
+#: src/guides/sync-workflow.md:32
+msgid "You can also set `WISECROW__SYNC_API_KEY` and skip `--api-key`."
+msgstr ""
+
+#: src/guides/sync-workflow.md:34
+msgid "What is synced"
+msgstr ""
+
+#: src/guides/sync-workflow.md:36
+msgid "Table"
+msgstr ""
+
+#: src/guides/sync-workflow.md:36 src/guides/sync-workflow.md:64
+#: src/reference/architecture.md:170
+msgid "Endpoint"
+msgstr ""
+
+#: src/guides/sync-workflow.md:36
+msgid "Conflict resolution"
+msgstr ""
+
+#: src/guides/sync-workflow.md:38 src/reference/architecture.md:172
+#: src/reference/database-schema.md:23
+msgid "`languages`"
+msgstr ""
+
+#: src/guides/sync-workflow.md:38 src/reference/architecture.md:172
+msgid "`/api/sync_languages`"
+msgstr ""
+
+#: src/guides/sync-workflow.md:38
+msgid "Insert by code; updates do nothing meaningful (codes are unique)."
+msgstr ""
+
+#: src/guides/sync-workflow.md:39 src/reference/database-schema.md:37
+msgid "`translations`"
+msgstr ""
+
+#: src/guides/sync-workflow.md:39 src/reference/architecture.md:173
+msgid "`/api/sync_translations`"
+msgstr ""
+
+#: src/guides/sync-workflow.md:39
+msgid "Upsert with `frequency = GREATEST(local, remote)`."
+msgstr ""
+
+#: src/guides/sync-workflow.md:40
+msgid "`grammar_rules` (and examples)"
+msgstr ""
+
+#: src/guides/sync-workflow.md:40 src/reference/architecture.md:174
+msgid "`/api/sync_grammar_rules`"
+msgstr ""
+
+#: src/guides/sync-workflow.md:40
+msgid ""
+"Upsert by `(language_id, cefr_level_id, title)`; examples are wiped and "
+"re-inserted to keep them consistent."
+msgstr ""
+
+#: src/guides/sync-workflow.md:42
+msgid ""
+"`media_cache`, `cards`, `sessions`, `dnb_*`, and `users` are **not** synced "
+"— they are per-instance state."
+msgstr ""
+
+#: src/guides/sync-workflow.md:45
+msgid "Track what was synced"
+msgstr ""
+
+#: src/guides/sync-workflow.md:47
+msgid "After a successful run the local `sync_metadata` table is updated:"
+msgstr ""
+
+#: src/guides/sync-workflow.md:55
+msgid ""
+"The row exists per `(remote_url, table_name)`, and `last_synced_at` is the "
+"end-of-table timestamp, not a per-row marker. If a sync errors halfway "
+"through, the row is not updated and the next run starts from the last "
+"successful `after_id`."
+msgstr ""
+
+#: src/guides/sync-workflow.md:60
+msgid "Standing up the remote"
+msgstr ""
+
+#: src/guides/sync-workflow.md:62
+msgid "The sync client expects three GET endpoints:"
+msgstr ""
+
+#: src/guides/sync-workflow.md:64
+msgid "Query"
+msgstr ""
+
+#: src/guides/sync-workflow.md:64
+msgid "Returns"
+msgstr ""
+
+#: src/guides/sync-workflow.md:66
+msgid "`GET /api/sync_languages?after_id=N`"
+msgstr ""
+
+#: src/guides/sync-workflow.md:66 src/guides/sync-workflow.md:67
+#: src/guides/sync-workflow.md:68
+msgid "`after_id`"
+msgstr ""
+
+#: src/guides/sync-workflow.md:66
+msgid "`Vec<SyncLanguageDto>` ordered by id ascending"
+msgstr ""
+
+#: src/guides/sync-workflow.md:67
+msgid "`GET /api/sync_translations?after_id=N`"
+msgstr ""
+
+#: src/guides/sync-workflow.md:67
+msgid "`Vec<SyncTranslationDto>` ordered by id ascending"
+msgstr ""
+
+#: src/guides/sync-workflow.md:68
+msgid "`GET /api/sync_grammar_rules?after_id=N`"
+msgstr ""
+
+#: src/guides/sync-workflow.md:68
+msgid "`Vec<SyncGrammarRuleDto>` ordered by id ascending"
+msgstr ""
+
+#: src/guides/sync-workflow.md:70
+msgid ""
+"Implementations live in `wisecrow-web/src/server/sync.rs` (server feature "
+"required). DTO definitions are in "
+"[`wisecrow-dto`](../api/wisecrow-dto.md#sync-dtos)."
+msgstr ""
+
+#: src/guides/sync-workflow.md:73
+msgid "When to use it"
+msgstr ""
+
+#: src/guides/sync-workflow.md:75
+msgid ""
+"**Bootstrapping a new replica.** Start with an empty database, run `wisecrow "
+"sync` once. You inherit all translations and grammar rules."
+msgstr ""
+
+#: src/guides/sync-workflow.md:77
+msgid ""
+"**Adding language pairs from a colleague.** They ingest, you sync. No need "
+"to re-download the corpora."
+msgstr ""
+
+#: src/guides/sync-workflow.md:79
+msgid ""
+"**Backups via replication.** Sync into a read-only replica and snapshot it."
+msgstr ""
+
+#: src/guides/sync-workflow.md:83
+msgid "Sync is one-way. Pushing local data is not implemented."
+msgstr ""
+
+#: src/guides/sync-workflow.md:84
+msgid "There is no conflict UI — the upsert rules above always win."
+msgstr ""
+
+#: src/guides/sync-workflow.md:85
+msgid ""
+"Large syncs are linear: paginate-and-upsert is `O(n)` round-trips. A fresh "
+"sync of a heavy production database may take a few minutes."
+msgstr ""
+
+#: src/guides/sync-workflow.md:87
+msgid ""
+"The HTTP client uses a shared `reqwest::Client` with rustls-tls; HTTP "
+"proxies must be configured via `HTTPS_PROXY`."
+msgstr ""
+
+#: src/guides/library-integration.md:3
+msgid ""
+"`wisecrow-core` is a library before it is a binary. This guide shows how to "
+"embed Wisecrow's behaviours directly in another Rust application."
+msgstr ""
+
+#: src/guides/library-integration.md:6
+msgid "Add the dependency"
+msgstr ""
+
+#: src/guides/library-integration.md:8
+msgid "If you are working inside the workspace:"
+msgstr ""
+
+#: src/guides/library-integration.md:10
+msgid ""
+"```toml\n"
+"# Cargo.toml of your crate\n"
+"[dependencies]\n"
+"wisecrow = { path = \"../wisecrow-core\" }   # the library is named "
+"`wisecrow`\n"
+"wisecrow-dto = { path = \"../wisecrow-dto\" }\n"
+"sqlx = { version = \"0.7\", features = [\"postgres\", "
+"\"runtime-tokio-rustls\"] }\n"
+"tokio = { version = \"1\", features = [\"full\"] }\n"
+"```"
+msgstr ""
+
+#: src/guides/library-integration.md:19
+msgid ""
+"If you are consuming the crate from elsewhere, point to the git URL or "
+"publish a local fork — Wisecrow is not currently published to crates.io."
+msgstr ""
+
+#: src/guides/library-integration.md:22
+msgid "Bootstrap a pool"
+msgstr ""
+
+#: src/guides/library-integration.md:24
+msgid "Wisecrow's binary uses a 5-connection pool with embedded migrations:"
+msgstr ""
+
+#: src/guides/library-integration.md:39
+msgid "\"../wisecrow-core/migrations\""
+msgstr ""
+
+#: src/guides/library-integration.md:46
+msgid ""
+"When you run from the binary, the migration path is the relative "
+"`./migrations` directory next to `wisecrow-core`. From a sibling crate, "
+"point the macro at the canonical location or vendor the SQL files into your "
+"own crate."
+msgstr ""
+
+#: src/guides/library-integration.md:51
+msgid "Ingest from inside a service"
+msgstr ""
+
+#: src/guides/library-integration.md:73
+msgid ""
+"If you want fine-grained progress reporting, drop down to "
+"`Ingester::download_and_ingest` and orchestrate the joins yourself."
+msgstr ""
+
+#: src/guides/library-integration.md:76
+msgid "Schedule reviews"
+msgstr ""
+
+#: src/guides/library-integration.md:88
+msgid ""
+"`CardManager::review` is the only function you need to drive the FSRS state "
+"machine — it computes the next state, persists it, and returns the fresh "
+"`CardState`."
+msgstr ""
+
+#: src/guides/library-integration.md:92
+msgid "Run the dual n-back engine headlessly"
+msgstr ""
+
+#: src/guides/library-integration.md:94
+msgid "Useful for analytics or a custom UI:"
+msgstr ""
+
+#: src/guides/library-integration.md:101
+msgid "\"en\""
+msgstr ""
+
+#: src/guides/library-integration.md:103
+msgid "/* seed = */"
+msgstr ""
+
+#: src/guides/library-integration.md:107
+msgid "// present `_trial` to the user, gather a response...\n"
+msgstr ""
+
+#: src/guides/library-integration.md:118
+msgid "Talk to the LLM"
+msgstr ""
+
+#: src/guides/library-integration.md:124
+msgid "/* loaded via your own configuration crate */"
+msgstr ""
+
+#: src/guides/library-integration.md:126
+msgid "\"Translate: hello\""
+msgstr ""
+
+#: src/guides/library-integration.md:129
+msgid ""
+"If you need a custom provider, implement `#[async_trait] impl LlmProvider "
+"for MyProvider` and pass it directly to the seeder/exercise functions "
+"instead of using the factory."
+msgstr ""
+
+#: src/guides/library-integration.md:133
+msgid "Convert domain types to DTOs"
+msgstr ""
+
+#: src/guides/library-integration.md:135
+msgid ""
+"`wisecrow-core` has `From` impls and helpers that map every domain type to a "
+"`wisecrow-dto` type:"
+msgstr ""
+
+#: src/guides/library-integration.md:145
+msgid "For grammar rules use the helper:"
+msgstr ""
+
+#: src/guides/library-integration.md:149
+msgid "\"B1\""
+msgstr ""
+
+#: src/guides/library-integration.md:152
+msgid "Errors"
+msgstr ""
+
+#: src/guides/library-integration.md:154
+msgid ""
+"Every fallible function returns `Result<T, WisecrowError>`. Pin your own "
+"error type to it via `thiserror`:"
+msgstr ""
+
+#: src/guides/library-integration.md:167
+msgid ""
+"The `From` conversions on `WisecrowError` already cover `reqwest::Error`, "
+"`url::ParseError`, `std::io::Error`, and `sqlx::Error` — you can usually "
+"just propagate it."
+msgstr ""
+
+#: src/reference/architecture.md:1
+msgid "Architecture overview"
+msgstr ""
+
+#: src/reference/architecture.md:3
+msgid ""
+"Wisecrow is a Cargo workspace with one production crate (`wisecrow-core`) "
+"and three satellite crates that share types through `wisecrow-dto`. Almost "
+"every behaviour you can invoke from the CLI is also reachable as a library "
+"function, so the `bin/wisecrow.rs` entry point is intentionally a thin "
+"orchestration layer."
+msgstr ""
+
+#: src/reference/architecture.md:9
+msgid "Workspace layout"
+msgstr ""
+
+#: src/reference/architecture.md:37
+msgid "Crate responsibilities"
+msgstr ""
+
+#: src/reference/architecture.md:41
+msgid ""
+"The library half exposes the [`Langs`](../api/wisecrow-core.md#langs) "
+"newtype, the `Ingester`, `SessionManager`, `CardManager`, `DnbEngine`, and "
+"the `LlmProvider` trait. The binary half (`bin/wisecrow.rs`) parses CLI "
+"args, constructs a connection pool, and dispatches to library functions."
+msgstr ""
+
+#: src/reference/architecture.md:48
+msgid ""
+"Plain serializable structs and enums (`CardDto`, `SessionDto`, "
+"`DnbConfigDto`, `GrammarRuleDto`, …) plus a small `SpeedController` value "
+"type used by the session UI. The crate has no database or framework "
+"dependencies — it can be consumed by the WASM bundle and the mobile shell "
+"without dragging in `wisecrow-core`."
+msgstr ""
+
+#: src/reference/architecture.md:56
+msgid ""
+"Dioxus 0.7 fullstack app. The `server` cargo feature gates everything that "
+"needs the database; the WASM bundle ships only the UI components and routes "
+"through Dioxus' `#[server]` server-functions. The router exposes `Home`, "
+"`LearnPage`, `NbackPage`, and `QuizPage`."
+msgstr ""
+
+#: src/reference/architecture.md:63
+msgid ""
+"A skeleton mobile/desktop shell. The router is similar to the web crate but "
+"the `server_fns.rs` are client-side stubs — the real implementations live in "
+"`wisecrow-web` and are reached over HTTP."
+msgstr ""
+
+#: src/reference/architecture.md:67
+msgid "Ingestion pipeline"
+msgstr ""
+
+#: src/reference/architecture.md:69
+msgid ""
+"Ingestion is the most complex flow in the system. It is a producer-consumer "
+"pipeline over a bounded `tokio::sync::mpsc` channel."
+msgstr ""
+
+#: src/reference/architecture.md:97
+msgid "Key constants and invariants:"
+msgstr ""
+
+#: src/reference/architecture.md:99
+msgid ""
+"**Channel bound** is `1000` (`ingesting::CHANNEL_BOUND`). Producers block "
+"when the consumer cannot keep up — back-pressure is intentional."
+msgstr ""
+
+#: src/reference/architecture.md:101
+msgid ""
+"**Batch size** is `1000` (`ingesting::persisting::TRANSLATION_BATCH_SIZE`). "
+"A smaller batch increases round-trips; a larger batch increases the lock "
+"window."
+msgstr ""
+
+#: src/reference/architecture.md:103
+msgid ""
+"**Decompression** is bounded to 1 GiB (`MAX_DECOMPRESSED_BYTES`) to defuse "
+"zip-bombs."
+msgstr ""
+
+#: src/reference/architecture.md:105
+msgid ""
+"**Path traversal** is blocked: ZIP entries that start with `/`, `\\`, or "
+"contain `..` are dropped, and entries are rejected if they would "
+"canonicalize outside the extraction root."
+msgstr ""
+
+#: src/reference/architecture.md:108
+msgid ""
+"**Idempotency**: `INSERT … ON CONFLICT DO UPDATE SET frequency = frequency + "
+"1` makes re-ingestion deterministic and additive."
+msgstr ""
+
+#: src/reference/architecture.md:111
+msgid "Spaced repetition"
+msgstr ""
+
+#: src/reference/architecture.md:113
+msgid ""
+"`wisecrow-core` uses [`rs-fsrs`](https://crates.io/crates/rs-fsrs) for the "
+"algorithm. The wrapper at `srs::scheduler::CardManager` is responsible for:"
+msgstr ""
+
+#: src/reference/architecture.md:116
+msgid "Enumerating due cards filtered by language pair."
+msgstr ""
+
+#: src/reference/architecture.md:117
+msgid "Computing the next FSRS state from a `ReviewRating`."
+msgstr ""
+
+#: src/reference/architecture.md:118
+msgid ""
+"Persisting `stability`, `difficulty`, `state`, `due` back into PostgreSQL."
+msgstr ""
+
+#: src/reference/architecture.md:120
+msgid ""
+"Sessions in `srs::session::SessionManager` glue the deck together — they "
+"select a fixed-size cohort of cards (due first, then unlearned vocabulary), "
+"record positions in `session_cards`, and let the user pause and resume."
+msgstr ""
+
+#: src/reference/architecture.md:124
+msgid ""
+"The session selection ordering is deterministic and ranks **Relearning > "
+"Learning > New > Review**, so cards in the riskiest states are surfaced "
+"first."
+msgstr ""
+
+#: src/reference/architecture.md:129
+msgid ""
+"Independent of the SRS, the `dnb` module implements an adaptive dual n-back "
+"trainer that uses the user's own vocabulary as audio + visual stimuli. It is "
+"two systems welded together:"
+msgstr ""
+
+#: src/reference/architecture.md:133
+msgid ""
+"A pure scheduling core: `DnbEngine` generates trials, picks matches with a "
+"fixed 30% probability, and avoids accidental matches when generating "
+"non-match items."
+msgstr ""
+
+#: src/reference/architecture.md:136
+msgid ""
+"An adaptation layer: `scoring::apply_adaptation` updates `n_level` and "
+"`interval_ms` every 5 trials based on the rolling accuracy window. It "
+"terminates early when accuracy drops below 40% or after three consecutive "
+"windows below the starting `n_level`."
+msgstr ""
+
+#: src/reference/architecture.md:141
+msgid ""
+"After a session the trial outcomes are folded back into the SRS "
+"(`dnb::feedback::apply_srs_feedback`) — net-correct trials nudge cards "
+"toward `Good`, net-incorrect toward `Again`."
+msgstr ""
+
+#: src/reference/architecture.md:145
+msgid "LLM integration"
+msgstr ""
+
+#: src/reference/architecture.md:147
+msgid "A minimal trait keeps providers swappable:"
+msgstr ""
+
+#: src/reference/architecture.md:157
+msgid ""
+"The factory `llm::create_provider` reads `llm_provider` and `llm_api_key` "
+"from config and returns a boxed implementation. Two are bundled: `anthropic` "
+"(Claude Sonnet) and `openai` (GPT-4o)."
+msgstr ""
+
+#: src/reference/architecture.md:161
+msgid ""
+"Prompts are deliberately strict (\"Return ONLY the JSON array\") and the "
+"seeders/exercises tolerate fenced code-blocks (```` ```json ````) when "
+"parsing the response."
+msgstr ""
+
+#: src/reference/architecture.md:165 src/reference/troubleshooting.md:188
+msgid "Sync"
+msgstr ""
+
+#: src/reference/architecture.md:167
+msgid ""
+"`sync::SyncClient` walks three paginated endpoints on a remote Wisecrow "
+"server:"
+msgstr ""
+
+#: src/reference/architecture.md:170
+msgid "Mirrors"
+msgstr ""
+
+#: src/reference/architecture.md:173
+msgid "`translations` (idempotent merge by `GREATEST(frequency)`)"
+msgstr ""
+
+#: src/reference/architecture.md:174
+msgid "`grammar_rules` + `rule_examples`"
+msgstr ""
+
+#: src/reference/architecture.md:176
+msgid ""
+"The cursor is the remote primary key (`after_id`); successful runs update "
+"`sync_metadata.last_synced_at` per `(remote_url, table_name)`."
+msgstr ""
+
+#: src/reference/architecture.md:179
+msgid "TUI"
+msgstr ""
+
+#: src/reference/architecture.md:181
+msgid ""
+"The TUI uses [`ratatui`](https://ratatui.rs) with a tick rate of 100 ms. The "
+"`learn` command's `app::run_tui` owns:"
+msgstr ""
+
+#: src/reference/architecture.md:184
+msgid "the deck and current index,"
+msgstr ""
+
+#: src/reference/architecture.md:185
+msgid "a `SpeedController` for the auto-advance pace,"
+msgstr ""
+
+#: src/reference/architecture.md:186
+msgid ""
+"an optional `MediaContext` for audio/image fetch when the relevant features "
+"are enabled."
+msgstr ""
+
+#: src/reference/architecture.md:189
+msgid ""
+"The dual n-back command does **not** use ratatui — it uses raw crossterm to "
+"keep latency low and avoid frame-buffer flicker on the trial timer."
+msgstr ""
+
+#: src/reference/architecture.md:194
+msgid "Configuration is loaded once at start-up:"
+msgstr ""
+
+#: src/reference/architecture.md:196
+msgid "`dotenvy::dotenv()` reads `.env` if present."
+msgstr ""
+
+#: src/reference/architecture.md:197
+msgid ""
+"`config::Config::builder().add_source(Environment::with_prefix(\"WISECROW\").separator(\"__\"))` "
+"builds a layered configuration from `WISECROW__*` variables."
+msgstr ""
+
+#: src/reference/architecture.md:199
+msgid ""
+"The result is deserialised into `wisecrow_core::config::Config`. Sensitive "
+"fields are wrapped in `SecureString`, which zeroes its buffer on drop."
+msgstr ""
+
+#: src/reference/architecture.md:202
+msgid ""
+"`Config::database_url()` returns either the supplied URL or one assembled "
+"from the component fields. URL construction goes through `url::Url` so we "
+"never use `format!()` for URL parts."
+msgstr ""
+
+#: src/reference/architecture.md:206
+msgid "Where to look"
+msgstr ""
+
+#: src/reference/architecture.md:208
+msgid "The CLI command surface — [CLI reference](../reference/cli-reference.md)"
+msgstr ""
+
+#: src/reference/architecture.md:209
+msgid "Database tables — [Database schema](../reference/database-schema.md)"
+msgstr ""
+
+#: src/reference/architecture.md:210
+msgid ""
+"Public types per module — [API: wisecrow-core](../api/wisecrow-core.md), "
+"[wisecrow-dto](../api/wisecrow-dto.md)"
+msgstr ""
+
+#: src/reference/cli-reference.md:3
+msgid ""
+"The `wisecrow` binary ships with nineteen subcommands. Every command has a "
+"short alias (in parentheses below) for shell ergonomics."
+msgstr ""
+
+#: src/reference/cli-reference.md:6
+msgid "Synopsis"
+msgstr ""
+
+#: src/reference/cli-reference.md:12
+msgid ""
+"Run `wisecrow --help` or `wisecrow <COMMAND> --help` for the latest argument "
+"list."
+msgstr ""
+
+#: src/reference/cli-reference.md:15
+msgid "Subcommands at a glance"
+msgstr ""
+
+#: src/reference/cli-reference.md:17
+msgid "Command"
+msgstr ""
+
+#: src/reference/cli-reference.md:17
+msgid "Alias"
+msgstr ""
+
+#: src/reference/cli-reference.md:17
+msgid "Touches DB"
+msgstr ""
+
+#: src/reference/cli-reference.md:19
+msgid "[`download`](#download)"
+msgstr ""
+
+#: src/reference/cli-reference.md:19
+msgid "`d`"
+msgstr ""
+
+#: src/reference/cli-reference.md:19
+msgid "Fetch corpus files only."
+msgstr ""
+
+#: src/reference/cli-reference.md:20
+msgid "[`download-all`](#download-all)"
+msgstr ""
+
+#: src/reference/cli-reference.md:20
+msgid "`da`"
+msgstr ""
+
+#: src/reference/cli-reference.md:20
+msgid "Fetch every language pair against one native lang."
+msgstr ""
+
+#: src/reference/cli-reference.md:21
+msgid "[`ingest`](#ingest)"
+msgstr ""
+
+#: src/reference/cli-reference.md:21
+msgid "`i`"
+msgstr ""
+
+#: src/reference/cli-reference.md:21
+msgid "Fetch + parse + persist translations."
+msgstr ""
+
+#: src/reference/cli-reference.md:22 src/api/wisecrow-core.md:30
+msgid "[`frequency`](#frequency)"
+msgstr ""
+
+#: src/reference/cli-reference.md:22
+msgid "`fr`"
+msgstr ""
+
+#: src/reference/cli-reference.md:22
+msgid "Rank stored translations from a word-frequency list."
+msgstr ""
+
+#: src/reference/cli-reference.md:23
+msgid "[`learn`](#learn)"
+msgstr ""
+
+#: src/reference/cli-reference.md:23
+msgid "`r`"
+msgstr ""
+
+#: src/reference/cli-reference.md:23
+msgid "Open the SRS flashcard TUI."
+msgstr ""
+
+#: src/reference/cli-reference.md:24
+msgid "[`nback`](#nback)"
+msgstr ""
+
+#: src/reference/cli-reference.md:24
+msgid "`nb`"
+msgstr ""
+
+#: src/reference/cli-reference.md:24
+msgid "Run an adaptive dual n-back session."
+msgstr ""
+
+#: src/reference/cli-reference.md:25
+msgid "[`list-languages`](#list-languages)"
+msgstr ""
+
+#: src/reference/cli-reference.md:25
+msgid "`l`"
+msgstr ""
+
+#: src/reference/cli-reference.md:25
+msgid "Print the supported-language table."
+msgstr ""
+
+#: src/reference/cli-reference.md:26
+msgid "[`seed-grammar`](#seed-grammar)"
+msgstr ""
+
+#: src/reference/cli-reference.md:26
+msgid "`sg`"
+msgstr ""
+
+#: src/reference/cli-reference.md:26 src/reference/cli-reference.md:29
+#: src/reference/cli-reference.md:33 src/reference/cli-reference.md:34
+msgid "yes + LLM"
+msgstr ""
+
+#: src/reference/cli-reference.md:26
+msgid "Generate grammar rules via an LLM."
+msgstr ""
+
+#: src/reference/cli-reference.md:27
+msgid "[`import-grammar`](#import-grammar)"
+msgstr ""
+
+#: src/reference/cli-reference.md:27
+msgid "`ig`"
+msgstr ""
+
+#: src/reference/cli-reference.md:27
+msgid "Import grammar rules from a JSON file."
+msgstr ""
+
+#: src/reference/cli-reference.md:28
+msgid "[`import-pdf`](#import-pdf)"
+msgstr ""
+
+#: src/reference/cli-reference.md:28
+msgid "`ip`"
+msgstr ""
+
+#: src/reference/cli-reference.md:28
+msgid "Import grammar rules extracted from a PDF."
+msgstr ""
+
+#: src/reference/cli-reference.md:29
+msgid "[`generate-exercises`](#generate-exercises)"
+msgstr ""
+
+#: src/reference/cli-reference.md:29
+msgid "`ge`"
+msgstr ""
+
+#: src/reference/cli-reference.md:29
+msgid "Generate cloze and MC quizzes from stored rules."
+msgstr ""
+
+#: src/reference/cli-reference.md:30
+msgid "[`quiz`](#quiz)"
+msgstr ""
+
+#: src/reference/cli-reference.md:30
+msgid "Run a quiz directly from a PDF."
+msgstr ""
+
+#: src/reference/cli-reference.md:31
+msgid "[`prefetch-media`](#prefetch-media)"
+msgstr ""
+
+#: src/reference/cli-reference.md:31
+msgid "`pm`"
+msgstr ""
+
+#: src/reference/cli-reference.md:31
+msgid "Pre-warm the audio/image cache."
+msgstr ""
+
+#: src/reference/cli-reference.md:32 src/api/wisecrow-core.md:28
+msgid "[`sync`](#sync)"
+msgstr ""
+
+#: src/reference/cli-reference.md:32
+msgid "`s`"
+msgstr ""
+
+#: src/reference/cli-reference.md:32
+msgid "Pull data from a remote Wisecrow."
+msgstr ""
+
+#: src/reference/cli-reference.md:33
+msgid "[`gloss`](#gloss)"
+msgstr ""
+
+#: src/reference/cli-reference.md:33
+msgid "`gl`"
+msgstr ""
+
+#: src/reference/cli-reference.md:33
+msgid "Leipzig interlinear gloss for a sentence (cached)."
+msgstr ""
+
+#: src/reference/cli-reference.md:34
+msgid "[`graded-reader`](#graded-reader)"
+msgstr ""
+
+#: src/reference/cli-reference.md:34
+msgid "`gr`"
+msgstr ""
+
+#: src/reference/cli-reference.md:34
+msgid "Generate a CEFR-graded passage from learned vocab."
+msgstr ""
+
+#: src/reference/cli-reference.md:35
+msgid "[`preview`](#preview)"
+msgstr ""
+
+#: src/reference/cli-reference.md:35
+msgid "`pv`"
+msgstr ""
+
+#: src/reference/cli-reference.md:35
+msgid "yes (+ LLM if `--gloss-unknowns`)"
+msgstr ""
+
+#: src/reference/cli-reference.md:35
+msgid "Annotate subtitle file tokens with corpus + SRS state."
+msgstr ""
+
+#: src/reference/cli-reference.md:36
+msgid "[`user`](#user)"
+msgstr ""
+
+#: src/reference/cli-reference.md:36
+msgid "`u`"
+msgstr ""
+
+#: src/reference/cli-reference.md:36
+msgid "Manage accounts and web login."
+msgstr ""
+
+#: src/reference/cli-reference.md:37
+msgid "[`sync-client`](#sync-client)"
+msgstr ""
+
+#: src/reference/cli-reference.md:37
+msgid "`sc`"
+msgstr ""
+
+#: src/reference/cli-reference.md:37
+msgid "Manage per-client corpus-sync API keys."
+msgstr ""
+
+#: src/reference/cli-reference.md:39
+msgid "Common options"
+msgstr ""
+
+#: src/reference/cli-reference.md:41
+msgid ""
+"`download`, `download-all`, and `ingest` share the four corpus-shaping "
+"arguments:"
+msgstr ""
+
+#: src/reference/cli-reference.md:44 src/reference/cli-reference.md:84
+#: src/reference/cli-reference.md:102 src/reference/cli-reference.md:126
+#: src/reference/cli-reference.md:164
+msgid "Description"
+msgstr ""
+
+#: src/reference/cli-reference.md:46 src/reference/cli-reference.md:86
+msgid "`-n`, `--native-lang`"
+msgstr ""
+
+#: src/reference/cli-reference.md:46 src/reference/cli-reference.md:47
+#: src/reference/cli-reference.md:128
+msgid "_required_"
+msgstr ""
+
+#: src/reference/cli-reference.md:46
+msgid "Your native language ISO 639 code."
+msgstr ""
+
+#: src/reference/cli-reference.md:47
+msgid "`-f`, `--foreign-lang`"
+msgstr ""
+
+#: src/reference/cli-reference.md:47
+msgid "Target language code (must differ from native)."
+msgstr ""
+
+#: src/reference/cli-reference.md:48
+msgid "`--corpus`"
+msgstr ""
+
+#: src/reference/cli-reference.md:48
+msgid "all"
+msgstr ""
+
+#: src/reference/cli-reference.md:48
+msgid ""
+"Space-delimited filter: `open_subtitles`, `cc_aligned`, `cc_matrix`, "
+"`paracrawl`, `nllb`."
+msgstr ""
+
+#: src/reference/cli-reference.md:49
+msgid "`--max-file-size-mb`"
+msgstr ""
+
+#: src/reference/cli-reference.md:49
+msgid "`102400`"
+msgstr ""
+
+#: src/reference/cli-reference.md:49
+msgid "Per-file ceiling for downloaded content length."
+msgstr ""
+
+#: src/reference/cli-reference.md:50
+msgid "`--max-decompressed-mb`"
+msgstr ""
+
+#: src/reference/cli-reference.md:50
+msgid "`8192`"
+msgstr ""
+
+#: src/reference/cli-reference.md:50
+msgid "Per-file ceiling for the expanded archive."
+msgstr ""
+
+#: src/reference/cli-reference.md:51
+msgid "`--unpack`"
+msgstr ""
+
+#: src/reference/cli-reference.md:51
+msgid "`true`"
+msgstr ""
+
+#: src/reference/cli-reference.md:51
+msgid "Decompress `.gz`/`.zip` after download."
+msgstr ""
+
+#: src/reference/cli-reference.md:53
+msgid ""
+"**Note:** Pass `--corpus \"cc_matrix nllb\"` (one shell argument). The clap "
+"definition uses a space as the value delimiter."
+msgstr ""
+
+#: src/reference/cli-reference.md:58
+msgid "`download`"
+msgstr ""
+
+#: src/reference/cli-reference.md:64
+msgid ""
+"Downloads the TMX translation-memory release for every selected corpus and "
+"optionally decompresses it. **No database is required.** The files land in "
+"the current working directory (use `download-all` if you want a structured "
+"output tree)."
+msgstr ""
+
+#: src/reference/cli-reference.md:69
+msgid ""
+"Each file runs in its own Tokio task and respects SIGTERM/SIGINT for "
+"graceful abort."
+msgstr ""
+
+#: src/reference/cli-reference.md:74
+msgid "`download-all`"
+msgstr ""
+
+#: src/reference/cli-reference.md:80
+msgid ""
+"Downloads corpora for **every supported foreign language** against the given "
+"native language, into `<DIR>/<native>-<foreign>/`. Useful for offline "
+"mirrors and CI fixture preparation."
+msgstr ""
+
+#: src/reference/cli-reference.md:86
+msgid "Native language code."
+msgstr ""
+
+#: src/reference/cli-reference.md:87
+msgid "`-o`, `--output-dir`"
+msgstr ""
+
+#: src/reference/cli-reference.md:87
+msgid ""
+"Output directory; created if missing. The path is canonicalised before any "
+"sub-directories are joined to defend against traversal."
+msgstr ""
+
+#: src/reference/cli-reference.md:91
+msgid "`ingest`"
+msgstr ""
+
+#: src/reference/cli-reference.md:98
+msgid ""
+"Same shape as `download`, but each file is also parsed and its translation "
+"pairs persisted to PostgreSQL. Tasks run in parallel; the process aborts "
+"in-flight tasks on SIGINT/SIGTERM."
+msgstr ""
+
+#: src/reference/cli-reference.md:104
+msgid ""
+"Ingest this local TMX file instead of downloading. Must be decompressed; the "
+"corpus and download options are ignored."
+msgstr ""
+
+#: src/reference/cli-reference.md:106
+msgid "Per-batch behaviour:"
+msgstr ""
+
+#: src/reference/cli-reference.md:108
+msgid ""
+"Batches of 1000 pairs are deduplicated by `(source, target)` before insert."
+msgstr ""
+
+#: src/reference/cli-reference.md:109
+msgid ""
+"`INSERT … ON CONFLICT DO UPDATE SET frequency = frequency + 1` makes re-runs "
+"cumulative, not destructive."
+msgstr ""
+
+#: src/reference/cli-reference.md:111
+msgid ""
+"Languages are upserted lazily through `DatabasePersister::ensure_language`."
+msgstr ""
+
+#: src/reference/cli-reference.md:115 src/api/wisecrow-core.md:399
+msgid "`frequency`"
+msgstr ""
+
+#: src/reference/cli-reference.md:121
+msgid ""
+"Replaces the `frequency` column with figures from a word-frequency list. "
+"Ingestion leaves new rows at 1, and deck selection skips rows at that value, "
+"so a corpus stays largely unusable until this has run. See [Frequency "
+"ranking](../guides/frequency-ranking.md) for the full workflow."
+msgstr ""
+
+#: src/reference/cli-reference.md:128
+msgid "`-l`, `--lang`"
+msgstr ""
+
+#: src/reference/cli-reference.md:128
+msgid "Language whose words the list holds."
+msgstr ""
+
+#: src/reference/cli-reference.md:129
+msgid "Read a local list instead of downloading Hermit Dave's."
+msgstr ""
+
+#: src/reference/cli-reference.md:130
+msgid "`--from-corpus`"
+msgstr ""
+
+#: src/reference/cli-reference.md:130
+msgid "Derive counts from the stored phrases; conflicts with `--file`."
+msgstr ""
+
+#: src/reference/cli-reference.md:132
+msgid ""
+"With neither flag the command fetches "
+"`hermitdave/FrequencyWords/…/<code>/<code>_50k.txt`, which exists for 62 "
+"languages and none of the Celtic ones. With `--file` it reads any of three "
+"layouts, choosing per line rather than per file:"
+msgstr ""
+
+#: src/reference/cli-reference.md:139
+msgid "space-separated pair"
+msgstr ""
+
+#: src/reference/cli-reference.md:139
+msgid "Hermit Dave"
+msgstr ""
+
+#: src/reference/cli-reference.md:140
+msgid "tab-separated triple"
+msgstr ""
+
+#: src/reference/cli-reference.md:141
+msgid "comma-separated pair"
+msgstr ""
+
+#: src/reference/cli-reference.md:143
+msgid ""
+"`--from-corpus` needs no list at all: it tokenises the phrases already "
+"stored for the language and counts the forms, which is the route for "
+"languages nobody has published a list for. It requires a tokeniser for the "
+"language."
+msgstr ""
+
+#: src/reference/cli-reference.md:147
+msgid ""
+"Matching folds case and strips edge punctuation (`.,!?;:\"'¡¿`), and applies "
+"to whichever side of a pair holds the listed language, so ingest direction "
+"is irrelevant. Only whole phrases match: a word list ranks single-word rows, "
+"not the sentences containing that word. A file that parses to no entries is "
+"an error rather than a silent no-op."
+msgstr ""
+
+#: src/reference/cli-reference.md:155
+msgid "`learn`"
+msgstr ""
+
+#: src/reference/cli-reference.md:161
+msgid ""
+"Opens the flashcard TUI. Defaults: deck of 50 cards, 3000 ms auto-advance, "
+"user ID 1."
+msgstr ""
+
+#: src/reference/cli-reference.md:166
+msgid ""
+"Number of cards in the session. Filled with due cards first, then unlearned "
+"vocabulary by frequency."
+msgstr ""
+
+#: src/reference/cli-reference.md:167
+msgid "Auto-advance interval in milliseconds; clamped to `[500, 10000]`."
+msgstr ""
+
+#: src/reference/cli-reference.md:168
+msgid "Users are scoped per FK; create more with the schema `users` table."
+msgstr ""
+
+#: src/reference/cli-reference.md:170
+msgid ""
+"If a paused session exists for `(user_id, native, foreign)` it is resumed. "
+"Press `q` to pause; the next invocation picks up at the same card index."
+msgstr ""
+
+#: src/reference/cli-reference.md:175
+msgid "`nback`"
+msgstr ""
+
+#: src/reference/cli-reference.md:181
+msgid ""
+"Runs an adaptive dual n-back session using your stored vocabulary as "
+"stimuli. Requires at least 8 ingested pairs for the language combination."
+msgstr ""
+
+#: src/reference/cli-reference.md:184
+msgid "Values"
+msgstr ""
+
+#: src/reference/cli-reference.md:186
+msgid "`audio_written`, `word_translation`, `audio_image`"
+msgstr ""
+
+#: src/reference/cli-reference.md:187
+msgid "`1`–`9` (clamped to range)"
+msgstr ""
+
+#: src/reference/cli-reference.md:188
+msgid "FK into `users`"
+msgstr ""
+
+#: src/reference/cli-reference.md:190
+msgid ""
+"Controls during a trial: `[A]` audio match, `[L]` visual match, `[Enter]` "
+"submit, `[Q]` quit. The engine adapts every 5 trials and terminates early "
+"when accuracy is consistently below 40 %."
+msgstr ""
+
+#: src/reference/cli-reference.md:196
+msgid "`list-languages`"
+msgstr ""
+
+#: src/reference/cli-reference.md:202
+msgid ""
+"Prints the 102 supported language codes with their human-readable names. "
+"Useful before invoking `ingest` to confirm a code."
+msgstr ""
+
+#: src/reference/cli-reference.md:213
+msgid ""
+"Generates grammar rules for the supplied CEFR levels via the configured LLM "
+"provider. 15 rules are requested per level; the prompt asks for at least one "
+"correct and one incorrect example per rule."
+msgstr ""
+
+#: src/reference/cli-reference.md:217 src/reference/cli-reference.md:331
+#: src/reference/cli-reference.md:351
+msgid "Requires `WISECROW__LLM_PROVIDER` and `WISECROW__LLM_API_KEY`."
+msgstr ""
+
+#: src/reference/cli-reference.md:227
+msgid ""
+"Imports grammar rules from a JSON file matching the "
+"`wisecrow_dto::GrammarRuleImport` shape. The import flow is upsert by "
+"`(language_id, cefr_level_id, title)` so re-running with corrected data is "
+"safe."
+msgstr ""
+
+#: src/reference/cli-reference.md:232
+msgid "Example file shape:"
+msgstr ""
+
+#: src/reference/cli-reference.md:237
+msgid "\"Present tense of regular -ar verbs\""
+msgstr ""
+
+#: src/reference/cli-reference.md:238
+msgid ""
+"\"Spanish verbs ending in -ar follow a fixed pattern: drop -ar and add -o, "
+"-as, -a, -amos, -áis, -an.\""
+msgstr ""
+
+#: src/reference/cli-reference.md:241
+msgid "\"Hablo español.\""
+msgstr ""
+
+#: src/reference/cli-reference.md:241
+msgid "\"I speak Spanish.\""
+msgstr ""
+
+#: src/reference/cli-reference.md:242
+msgid "\"Hablamos español.\""
+msgstr ""
+
+#: src/reference/cli-reference.md:242
+msgid "\"We speak Spanish.\""
+msgstr ""
+
+#: src/reference/cli-reference.md:256
+msgid ""
+"Extracts text from a PDF and stores each parsed rule with `source = 'pdf'`. "
+"The extraction is best-effort — see [Grammar "
+"workflows](../guides/grammar-workflows.md) for tips on cleaning the imported "
+"rules."
+msgstr ""
+
+#: src/reference/cli-reference.md:262
+msgid "`generate-exercises`"
+msgstr ""
+
+#: src/reference/cli-reference.md:268
+msgid ""
+"Generates a mix of cloze and multiple-choice quizzes from the stored grammar "
+"rules at the chosen CEFR level. Requires the LLM configuration. The output "
+"is printed to stdout (suitable for piping into `jq`)."
+msgstr ""
+
+#: src/reference/cli-reference.md:274
+msgid "`--count`"
+msgstr ""
+
+#: src/reference/cli-reference.md:274 src/reference/cli-reference.md:290
+msgid "`20`"
+msgstr ""
+
+#: src/reference/cli-reference.md:278
+msgid "`quiz`"
+msgstr ""
+
+#: src/reference/cli-reference.md:284
+msgid ""
+"Reads a PDF, generates `N` quiz items inline, and runs them in the terminal. "
+"This command does **not** require a database — it is the lightest path to "
+"trying the quiz UI."
+msgstr ""
+
+#: src/reference/cli-reference.md:290
+msgid "`--num-questions`"
+msgstr ""
+
+#: src/reference/cli-reference.md:294
+msgid "`prefetch-media`"
+msgstr ""
+
+#: src/reference/cli-reference.md:300
+msgid ""
+"Walks the deck and warms the on-disk cache for audio and/or image media. "
+"Audio uses Microsoft Edge TTS (no API key); images need "
+"`WISECROW__UNSPLASH_API_KEY`."
+msgstr ""
+
+#: src/reference/cli-reference.md:304
+msgid "This command is a no-op for media types whose feature is not compiled in."
+msgstr ""
+
+#: src/reference/cli-reference.md:314
+msgid ""
+"Pulls `languages`, `translations`, and `grammar_rules` from a remote "
+"Wisecrow instance, paginated by primary key. `--api-key` is sent as the "
+"`x-api-key` HTTP header. `sync_metadata.last_synced_at` is updated for each "
+"table on success."
+msgstr ""
+
+#: src/reference/cli-reference.md:321
+msgid "`gloss`"
+msgstr ""
+
+#: src/reference/cli-reference.md:324
+msgid "\"<TEXT>\""
+msgstr ""
+
+#: src/reference/cli-reference.md:327
+msgid ""
+"Produces a Leipzig interlinear gloss of `<TEXT>` in the given language. "
+"Result is cached in the `glosses` table (SHA-256 of sentence × lang_code). "
+"`--refresh` discards the cached value and re-prompts the LLM."
+msgstr ""
+
+#: src/reference/cli-reference.md:333
+msgid "See [Leipzig glossing](../guides/glossing.md) for the full guide."
+msgstr ""
+
+#: src/reference/cli-reference.md:337
+msgid "`graded-reader`"
+msgstr ""
+
+#: src/reference/cli-reference.md:346
+msgid ""
+"Generates a personalised passage at the given CEFR level seeded from cards "
+"you've learned (FSRS state filter via `--seed-states`). Produces Markdown by "
+"default; pass `--format html` for a self-contained viewable page."
+msgstr ""
+
+#: src/reference/cli-reference.md:353
+msgid "See [Graded reader](../guides/graded-reader.md) for the full guide."
+msgstr ""
+
+#: src/reference/cli-reference.md:357
+msgid "`preview`"
+msgstr ""
+
+#: src/reference/cli-reference.md:364
+msgid ""
+"Parses a `.srt`, `.vtt`, `.ass`, or `.ssa` subtitle file, tokenises with the "
+"language-appropriate segmenter (jieba/lindera/kham/whitespace), and prints a "
+"frequency-sorted table tagged with each token's SRS status. "
+"`--gloss-unknowns` LLM-translates corpus-misses inline."
+msgstr ""
+
+#: src/reference/cli-reference.md:369
+msgid ""
+"See [Subtitle preview](../guides/preview-subtitles.md) for the full guide."
+msgstr ""
+
+#: src/reference/cli-reference.md:373
+msgid "`user`"
+msgstr ""
+
+#: src/reference/cli-reference.md:382
+msgid ""
+"Manages accounts for the web application; there is no public signup, so the "
+"first admin is created this way. `add` and `passwd` prompt for a password "
+"unless `WISECROW__INIT_PASSWORD` is set, which allows non-interactive "
+"provisioning. `disable` clears the password and revokes live sessions."
+msgstr ""
+
+#: src/reference/cli-reference.md:389
+msgid "`sync-client`"
+msgstr ""
+
+#: src/reference/cli-reference.md:397
+msgid ""
+"Issues per-client keys for the corpus-sync endpoints. `add` prints the key "
+"once. Pullers send it as the `x-api-key` header; keys are individually "
+"revocable and compared in constant time. See [Sync "
+"workflow](../guides/sync-workflow.md)."
+msgstr ""
+
+#: src/reference/configuration.md:3
+msgid ""
+"Wisecrow's configuration surface is small and entirely environment-driven. "
+"This page is the authoritative listing — see [Getting started › "
+"Configuration](../getting-started/configuration.md) for the narrative "
+"version."
+msgstr ""
+
+#: src/reference/configuration.md:8
+msgid "Variable index"
+msgstr ""
+
+#: src/reference/configuration.md:10
+msgid ""
+"All variables are prefixed with `WISECROW__` (double underscore separator)."
+msgstr ""
+
+#: src/reference/configuration.md:14
+msgid "`DB_URL`"
+msgstr ""
+
+#: src/reference/configuration.md:14 src/reference/configuration.md:22
+msgid "URL"
+msgstr ""
+
+#: src/reference/configuration.md:14
+msgid "one of A"
+msgstr ""
+
+#: src/reference/configuration.md:14 src/reference/configuration.md:15
+#: src/reference/configuration.md:16 src/reference/configuration.md:17
+#: src/reference/configuration.md:18
+msgid "All database commands"
+msgstr ""
+
+#: src/reference/configuration.md:15
+msgid "`DB_ADDRESS`"
+msgstr ""
+
+#: src/reference/configuration.md:15
+msgid "`host:port`"
+msgstr ""
+
+#: src/reference/configuration.md:15 src/reference/configuration.md:16
+#: src/reference/configuration.md:17 src/reference/configuration.md:18
+msgid "one of B"
+msgstr ""
+
+#: src/reference/configuration.md:16
+msgid "`DB_NAME`"
+msgstr ""
+
+#: src/reference/configuration.md:16 src/reference/configuration.md:17
+msgid "string"
+msgstr ""
+
+#: src/reference/configuration.md:17
+msgid "`DB_USER`"
+msgstr ""
+
+#: src/reference/configuration.md:18
+msgid "`DB_PASSWORD`"
+msgstr ""
+
+#: src/reference/configuration.md:19
+msgid "`LLM_PROVIDER`"
+msgstr ""
+
+#: src/reference/configuration.md:19
+msgid "`anthropic` \\| `openai`"
+msgstr ""
+
+#: src/reference/configuration.md:19 src/reference/configuration.md:21
+#: src/reference/configuration.md:22 src/reference/configuration.md:23
+#: src/reference/configuration.md:24
+msgid "optional"
+msgstr ""
+
+#: src/reference/configuration.md:20
+msgid "`LLM_API_KEY`"
+msgstr ""
+
+#: src/reference/configuration.md:20
+msgid "with `LLM_PROVIDER`"
+msgstr ""
+
+#: src/reference/configuration.md:20
+msgid "same"
+msgstr ""
+
+#: src/reference/configuration.md:21
+msgid "`UNSPLASH_API_KEY`"
+msgstr ""
+
+#: src/reference/configuration.md:21
+msgid "`learn`, `prefetch-media` (with `images`)"
+msgstr ""
+
+#: src/reference/configuration.md:22
+msgid "`REMOTE_URL`"
+msgstr ""
+
+#: src/reference/configuration.md:23
+msgid "`REMOTE_API_KEY`"
+msgstr ""
+
+#: src/reference/configuration.md:24
+msgid "`SYNC_API_KEY`"
+msgstr ""
+
+#: src/reference/configuration.md:26
+msgid "**Group A**: `DB_URL` alone is sufficient and takes precedence."
+msgstr ""
+
+#: src/reference/configuration.md:28
+msgid ""
+"**Group B**: All four (`DB_ADDRESS`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`) "
+"must be set together if `DB_URL` is omitted."
+msgstr ""
+
+#: src/reference/configuration.md:31
+msgid "Loading order"
+msgstr ""
+
+#: src/reference/configuration.md:33
+msgid "`dotenvy::dotenv()` loads `.env` from the current working directory."
+msgstr ""
+
+#: src/reference/configuration.md:34
+msgid ""
+"`config-rs` reads `WISECROW__*` from the process environment, mapping `__` "
+"to a key separator."
+msgstr ""
+
+#: src/reference/configuration.md:36
+msgid "The flat key-set is deserialised into `wisecrow_core::config::Config`."
+msgstr ""
+
+#: src/reference/configuration.md:38
+msgid ""
+"If neither `db_url` nor a complete component set is present, "
+"`Config::database_url()` returns `WisecrowError::ConfigurationError`."
+msgstr ""
+
+#: src/reference/configuration.md:41
+msgid "Secrets"
+msgstr ""
+
+#: src/reference/configuration.md:43
+msgid "Five fields are wrapped in `SecureString`:"
+msgstr ""
+
+#: src/reference/configuration.md:50
+msgid "The wrapper:"
+msgstr ""
+
+#: src/reference/configuration.md:52
+msgid "zeroes its backing buffer on drop,"
+msgstr ""
+
+#: src/reference/configuration.md:53
+msgid "exposes the raw value only through `expose(&self) -> &str`,"
+msgstr ""
+
+#: src/reference/configuration.md:54
+msgid "omits its content from `Debug`."
+msgstr ""
+
+#: src/reference/configuration.md:56
+msgid ""
+"It is **not** a defence against memory dumps or hostile attackers with "
+"`/proc` access — it is a defence against the value leaking into log output, "
+"panics, or `Debug`\\-derived structs."
+msgstr ""
+
+#: src/reference/configuration.md:62
+msgid ""
+"`tracing` is initialised via `tracing_subscriber::fmt::init()`. Verbosity is "
+"controlled by the standard `RUST_LOG` envvar. Common settings:"
+msgstr ""
+
+#: src/reference/configuration.md:65
+msgid "`RUST_LOG` value"
+msgstr ""
+
+#: src/reference/configuration.md:65
+msgid "What you get"
+msgstr ""
+
+#: src/reference/configuration.md:67
+msgid "`info`"
+msgstr ""
+
+#: src/reference/configuration.md:67
+msgid "Top-level lifecycle messages: connection, migrations, batch counts."
+msgstr ""
+
+#: src/reference/configuration.md:68
+msgid "`wisecrow=debug,info`"
+msgstr ""
+
+#: src/reference/configuration.md:68
+msgid "All debug events from the crate, default level for everything else."
+msgstr ""
+
+#: src/reference/configuration.md:69
+msgid "`wisecrow=trace`"
+msgstr ""
+
+#: src/reference/configuration.md:69
+msgid "Per-pair parse messages (extremely chatty)."
+msgstr ""
+
+#: src/reference/configuration.md:71 src/api/wisecrow-web.md:30
+#: src/api/wisecrow-mobile.md:23
+msgid "Cargo features"
+msgstr ""
+
+#: src/reference/configuration.md:73
+msgid "`wisecrow-core` exposes:"
+msgstr ""
+
+#: src/reference/configuration.md:75 src/reference/configuration.md:82
+#: src/api/wisecrow-mobile.md:25
+msgid "Brings in"
+msgstr ""
+
+#: src/reference/configuration.md:77 src/reference/configuration.md:78
+#: src/reference/configuration.md:84 src/reference/configuration.md:85
+#: src/reference/configuration.md:86 src/reference/configuration.md:87
+msgid "off"
+msgstr ""
+
+#: src/reference/configuration.md:77
+msgid "`msedge-tts`, `rodio` for the audio cache and TUI playback."
+msgstr ""
+
+#: src/reference/configuration.md:78
+msgid "`image`, `ratatui-image` for inline image rendering."
+msgstr ""
+
+#: src/reference/configuration.md:80
+msgid "`wisecrow-web` exposes:"
+msgstr ""
+
+#: src/reference/configuration.md:84 src/api/wisecrow-web.md:34
+#: src/api/wisecrow-mobile.md:27
+msgid "`server`"
+msgstr ""
+
+#: src/reference/configuration.md:84
+msgid ""
+"`wisecrow-core`, `tokio`, `sqlx`, `dotenvy`, `config`, `tempfile`. "
+"Server-side routes."
+msgstr ""
+
+#: src/reference/configuration.md:85 src/api/wisecrow-web.md:35
+#: src/api/wisecrow-mobile.md:30
+msgid "`web`"
+msgstr ""
+
+#: src/reference/configuration.md:85
+msgid "`dioxus/web` (WASM target)."
+msgstr ""
+
+#: src/reference/configuration.md:86
+msgid "implies `server` and adds Edge TTS playback wiring."
+msgstr ""
+
+#: src/reference/configuration.md:87
+msgid "implies `server` and adds Unsplash + image decode."
+msgstr ""
+
+#: src/reference/configuration.md:89
+msgid "Operational defaults"
+msgstr ""
+
+#: src/reference/configuration.md:91
+msgid ""
+"Constants you might want to know about — they are not configurable at run "
+"time, but they document the safe envelope:"
+msgstr ""
+
+#: src/reference/configuration.md:94
+msgid "Defined in"
+msgstr ""
+
+#: src/reference/configuration.md:96
+msgid "Max DB connections"
+msgstr ""
+
+#: src/reference/configuration.md:96
+msgid "`bin/wisecrow.rs`"
+msgstr ""
+
+#: src/reference/configuration.md:97
+msgid "Download retries"
+msgstr ""
+
+#: src/reference/configuration.md:97 src/reference/configuration.md:99
+#: src/reference/configuration.md:100
+msgid "`downloader::DownloadConfig::default`"
+msgstr ""
+
+#: src/reference/configuration.md:98
+msgid "Connect timeout"
+msgstr ""
+
+#: src/reference/configuration.md:98
+msgid "30 s"
+msgstr ""
+
+#: src/reference/configuration.md:98
+msgid "`downloader::CONNECT_TIMEOUT_SECS`"
+msgstr ""
+
+#: src/reference/configuration.md:99
+msgid "Read timeout (per attempt)"
+msgstr ""
+
+#: src/reference/configuration.md:99
+msgid "300 s"
+msgstr ""
+
+#: src/reference/configuration.md:100
+msgid "Max file size"
+msgstr ""
+
+#: src/reference/configuration.md:100
+msgid "100 GiB (`102_400` MiB)"
+msgstr ""
+
+#: src/reference/configuration.md:101
+msgid "Max decompressed size"
+msgstr ""
+
+#: src/reference/configuration.md:101
+msgid "1 GiB"
+msgstr ""
+
+#: src/reference/configuration.md:101
+msgid "`downloader::MAX_DECOMPRESSED_BYTES`"
+msgstr ""
+
+#: src/reference/configuration.md:102
+msgid "Mpsc channel bound"
+msgstr ""
+
+#: src/reference/configuration.md:102 src/reference/configuration.md:103
+#: src/reference/configuration.md:104
+msgid "1000"
+msgstr ""
+
+#: src/reference/configuration.md:102
+msgid "`ingesting::CHANNEL_BOUND`"
+msgstr ""
+
+#: src/reference/configuration.md:103
+msgid "Translation batch size"
+msgstr ""
+
+#: src/reference/configuration.md:103
+msgid "`ingesting::persisting::TRANSLATION_BATCH_SIZE`"
+msgstr ""
+
+#: src/reference/configuration.md:104
+msgid "Frequency batch size"
+msgstr ""
+
+#: src/reference/configuration.md:104
+msgid "`frequency::BATCH_SIZE`"
+msgstr ""
+
+#: src/reference/configuration.md:105
+msgid "TUI tick rate"
+msgstr ""
+
+#: src/reference/configuration.md:105
+msgid "100 ms"
+msgstr ""
+
+#: src/reference/configuration.md:105
+msgid "`tui::TICK_RATE_MS`"
+msgstr ""
+
+#: src/reference/configuration.md:106
+msgid "N-back match probability"
+msgstr ""
+
+#: src/reference/configuration.md:106
+msgid "30 %"
+msgstr ""
+
+#: src/reference/configuration.md:106
+msgid "`dnb::MATCH_PROBABILITY`"
+msgstr ""
+
+#: src/reference/configuration.md:107
+msgid "Min vocab pool for n-back"
+msgstr ""
+
+#: src/reference/configuration.md:107
+msgid "8"
+msgstr ""
+
+#: src/reference/configuration.md:107
+msgid "`dnb::MIN_VOCAB_POOL_SIZE`"
+msgstr ""
+
+#: src/reference/configuration.md:108
+msgid "N-back interval bounds"
+msgstr ""
+
+#: src/reference/configuration.md:108
+msgid "1500–5000 ms"
+msgstr ""
+
+#: src/reference/configuration.md:108
+msgid "`dnb::scoring::MIN_INTERVAL_MS`, `MAX_INTERVAL_MS`"
+msgstr ""
+
+#: src/reference/configuration.md:109
+msgid "N-back N-level bounds"
+msgstr ""
+
+#: src/reference/configuration.md:109
+msgid "1–9"
+msgstr ""
+
+#: src/reference/configuration.md:109
+msgid "`dnb::scoring::MIN_N_LEVEL`, `MAX_N_LEVEL`"
+msgstr ""
+
+#: src/reference/configuration.md:110
+msgid "LLM token budget"
+msgstr ""
+
+#: src/reference/configuration.md:110
+msgid "4096"
+msgstr ""
+
+#: src/reference/configuration.md:110
+msgid "`grammar::seeder::MAX_LLM_TOKENS`"
+msgstr ""
+
+#: src/reference/database-schema.md:3
+msgid ""
+"Wisecrow's migrations are embedded in `wisecrow-core` and applied via "
+"`sqlx::migrate!(\"./migrations\")` the first time a command opens a pool. "
+"The files live at `wisecrow-core/migrations/` and run in numeric order."
+msgstr ""
+
+#: src/reference/database-schema.md:7
+msgid "File"
+msgstr ""
+
+#: src/reference/database-schema.md:9
+msgid "`001_languages_table.sql`"
+msgstr ""
+
+#: src/reference/database-schema.md:9
+msgid "`languages` — registry of ISO 639 codes."
+msgstr ""
+
+#: src/reference/database-schema.md:10
+msgid "`002_translations_table.sql`"
+msgstr ""
+
+#: src/reference/database-schema.md:10
+msgid "`translations` — source/target phrase pairs."
+msgstr ""
+
+#: src/reference/database-schema.md:11
+msgid "`003_performance_indexes.sql`"
+msgstr ""
+
+#: src/reference/database-schema.md:11
+msgid "Indexes for translation lookups."
+msgstr ""
+
+#: src/reference/database-schema.md:12
+msgid "`004_frequency_and_srs.sql`"
+msgstr ""
+
+#: src/reference/database-schema.md:12
+msgid "`frequency` column, `cards`, `sessions`, `session_cards`, `media_cache`."
+msgstr ""
+
+#: src/reference/database-schema.md:13
+msgid "`005_fix_translation_unique_constraint.sql`"
+msgstr ""
+
+#: src/reference/database-schema.md:13
+msgid "Tightens the unique constraint to include `to_phrase`."
+msgstr ""
+
+#: src/reference/database-schema.md:14
+msgid "`006_cefr_grammar.sql`"
+msgstr ""
+
+#: src/reference/database-schema.md:14
+msgid "`cefr_levels`, `grammar_rules`, `rule_examples`."
+msgstr ""
+
+#: src/reference/database-schema.md:15
+msgid "`007_users.sql`"
+msgstr ""
+
+#: src/reference/database-schema.md:15
+msgid "`users` table and default user seed."
+msgstr ""
+
+#: src/reference/database-schema.md:16
+msgid "`008_sync_metadata.sql`"
+msgstr ""
+
+#: src/reference/database-schema.md:16
+msgid "`sync_metadata` for sync cursor tracking."
+msgstr ""
+
+#: src/reference/database-schema.md:17
+msgid "`009_dnb.sql`"
+msgstr ""
+
+#: src/reference/database-schema.md:17
+msgid "`dnb_sessions` and `dnb_trials`."
+msgstr ""
+
+#: src/reference/database-schema.md:18
+msgid "`010_glosses.sql`"
+msgstr ""
+
+#: src/reference/database-schema.md:18
+msgid "`glosses` cache for Leipzig interlinear glosses."
+msgstr ""
+
+#: src/reference/database-schema.md:19
+msgid "`011_card_user_scoping.sql`"
+msgstr ""
+
+#: src/reference/database-schema.md:19
+msgid ""
+"Adds `cards.user_id`, replaces unique key with `(translation_id, user_id)`."
+msgstr ""
+
+#: src/reference/database-schema.md:21
+msgid "Core tables"
+msgstr ""
+
+#: src/reference/database-schema.md:33
+msgid ""
+"Seeded lazily by `DatabasePersister::ensure_language` whenever a new code is "
+"encountered. The 102 languages recognised by the CLI are listed in "
+"`SUPPORTED_LANGUAGE_INFO` (`wisecrow-core/src/cli.rs`)."
+msgstr ""
+
+#: src/reference/database-schema.md:52
+msgid ""
+"Repeated ingest is safe: the upsert increments `frequency` instead of "
+"erroring."
+msgstr ""
+
+#: src/reference/database-schema.md:54
+msgid "`cards`"
+msgstr ""
+
+#: src/reference/database-schema.md:74
+msgid ""
+"The `user_id` column makes SRS state per-user: each user has their own card "
+"row for a given translation. Migration 011 backfills `user_id = 1` (the "
+"default user from migration 007) for any pre-existing rows."
+msgstr ""
+
+#: src/reference/database-schema.md:78
+msgid "`state` follows `CardStatus`:"
+msgstr ""
+
+#: src/reference/database-schema.md:80
+msgid "Status"
+msgstr ""
+
+#: src/reference/database-schema.md:82
+msgid "`0`"
+msgstr ""
+
+#: src/reference/database-schema.md:82
+msgid "New"
+msgstr ""
+
+#: src/reference/database-schema.md:83
+msgid "Learning"
+msgstr ""
+
+#: src/reference/database-schema.md:84
+msgid "Review"
+msgstr ""
+
+#: src/reference/database-schema.md:85
+msgid "Relearning"
+msgstr ""
+
+#: src/reference/database-schema.md:87
+msgid ""
+"**Note:** FSRS uses `f64` internally; the `cards` table stores `REAL` "
+"(`f32`). The narrowing in `srs::scheduler::f64_to_f32_clamped` is "
+"intentional and guarantees no NaN/Infinity ever reaches the database."
+msgstr ""
+
+#: src/reference/database-schema.md:91
+msgid "`sessions` and `session_cards`"
+msgstr ""
+
+#: src/reference/database-schema.md:116
+msgid ""
+"Resumable sessions are those with `paused_at IS NOT NULL` and `completed_at "
+"IS NULL`. `SessionManager::resume` returns the most recent one per "
+"`(user_id, native_lang, foreign_lang)`."
+msgstr ""
+
+#: src/reference/database-schema.md:120
+msgid "Grammar tables"
+msgstr ""
+
+#: src/reference/database-schema.md:122
+msgid "`cefr_levels`"
+msgstr ""
+
+#: src/reference/database-schema.md:124
+msgid "Pre-seeded with all six CEFR codes (`A1`–`C2`)."
+msgstr ""
+
+#: src/reference/database-schema.md:126
+msgid "`grammar_rules`"
+msgstr ""
+
+#: src/reference/database-schema.md:135
+msgid "'manual'"
+msgstr ""
+
+#: src/reference/database-schema.md:142
+msgid ""
+"`source` is a `RuleSource`: `manual`, `ai`, or `pdf`. The unique constraint "
+"on `(language_id, cefr_level_id, title)` makes the import-from-AI flow "
+"idempotent."
+msgstr ""
+
+#: src/reference/database-schema.md:146
+msgid "`rule_examples`"
+msgstr ""
+
+#: src/reference/database-schema.md:158
+msgid ""
+"Examples can be incorrect on purpose — they power \"spot the mistake\" "
+"multiple-choice quizzes."
+msgstr ""
+
+#: src/reference/database-schema.md:161
+msgid "Dual n-back tables"
+msgstr ""
+
+#: src/reference/database-schema.md:163
+msgid "`dnb_sessions`"
+msgstr ""
+
+#: src/reference/database-schema.md:165
+msgid ""
+"Stores the start, peak, and end `n_level` plus the rolling accuracy figures. "
+"A session is open until `completed_at` is set by "
+"`DnbSessionRepository::complete_session`."
+msgstr ""
+
+#: src/reference/database-schema.md:169
+msgid "`dnb_trials`"
+msgstr ""
+
+#: src/reference/database-schema.md:171
+msgid ""
+"One row per trial. Foreign keys link both stimuli back to the `translations` "
+"table so cards can be reviewed by translation id when `apply_srs_feedback` "
+"runs."
+msgstr ""
+
+#: src/reference/database-schema.md:175
+msgid "Sync table"
+msgstr ""
+
+#: src/reference/database-schema.md:186
+msgid ""
+"Records the most recent successful sync per remote per table. Used as a "
+"liveness marker, not as a cursor — the cursor is the remote primary key."
+msgstr ""
+
+#: src/reference/database-schema.md:189
+msgid "Media cache"
+msgstr ""
+
+#: src/reference/database-schema.md:203
+msgid ""
+"`media_type` is `audio` or `image`. The on-disk files live under "
+"`$XDG_DATA_HOME/wisecrow/cache/{audio,image}/<translation_id>.<ext>`. "
+"`MediaCache` always validates the cached path is under the cache root before "
+"serving it, so a poisoned database row cannot cause the TUI to read an "
+"arbitrary file."
+msgstr ""
+
+#: src/reference/database-schema.md:209
+msgid "`glosses`"
+msgstr ""
+
+#: src/reference/database-schema.md:223
+msgid ""
+"Cache for `wisecrow gloss` and the TUI's `g`\\-keypress overlay. "
+"`sentence_hash` is the SHA-256 hex of the sentence; the `(hash, lang_code)` "
+"pair is unique. This lets the same row serve both the freeform CLI path "
+"(arbitrary input string) and the TUI path (a card's `to_phrase`) without an "
+"FK to `translations`. `--refresh` forces an `INSERT ... ON CONFLICT DO "
+"UPDATE` to replace the cached gloss in place."
+msgstr ""
+
+#: src/reference/database-schema.md:230
+msgid "Indexes worth knowing"
+msgstr ""
+
+#: src/reference/database-schema.md:232
+msgid "`idx_cards_due` — used by `CardManager::due_cards`."
+msgstr ""
+
+#: src/reference/database-schema.md:233
+msgid ""
+"`idx_translations_frequency (from_language_id, to_language_id, frequency "
+"DESC)` — used by `VocabularyQuery::unlearned` and `VocabularyQuery::learned`."
+msgstr ""
+
+#: src/reference/database-schema.md:235
+msgid "`idx_session_cards_position` — used to load decks in display order."
+msgstr ""
+
+#: src/reference/database-schema.md:236
+msgid ""
+"`idx_dnb_trials_session` and the audio/visual translation indexes — used by "
+"`apply_srs_feedback`."
+msgstr ""
+
+#: src/reference/database-schema.md:238
+msgid ""
+"`idx_glosses_lookup (sentence_hash, lang_code)` — used by the gloss cache on "
+"every `wisecrow gloss` call and TUI `g`\\-overlay fetch."
+msgstr ""
+
+#: src/reference/troubleshooting.md:3
+msgid ""
+"A non-exhaustive list of failure modes and their root causes. Issues are "
+"grouped by where they tend to surface."
+msgstr ""
+
+#: src/reference/troubleshooting.md:8
+msgid ""
+"`Either db_url or all of db_address, db_name, db_user, db_password must be "
+"set`"
+msgstr ""
+
+#: src/reference/troubleshooting.md:10
+msgid ""
+"`Config::database_url` returns this when neither form A nor a _complete_ "
+"form B is present. Common slip-ups:"
+msgstr ""
+
+#: src/reference/troubleshooting.md:13
+msgid ""
+"Missing `WISECROW__DB_PASSWORD` — easy to forget if you committed a `.env` "
+"with the username but not the password."
+msgstr ""
+
+#: src/reference/troubleshooting.md:15
+msgid "Wrong separator — must be `__` (double underscore)."
+msgstr ""
+
+#: src/reference/troubleshooting.md:16
+msgid "A typo in the prefix. The loader is strict about `WISECROW__`."
+msgstr ""
+
+#: src/reference/troubleshooting.md:18
+msgid "Check with:"
+msgstr ""
+
+#: src/reference/troubleshooting.md:24
+msgid "`Configuration error: relative URL without a base`"
+msgstr ""
+
+#: src/reference/troubleshooting.md:26
+msgid ""
+"`config.rs` builds the URL from the components via `url::Url::parse(...)`. A "
+"bare host like `localhost` works; a host with a slash inside it (or a "
+"trailing colon without a port) fails."
+msgstr ""
+
+#: src/reference/troubleshooting.md:32
+msgid "`Persistence migration error`"
+msgstr ""
+
+#: src/reference/troubleshooting.md:34
+msgid ""
+"The migrations are embedded into the binary. The error wraps a "
+"`sqlx::migrate::MigrateError`; the most common causes are:"
+msgstr ""
+
+#: src/reference/troubleshooting.md:37
+msgid "The user lacks `CREATE TABLE` — Wisecrow needs DDL privileges."
+msgstr ""
+
+#: src/reference/troubleshooting.md:38
+msgid ""
+"A previous custom migration left `_sqlx_migrations` in an inconsistent "
+"state. `SELECT * FROM _sqlx_migrations ORDER BY version` shows the log; "
+"truncating it is destructive — only do it on a database you can recreate."
+msgstr ""
+
+#: src/reference/troubleshooting.md:41
+msgid ""
+"The PostgreSQL version is \\< 12. The bulk-insert path uses `unnest(..., "
+"...)` which requires PG ≥ 12."
+msgstr ""
+
+#: src/reference/troubleshooting.md:44
+msgid "`relation \"sessions\" does not exist`"
+msgstr ""
+
+#: src/reference/troubleshooting.md:46
+msgid "The pool was opened against the wrong database. Sanity-check with:"
+msgstr ""
+
+#: src/reference/troubleshooting.md:49
+msgid "\"\\\\dt\""
+msgstr ""
+
+#: src/reference/troubleshooting.md:52
+msgid ""
+"If the table list is empty, run any database-touching command (e.g. "
+"`wisecrow ingest`) — migrations run on first connection."
+msgstr ""
+
+#: src/reference/troubleshooting.md:55
+msgid "Ingest"
+msgstr ""
+
+#: src/reference/troubleshooting.md:57
+msgid "Stuck on a single file forever"
+msgstr ""
+
+#: src/reference/troubleshooting.md:59
+msgid ""
+"The retry loop sleeps `2^attempt` seconds. With `max_retries = 3` the worst "
+"case is 14 s of back-off plus three full reads. If you see no progress at "
+"all, inspect with `wisecrow=trace` logging — you will see the chunk-loop "
+"lines."
+msgstr ""
+
+#: src/reference/troubleshooting.md:64
+msgid "`HTTP 404 Not Found`"
+msgstr ""
+
+#: src/reference/troubleshooting.md:66
+msgid "Not every language pair exists in every corpus. Try:"
+msgstr ""
+
+#: src/reference/troubleshooting.md:72
+msgid ""
+"If 404s keep coming, drop `--corpus` and let Wisecrow attempt the others. "
+"The CLI continues on per-file errors."
+msgstr ""
+
+#: src/reference/troubleshooting.md:75
+msgid "`File too large: ... bytes (max: ...)`"
+msgstr ""
+
+#: src/reference/troubleshooting.md:77
+msgid ""
+"The `--max-file-size-mb` ceiling triggered. Either bump it explicitly or "
+"split your ingest by corpus:"
+msgstr ""
+
+#: src/reference/troubleshooting.md:84
+msgid "`No frequency entries parsed from ...`"
+msgstr ""
+
+#: src/reference/troubleshooting.md:86
+msgid ""
+"The file was in none of the supported layouts. `--file` reads `word count` "
+"pairs (Hermit Dave), `rank<TAB>word<TAB>count` triples (Leipzig) and "
+"`word,count` CSV; a list of bare words with no counts matches none of them. "
+"Check the separator first, since a tab-separated file that has been through "
+"an editor may have had its tabs expanded to spaces."
+msgstr ""
+
+#: src/reference/troubleshooting.md:92
+msgid "`frequency` reports `Updated 0 ...`"
+msgstr ""
+
+#: src/reference/troubleshooting.md:94
+msgid "The file parsed, but nothing matched. In order of likelihood:"
+msgstr ""
+
+#: src/reference/troubleshooting.md:96
+msgid ""
+"The language has no row in `languages`. The command logs a warning saying "
+"so; ingest a corpus for it first."
+msgstr ""
+
+#: src/reference/troubleshooting.md:98
+msgid ""
+"Nothing overlapped. Word lists rank whole single-word rows only, so on a "
+"sentence-aligned corpus a small fraction is the expected outcome — see "
+"[Frequency ranking](../guides/frequency-ranking.md). If the list comes from "
+"a different genre to the corpus, `--from-corpus` will reach more rows."
+msgstr ""
+
+#: src/reference/troubleshooting.md:103
+msgid "`Decompressed output exceeds the ... byte limit`"
+msgstr ""
+
+#: src/reference/troubleshooting.md:105
+msgid ""
+"The `--max-decompressed-mb` ceiling (default `8192`) triggered while "
+"expanding the archive. This is a separate limit from `--max-file-size-mb`, "
+"which governs only the transfer; corpus TMX compresses four- or five-fold, "
+"so a download well inside the transfer ceiling can still overrun this one. "
+"Raise it to suit the release and the disk you have:"
+msgstr ""
+
+#: src/reference/troubleshooting.md:115
+msgid ""
+"The partially-written output is deleted before the error is returned, so "
+"there is nothing to clean up beyond the downloaded archive itself."
+msgstr ""
+
+#: src/reference/troubleshooting.md:118
+msgid "Inserts plateau under load"
+msgstr ""
+
+#: src/reference/troubleshooting.md:120
+msgid ""
+"`DatabasePersister::consume` flushes in batches of 1000 inside a single "
+"transaction. If your PG instance is small, a parallel ingest of multiple "
+"language pairs can pile up. Solutions:"
+msgstr ""
+
+#: src/reference/troubleshooting.md:124
+msgid "Reduce concurrency by serialising the calls (one pair at a time)."
+msgstr ""
+
+#: src/reference/troubleshooting.md:125
+msgid "Bump `max_connections` in `postgresql.conf`."
+msgstr ""
+
+#: src/reference/troubleshooting.md:126
+msgid ""
+"Pre-warm `random_page_cost`, `shared_buffers`, and disable "
+"`synchronous_commit` for the duration of the ingest."
+msgstr ""
+
+#: src/reference/troubleshooting.md:131
+msgid "\"No cards available. Ingest some data first with `wisecrow ingest`.\""
+msgstr ""
+
+#: src/reference/troubleshooting.md:133
+msgid ""
+"This is expected when the user has no cards and no unlearned vocabulary "
+"matches the language pair. Make sure:"
+msgstr ""
+
+#: src/reference/troubleshooting.md:136
+msgid "Translations exist: `SELECT count(*) FROM translations;`"
+msgstr ""
+
+#: src/reference/troubleshooting.md:137
+msgid "The language codes match `languages.code` on both sides."
+msgstr ""
+
+#: src/reference/troubleshooting.md:138
+msgid ""
+"The unlearned filter `LENGTH(phrase) BETWEEN 2 AND 200` did not eliminate "
+"the entire corpus (this happens with extremely noisy TMX files)."
+msgstr ""
+
+#: src/reference/troubleshooting.md:141
+msgid "Auto-advance feels too fast / too slow"
+msgstr ""
+
+#: src/reference/troubleshooting.md:143
+msgid ""
+"Use `+`/`-` while the TUI is running, or pass `--speed-ms`. Anything outside "
+"`[500, 10000]` is silently clamped by `SpeedController::new`."
+msgstr ""
+
+#: src/reference/troubleshooting.md:146
+msgid "Audio plays the wrong language"
+msgstr ""
+
+#: src/reference/troubleshooting.md:148
+msgid ""
+"The Edge TTS voice is selected per the foreign-language code. If the code is "
+"not in the voice list, playback is suppressed and the TUI logs a warning. "
+"Run with `wisecrow=debug` to see which voice was attempted."
+msgstr ""
+
+#: src/reference/troubleshooting.md:154
+msgid "\"Not enough vocabulary (X items, need 8+)\""
+msgstr ""
+
+#: src/reference/troubleshooting.md:156
+msgid ""
+"`DnbEngine::new` requires `MIN_VOCAB_POOL_SIZE = 8`. The pool is fetched via "
+"`DnbSessionRepository::load_vocab` with `LIMIT 100`. Ingest more, or drop "
+"the limit (in source) if you have small corpora intentionally."
+msgstr ""
+
+#: src/reference/troubleshooting.md:160
+msgid "Trials appear to terminate early"
+msgstr ""
+
+#: src/reference/troubleshooting.md:162
+msgid "You hit one of the termination criteria:"
+msgstr ""
+
+#: src/reference/troubleshooting.md:164
+msgid "50 trials elapsed, or"
+msgstr ""
+
+#: src/reference/troubleshooting.md:165
+msgid "both channels' rolling accuracy is below 40 %, or"
+msgstr ""
+
+#: src/reference/troubleshooting.md:166
+msgid "your n-level dropped three windows in a row below the start."
+msgstr ""
+
+#: src/reference/troubleshooting.md:168
+msgid "Check `dnb_sessions.n_level_peak` vs `n_level_start` after the fact."
+msgstr ""
+
+#: src/reference/troubleshooting.md:170
+msgid "LLM"
+msgstr ""
+
+#: src/reference/troubleshooting.md:172
+msgid "`LLM error: Failed to parse LLM response as JSON`"
+msgstr ""
+
+#: src/reference/troubleshooting.md:174
+msgid ""
+"The model returned text that wasn't valid JSON. The seeder strips fenced "
+"code-blocks (```` ``` ```` and ```` ```json ````) before parsing, so the "
+"only common failure is the model adding prose. If it persists:"
+msgstr ""
+
+#: src/reference/troubleshooting.md:178
+msgid "Lower `MAX_LLM_TOKENS` to discourage rambling."
+msgstr ""
+
+#: src/reference/troubleshooting.md:179
+msgid "Inspect the raw response with `RUST_LOG=wisecrow::grammar::seeder=trace`."
+msgstr ""
+
+#: src/reference/troubleshooting.md:180
+msgid ""
+"For OpenAI, switch to a model that respects JSON-mode and adapt "
+"`OpenAiProvider` accordingly."
+msgstr ""
+
+#: src/reference/troubleshooting.md:183
+msgid "`Anthropic API error 429`"
+msgstr ""
+
+#: src/reference/troubleshooting.md:185
+msgid ""
+"You are rate-limited. The crate does not retry LLM calls — the seeder fails "
+"fast. Re-run with a longer interval between commands or bump your tier."
+msgstr ""
+
+#: src/reference/troubleshooting.md:190
+msgid "Sync hangs at \"languages: ...\""
+msgstr ""
+
+#: src/reference/troubleshooting.md:192
+msgid ""
+"Pagination is forwarded through `?after_id=N`. If the remote does not "
+"respect the parameter, the local pulls the same page forever. Check with:"
+msgstr ""
+
+#: src/reference/troubleshooting.md:196
+msgid "\"$REMOTE/api/sync_languages?after_id=99999999\""
+msgstr ""
+
+#: src/reference/troubleshooting.md:199
+msgid "It should return `[]` or a small array."
+msgstr ""
+
+#: src/reference/troubleshooting.md:201
+msgid "`Sync error: URL join failed`"
+msgstr ""
+
+#: src/reference/troubleshooting.md:203
+msgid ""
+"The base URL is parsed with `Url::parse`. URLs without a trailing slash join "
+"oddly:"
+msgstr ""
+
+#: src/reference/troubleshooting.md:206
+msgid ""
+"```text\n"
+"https://example.com/foo  + /api/sync_languages → "
+"https://example.com/api/sync_languages   (drops /foo)\n"
+"https://example.com/foo/ + /api/sync_languages → "
+"https://example.com/api/sync_languages   (also drops!)\n"
+"```"
+msgstr ""
+
+#: src/reference/troubleshooting.md:211
+msgid "Pass the bare host (`https://example.com`) and let Wisecrow add the path."
+msgstr ""
+
+#: src/reference/troubleshooting.md:213
+msgid "Web UI"
+msgstr ""
+
+#: src/reference/troubleshooting.md:215
+msgid ""
+"The web UI is experimental and is not covered here. If you hit issues, build "
+"with `--features \"server web\"` and run `dx serve --features \"server "
+"web\"` from `wisecrow-web/`. Check the server log for SQL errors — they are "
+"the same as for the CLI."
+msgstr ""
+
+#: src/reference/troubleshooting.md:220
+msgid "Logs"
+msgstr ""
+
+#: src/reference/troubleshooting.md:222
+msgid "For every issue above, the first thing to do is enable verbose logging:"
+msgstr ""
+
+#: src/reference/troubleshooting.md:228
+msgid ""
+"The crate uses the `tracing` crate end-to-end, so debug events include the "
+"filename and line number when the subscriber is configured for them."
+msgstr ""
+
+#: src/reference/translating.md:1
+msgid "Translating the documentation"
+msgstr ""
+
+#: src/reference/translating.md:3
+msgid ""
+"This book is translated with "
+"[Gettext](https://www.gnu.org/software/gettext/), the same machinery used "
+"for translating software, by way of "
+"[`mdbook-i18n-helpers`](https://github.com/google/mdbook-i18n-helpers). The "
+"arrangement is worth explaining before the commands, because it determines "
+"what a translator actually edits."
+msgstr ""
+
+#: src/reference/translating.md:9
+msgid "How it fits together"
+msgstr ""
+
+#: src/reference/translating.md:11
+msgid ""
+"The English Markdown under `src/` is the single source of truth, and it is "
+"never duplicated. Instead, every translatable string is extracted into a "
+"template, `po/messages.pot`, and each language keeps its own catalogue of "
+"translations at `po/<lang>.po` pairing each English string with its "
+"rendering. At build time the `gettext` preprocessor substitutes the strings "
+"for the requested language; anything left untranslated falls back to the "
+"English, so a partial translation produces a usable book rather than a "
+"broken one."
+msgstr ""
+
+#: src/reference/translating.md:19
+msgid "This is why the configuration in `book.toml` is so small:"
+msgstr ""
+
+#: src/reference/translating.md:21
+msgid ""
+"```toml\n"
+"[preprocessor.gettext]\n"
+"after = [\"links\"]\n"
+"```"
+msgstr ""
+
+#: src/reference/translating.md:26
+msgid ""
+"Running after the `links` preprocessor matters: it means any file pulled in "
+"by an include directive is translated along with the file that includes it, "
+"rather than being skipped."
+msgstr ""
+
+#: src/reference/translating.md:30
+msgid ""
+"The preprocessor is a no-op when building the source language, so the "
+"ordinary `mdbook build` is unaffected by any of this."
+msgstr ""
+
+#: src/reference/translating.md:35
+msgid ""
+"The devshell provides everything already. Outside it, you need `mdbook`, the "
+"helpers, and GNU Gettext's command-line tools:"
+msgstr ""
+
+#: src/reference/translating.md:42
+msgid "Starting a new translation"
+msgstr ""
+
+#: src/reference/translating.md:44
+msgid ""
+"Create the catalogue from the template, naming it for the language code — "
+"`gd` for Scottish Gaelic, `cy` for Welsh, and so on:"
+msgstr ""
+
+#: src/reference/translating.md:52
+msgid ""
+"Then edit `po/gd.po`, filling in the `msgstr` entries. Leave anything you "
+"are unsure of empty and it will render in English."
+msgstr ""
+
+#: src/reference/translating.md:55
+msgid "Building a translation"
+msgstr ""
+
+#: src/reference/translating.md:58
+msgid "gd"
+msgstr ""
+
+#: src/reference/translating.md:61
+msgid ""
+"The result lands in `book/gd/`, alongside the English book in `book/`. CI "
+"does this automatically for every `po/*.po` file it finds, so a new "
+"translation needs no pipeline changes — adding the file is enough."
+msgstr ""
+
+#: src/reference/translating.md:65
+msgid "Keeping catalogues current"
+msgstr ""
+
+#: src/reference/translating.md:67
+msgid ""
+"The template goes stale as soon as the English text changes, so regenerate "
+"it and merge the differences into each language:"
+msgstr ""
+
+#: src/reference/translating.md:72
+msgid "'{\"xgettext\": {}}'"
+msgstr ""
+
+#: src/reference/translating.md:76
+msgid ""
+"`msgmerge` preserves existing translations, marks those whose source text "
+"has changed as fuzzy for review, and adds the new strings as untranslated. "
+"Doing this in the same commit as a substantial documentation change spares "
+"translators from reconstructing what moved."
+msgstr ""
+
+#: src/reference/contributing.md:3
+msgid ""
+"Wisecrow is a small project with strong conventions. This page distils the "
+"ones you need to follow before submitting a patch."
+msgstr ""
+
+#: src/reference/contributing.md:6
+msgid "Tooling"
+msgstr ""
+
+#: src/reference/contributing.md:8
+msgid "Tool"
+msgstr ""
+
+#: src/reference/contributing.md:10
+msgid "`cargo build` / `cargo check`"
+msgstr ""
+
+#: src/reference/contributing.md:10
+msgid "Verify the workspace compiles."
+msgstr ""
+
+#: src/reference/contributing.md:11
+msgid "`cargo nextest run`"
+msgstr ""
+
+#: src/reference/contributing.md:11
+msgid "Run the test suite (fall back to `cargo test` if you don't have nextest)."
+msgstr ""
+
+#: src/reference/contributing.md:12
+msgid "`cargo clippy --workspace --all-targets`"
+msgstr ""
+
+#: src/reference/contributing.md:12
+msgid ""
+"The codebase is required to be clippy-clean — no `#[allow]` annotations are "
+"acceptable."
+msgstr ""
+
+#: src/reference/contributing.md:13
+msgid "`cargo fmt --all`"
+msgstr ""
+
+#: src/reference/contributing.md:13
+msgid "The repository is `rustfmt`\\-formatted."
+msgstr ""
+
+#: src/reference/contributing.md:15
+msgid ""
+"A pre-commit hook is wired through `pre-commit-config.yaml`; install "
+"[`pre-commit`](https://pre-commit.com/) and run `pre-commit install` to get "
+"the hooks locally."
+msgstr ""
+
+#: src/reference/contributing.md:19
+msgid "Workspace conventions"
+msgstr ""
+
+#: src/reference/contributing.md:21
+msgid "These rules live in the project's `CLAUDE.md` and are enforced in review:"
+msgstr ""
+
+#: src/reference/contributing.md:23
+msgid ""
+"**No `as` numeric casts.** Use `try_from`, `into`, or `From`. Compile-time "
+"literals are the only exception."
+msgstr ""
+
+#: src/reference/contributing.md:25
+msgid ""
+"**No silent error discards.** `let _ = expr_returning_Result` is a bug. "
+"Either propagate with `?` or log with `tracing::warn!`."
+msgstr ""
+
+#: src/reference/contributing.md:27
+msgid ""
+"**No `unreachable!()` outside tests.** \"Should never happen\" branches "
+"still return `Err`."
+msgstr ""
+
+#: src/reference/contributing.md:29
+msgid ""
+"**Justify every `.clone()`.** Production clones must carry an inline `// "
+"clone: <reason>` comment. Tests are exempt."
+msgstr ""
+
+#: src/reference/contributing.md:31
+msgid ""
+"**Use `Url` for URL construction.** Never `format!()` URLs — that is how "
+"double-slash bugs are born."
+msgstr ""
+
+#: src/reference/contributing.md:33
+msgid ""
+"**`unwrap`/`expect`/`panic!` are forbidden** in async tasks and HTTP "
+"handlers. Convert to `?`."
+msgstr ""
+
+#: src/reference/contributing.md:36
+msgid "Test hierarchy"
+msgstr ""
+
+#: src/reference/contributing.md:38
+msgid "Pick the test type _before_ writing it:"
+msgstr ""
+
+#: src/reference/contributing.md:40
+msgid ""
+"**Property-based (`proptest`)** — pure functions, parsers, validators, "
+"serializers. The first choice for anything with an invariant."
+msgstr ""
+
+#: src/reference/contributing.md:42
+msgid ""
+"**Parameterised (`rstest`)** — bounded enum exhaustion or fewer than ~10 "
+"specific cases."
+msgstr ""
+
+#: src/reference/contributing.md:44
+msgid "**Standalone** — only when you genuinely need bespoke setup or mocking."
+msgstr ""
+
+#: src/reference/contributing.md:46
+msgid ""
+"Do not write a standalone test \"to get it working\" with the intent of "
+"converting it later. The conversion never happens."
+msgstr ""
+
+#: src/reference/contributing.md:49
+msgid ""
+"Tests live alongside the code in `#[cfg(test)] mod tests` blocks. Use "
+"`tests/` directories only for crate-spanning integration tests."
+msgstr ""
+
+#: src/reference/contributing.md:52
+msgid "Database changes"
+msgstr ""
+
+#: src/reference/contributing.md:54
+msgid ""
+"New migrations go in `wisecrow-core/migrations/` numbered sequentially "
+"(`0NN_short_name.sql`)."
+msgstr ""
+
+#: src/reference/contributing.md:56
+msgid ""
+"Migrations run automatically on first connection, so the workspace's tests "
+"must be runnable against a fresh database."
+msgstr ""
+
+#: src/reference/contributing.md:58
+msgid ""
+"Always include the matching `DROP` semantics by relying on `ON DELETE "
+"CASCADE` rather than ad-hoc cleanup."
+msgstr ""
+
+#: src/reference/contributing.md:61
+msgid "Documentation changes"
+msgstr ""
+
+#: src/reference/contributing.md:63
+msgid ""
+"Public types should have rustdoc comments (`///`). Document `# Errors` and "
+"`# Panics` sections where they apply."
+msgstr ""
+
+#: src/reference/contributing.md:65
+msgid ""
+"This mdBook (`docs/`) is not auto-generated; if you change a CLI surface or "
+"a library type, update the relevant page in `docs/src/`."
+msgstr ""
+
+#: src/reference/contributing.md:67
+msgid ""
+"Code examples in this book are not currently doctested. Keep them small and "
+"obviously correct; copy them from real source where possible."
+msgstr ""
+
+#: src/reference/contributing.md:70
+msgid "Commit messages"
+msgstr ""
+
+#: src/reference/contributing.md:72
+msgid ""
+"Recent history is the source of truth. Run `git log --oneline -20` and "
+"follow the prevailing style — short subject, optional body, no "
+"`Co-Authored-By:` for human contributors."
+msgstr ""
+
+#: src/reference/contributing.md:76
+msgid "Adding a new command"
+msgstr ""
+
+#: src/reference/contributing.md:78
+msgid "A typical CLI addition has the following touch-points:"
+msgstr ""
+
+#: src/reference/contributing.md:80
+msgid "New `Args` struct + `Command` variant in `wisecrow-core/src/cli.rs`."
+msgstr ""
+
+#: src/reference/contributing.md:81
+msgid "New handler function in `wisecrow-core/src/bin/wisecrow.rs`."
+msgstr ""
+
+#: src/reference/contributing.md:82
+msgid "Library code in the appropriate module under `wisecrow-core/src/`."
+msgstr ""
+
+#: src/reference/contributing.md:83
+msgid "Updated rstest cases in `cli.rs` covering both the long and short alias."
+msgstr ""
+
+#: src/reference/contributing.md:84
+msgid ""
+"New page in `docs/src/reference/cli-reference.md` and (if user-facing) a "
+"guide in `docs/src/guides/`."
+msgstr ""
+
+#: src/reference/contributing.md:86
+msgid "Updated `docs/src/SUMMARY.md`."
+msgstr ""
+
+#: src/reference/contributing.md:88
+msgid "Reporting issues"
+msgstr ""
+
+#: src/reference/contributing.md:90
+msgid ""
+"The repository is at <https://github.com/glottologist/wisecrow>. Please "
+"include:"
+msgstr ""
+
+#: src/reference/contributing.md:93
+msgid "The exact command you ran."
+msgstr ""
+
+#: src/reference/contributing.md:94
+msgid "The output of `wisecrow --version`."
+msgstr ""
+
+#: src/reference/contributing.md:95
+msgid ""
+"A minimal reproduction (a small ingest script, a redacted SQL snapshot, …)."
+msgstr ""
+
+#: src/reference/contributing.md:96
+msgid "Logs at `RUST_LOG=wisecrow=debug,info`."
+msgstr ""
+
+#: src/reference/contributing.md:98
+msgid "Dependency policy"
+msgstr ""
+
+#: src/reference/contributing.md:100
+msgid ""
+"Wisecrow leans on a curated set of crates. Adding new dependencies is a "
+"review-able event:"
+msgstr ""
+
+#: src/reference/contributing.md:103
+msgid "Prefer `tokio`\\-native crates for async work."
+msgstr ""
+
+#: src/reference/contributing.md:104
+msgid ""
+"Database access goes through `sqlx`. Adding a different driver is unlikely "
+"to be accepted."
+msgstr ""
+
+#: src/reference/contributing.md:106
+msgid "Audio/image dependencies must stay behind their respective feature flags."
+msgstr ""
+
+#: src/reference/contributing.md:107
+msgid ""
+"HTTP clients should be `reqwest` with `rustls-tls` to keep cross-platform "
+"builds simple."
+msgstr ""
+
+#: src/api/wisecrow-core.md:3
+msgid ""
+"`wisecrow-core` (crate name: `wisecrow`) is the library and binary at the "
+"heart of the workspace. This page lists the public types per module and "
+"links to the source with `file:line` references so you can jump straight to "
+"the declaration."
+msgstr ""
+
+#: src/api/wisecrow-core.md:8
+msgid ""
+"The CLI binary is `src/bin/wisecrow.rs`. Everything below is reachable as a "
+"library too."
+msgstr ""
+
+#: src/api/wisecrow-core.md:11
+msgid "Module map"
+msgstr ""
+
+#: src/api/wisecrow-core.md:13 src/api/wisecrow-web.md:77
+msgid "Module"
+msgstr ""
+
+#: src/api/wisecrow-core.md:13
+msgid "What it does"
+msgstr ""
+
+#: src/api/wisecrow-core.md:15
+msgid "[`config`](#config)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:15
+msgid "Environment-driven configuration with secret-zeroing strings."
+msgstr ""
+
+#: src/api/wisecrow-core.md:16
+msgid "[`cli`](#cli)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:16
+msgid "clap-derived command surface and the supported-language whitelist."
+msgstr ""
+
+#: src/api/wisecrow-core.md:17
+msgid "[`errors`](#errors)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:17
+msgid "The crate-wide `WisecrowError`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:18
+msgid "[`files`](#files)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:18
+msgid "OPUS URL construction."
+msgstr ""
+
+#: src/api/wisecrow-core.md:19
+msgid "[`downloader`](#downloader)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:19
+msgid "HTTP fetch with retry + decompression."
+msgstr ""
+
+#: src/api/wisecrow-core.md:20
+msgid "[`ingesting`](#ingesting)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:20
+msgid "Parser and persister for TMX and OPUS XML."
+msgstr ""
+
+#: src/api/wisecrow-core.md:21
+msgid "[`srs`](#srs)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:21
+msgid "FSRS scheduler and session lifecycle."
+msgstr ""
+
+#: src/api/wisecrow-core.md:22
+msgid "[`vocabulary`](#vocabulary)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:22
+msgid "Unlearned-words query."
+msgstr ""
+
+#: src/api/wisecrow-core.md:23
+msgid "[`users`](#users)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:23
+msgid "Users repository."
+msgstr ""
+
+#: src/api/wisecrow-core.md:24
+msgid "[`dnb`](#dnb)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:24
+msgid "Dual n-back engine and adaptation."
+msgstr ""
+
+#: src/api/wisecrow-core.md:25
+msgid "[`grammar`](#grammar)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:25
+msgid "CEFR rules, AI seeding, quizzes, PDF import."
+msgstr ""
+
+#: src/api/wisecrow-core.md:26
+msgid "[`llm`](#llm)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:26
+msgid "Provider trait + Anthropic/OpenAI implementations."
+msgstr ""
+
+#: src/api/wisecrow-core.md:27
+msgid "[`media`](#media)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:27
+msgid "Audio + image cache and prefetch."
+msgstr ""
+
+#: src/api/wisecrow-core.md:28
+msgid "Remote sync client."
+msgstr ""
+
+#: src/api/wisecrow-core.md:29
+msgid "[`tui`](#tui)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:29
+msgid "ratatui flashcard runner and quiz."
+msgstr ""
+
+#: src/api/wisecrow-core.md:30
+msgid "Hermit Dave frequency-list import."
+msgstr ""
+
+#: src/api/wisecrow-core.md:31
+msgid "[`dto_convert`](#dto_convert)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:31
+msgid "Domain → DTO conversions."
+msgstr ""
+
+#: src/api/wisecrow-core.md:33
+msgid "Top-level types"
+msgstr ""
+
+#: src/api/wisecrow-core.md:35
+msgid "Defined directly in `lib.rs`:"
+msgstr ""
+
+#: src/api/wisecrow-core.md:49
+msgid ""
+"The newtype split prevents accidentally swapping native/foreign codes — they "
+"have distinct types at the call site. Source: `wisecrow-core/src/lib.rs:21`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:53
+msgid "`config`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:75
+msgid ""
+"`SecureString` derives `Zeroize` and `ZeroizeOnDrop` and never implements "
+"`Debug` for its content. URL assembly goes through `url::Url`; format-string "
+"URL construction is forbidden by the project guidelines. Source: "
+"`wisecrow-core/src/config.rs:9`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:80
+msgid "`cli`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:90
+msgid ""
+"Each `*Args` struct is a `clap::Args` — see the [CLI "
+"reference](../reference/cli-reference.md) for argument tables. Source: "
+"`wisecrow-core/src/cli.rs`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:94
+msgid "`errors`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:116
+msgid ""
+"Every fallible function in the crate returns `Result<T, WisecrowError>`. "
+"Source: `wisecrow-core/src/errors.rs:5`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:119
+msgid "`files`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:127
+msgid "/* TryFrom<&str> */"
+msgstr ""
+
+#: src/api/wisecrow-core.md:133
+msgid ""
+"URL construction normalises the lexical order of language codes (so "
+"`en`\\-`es` and `es`\\-`en` map to the same OPUS file). Source: "
+"`wisecrow-core/src/files.rs`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:137
+msgid "`downloader`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:149
+msgid "/* HTTP client + config */"
+msgstr ""
+
+#: src/api/wisecrow-core.md:158
+msgid ""
+"The downloader caps decompression at 1 GiB, rejects ZIP entries with "
+"suspicious paths, and exponentially backs off across retries (`2^attempt` "
+"seconds). Source: `wisecrow-core/src/downloader.rs`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:163
+msgid "`ingesting`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:166
+msgid "/* PgPool + DownloadConfig */"
+msgstr ""
+
+#: src/api/wisecrow-core.md:176 src/api/wisecrow-core.md:290
+msgid "Submodules"
+msgstr ""
+
+#: src/api/wisecrow-core.md:189
+msgid "/* PgPool */"
+msgstr ""
+
+#: src/api/wisecrow-core.md:199
+msgid "Source: `wisecrow-core/src/ingesting/`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:201
+msgid "`srs`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:207
+msgid "/* card_id, translation_id, phrases, FSRS fields */"
+msgstr ""
+
+#: src/api/wisecrow-core.md:233
+msgid ""
+"`due_cards` priority is **Relearning > Learning > New > Review**, then by "
+"`due ASC`. The narrowing helper `f64_to_f32_clamped` ensures FSRS's `f64` "
+"state never produces NaN or Infinity in `REAL` columns. Source: "
+"`wisecrow-core/src/srs/`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:238
+msgid "`vocabulary`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:249
+msgid ""
+"The query filters on `frequency > 1` and `LENGTH(phrase) BETWEEN 2 AND 200` "
+"so single-letter rows and runaway TMX glitches do not pollute decks. Source: "
+"`wisecrow-core/src/vocabulary.rs`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:253
+msgid "`users`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:267
+msgid "Source: `wisecrow-core/src/users.rs`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:269
+msgid "`dnb`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:278
+msgid "/* state machine */"
+msgstr ""
+
+#: src/api/wisecrow-core.md:292
+msgid ""
+"`scoring` — `AdaptationState`, `apply_adaptation`, `should_terminate`, "
+"`channel_accuracy`, `Channel`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:294
+msgid ""
+"`session` — `DnbSessionRepository::{create_session, save_trial, "
+"complete_session, load_vocab}`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:295
+msgid "`feedback` — `apply_srs_feedback(pool, trials)` writes back into the SRS."
+msgstr ""
+
+#: src/api/wisecrow-core.md:297
+msgid ""
+"The match probability is `0.30`. The minimum vocabulary pool is `8`. Both "
+"constants are deliberately out-of-bound for tuning; change them in source "
+"only if you understand the n-back literature. Source: "
+"`wisecrow-core/src/dnb/`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:302
+msgid "`grammar`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:328
+msgid "Source: `wisecrow-core/src/grammar/`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:330
+msgid "`llm`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:342
+msgid "Two implementations are bundled:"
+msgstr ""
+
+#: src/api/wisecrow-core.md:344
+msgid "`anthropic::AnthropicProvider` — Claude Sonnet 4 via the messages API."
+msgstr ""
+
+#: src/api/wisecrow-core.md:345
+msgid "`openai::OpenAiProvider` — GPT-4o via the chat completions API."
+msgstr ""
+
+#: src/api/wisecrow-core.md:347
+msgid ""
+"Models and endpoints are constants at the top of each file; bump them in "
+"source if you need a different model. Source: `wisecrow-core/src/llm/`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:351
+msgid "`media`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:356
+msgid "/* cache_dir + PgPool */"
+msgstr ""
+
+#: src/api/wisecrow-core.md:366
+msgid ""
+"Audio (`audio` feature) goes through Microsoft Edge TTS via `msedge-tts`; "
+"images (`images` feature) hit Unsplash. Source: `wisecrow-core/src/media/`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:386
+msgid "Source: `wisecrow-core/src/sync/`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:388
+msgid "`tui`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:390
+msgid "The TUI layer is a small pile of `ratatui` glue:"
+msgstr ""
+
+#: src/api/wisecrow-core.md:392
+msgid "`app::run_tui(pool, session, media_ctx)` drives the flashcard runner."
+msgstr ""
+
+#: src/api/wisecrow-core.md:393
+msgid ""
+"`quiz::run_quiz(pdf_path, num_questions)` runs a one-shot quiz from a PDF."
+msgstr ""
+
+#: src/api/wisecrow-core.md:394
+msgid "`speed::SpeedController` tracks the auto-advance timer."
+msgstr ""
+
+#: src/api/wisecrow-core.md:395
+msgid "`widgets::card`, `widgets::stats` render card faces and footer stats."
+msgstr ""
+
+#: src/api/wisecrow-core.md:397
+msgid "Source: `wisecrow-core/src/tui/`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:409
+msgid ""
+"Updates `translations.frequency` in batches of 1000 using `UPDATE … FROM "
+"unnest($1, $2)`. Used to overlay external frequency lists when a corpus "
+"alone is too noisy. Source: `wisecrow-core/src/frequency.rs`."
+msgstr ""
+
+#: src/api/wisecrow-core.md:414
+msgid "`dto_convert`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:416
+msgid ""
+"`From` impls and helper functions that bridge domain types in "
+"`wisecrow-core` to serde DTOs in `wisecrow-dto`. Notable helpers:"
+msgstr ""
+
+#: src/api/wisecrow-core.md:419
+msgid "`script_direction_for(code) -> ScriptDirection` (RTL detection)"
+msgstr ""
+
+#: src/api/wisecrow-core.md:420
+msgid "`language_info(code, name) -> LanguageInfo`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:421
+msgid "`grammar_rule_to_dto(&GrammarRule, cefr_level_code) -> GrammarRuleDto`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:422
+msgid "`quizzes_to_dto(&[ClozeQuiz], &[MultipleChoiceQuiz]) -> Vec<QuizItemDto>`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:423
+msgid ""
+"`adaptation_to_dto(&AdaptationState, &[CompletedTrial], terminated) -> "
+"DnbAdaptationDto`"
+msgstr ""
+
+#: src/api/wisecrow-core.md:425
+msgid "Source: `wisecrow-core/src/dto_convert.rs`."
+msgstr ""
+
+#: src/api/wisecrow-dto.md:3
+msgid ""
+"`wisecrow-dto` is the small types-only crate shared between the server, the "
+"web UI, and the mobile shell. It depends only on `chrono` and `serde` so it "
+"can be compiled to WASM without dragging in a Tokio runtime."
+msgstr ""
+
+#: src/api/wisecrow-dto.md:7
+msgid "When to depend on it"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:9
+msgid "You are writing a Dioxus client that calls server-functions."
+msgstr ""
+
+#: src/api/wisecrow-dto.md:10
+msgid "You need to deserialize Wisecrow JSON payloads from another tool."
+msgstr ""
+
+#: src/api/wisecrow-dto.md:11
+msgid ""
+"You want to keep your binary small and cannot afford `wisecrow-core`'s "
+"dependency footprint."
+msgstr ""
+
+#: src/api/wisecrow-dto.md:14
+msgid ""
+"If you also need the database, scheduling, or LLM logic, depend on "
+"`wisecrow-core` instead — it re-exports `wisecrow-dto` indirectly via "
+"`dto_convert`."
+msgstr ""
+
+#: src/api/wisecrow-dto.md:18
+msgid "Cards and reviews"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:39
+msgid ""
+"`CardDto` is a snapshot — once mutated server-side, expect a fresh `CardDto` "
+"back from the next call. Do not patch in place."
+msgstr ""
+
+#: src/api/wisecrow-dto.md:42
+msgid "Sessions"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:62
+msgid "Quizzes"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:92
+msgid ""
+"`rule_context` is filled in for quizzes generated from stored grammar rules "
+"and left `None` for quizzes generated ad-hoc (for example via `wisecrow "
+"quiz`)."
+msgstr ""
+
+#: src/api/wisecrow-dto.md:96
+msgid "Languages and users"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:113
+msgid ""
+"`ScriptDirection::Rtl` is set for `ar`, `he`, `fa`, `ur`, `ps`, `sd`, `yi`. "
+"The list lives in `wisecrow_core::dto_convert::RTL_LANGUAGES`."
+msgstr ""
+
+#: src/api/wisecrow-dto.md:116
+msgid "Grammar rules"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:146
+msgid "// serde default = true\n"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:150
+msgid ""
+"`GrammarRuleImport` is the file format consumed by `wisecrow import-grammar "
+"--file rules.json`."
+msgstr ""
+
+#: src/api/wisecrow-dto.md:153
+msgid "Sync DTOs"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:165
+msgid ""
+"These mirror the production schema closely but use codes instead of foreign "
+"keys so a sync can succeed against a server with a different `languages.id` "
+"mapping."
+msgstr ""
+
+#: src/api/wisecrow-dto.md:183
+msgid ""
+"/* trial_number, n_level, audio_phrase, visual_phrase, audio_match, "
+"visual_match, interval_ms */"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:184
+msgid "/* trial_number, audio_response, visual_response, response_time_ms */"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:185
+msgid ""
+"/* new_n_level, new_interval_ms, audio_accuracy, visual_accuracy, "
+"should_terminate */"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:186
+msgid ""
+"/* session_id, mode, n_level_start/peak/end, trials_completed, "
+"accuracy_audio/visual, interval_ms_start/end */"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:189
+msgid "SpeedController"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:191
+msgid "The crate also exposes a small value type used by the auto-advance UI:"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:194
+msgid "/* private fields */"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:197
+msgid "// clamped to [500, 10000]\n"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:200
+msgid "// -500ms, min 500\n"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:201
+msgid "// +500ms, max 10000\n"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:205
+msgid "// 0.0..=1.0\n"
+msgstr ""
+
+#: src/api/wisecrow-dto.md:211
+msgid ""
+"`SpeedController` is `Serialize + Deserialize` so it can survive a "
+"round-trip through a server function."
+msgstr ""
+
+#: src/api/wisecrow-web.md:3
+msgid ""
+"`wisecrow-web` is an experimental [Dioxus](https://dioxuslabs.com) 0.7 "
+"fullstack application. It uses the `dioxus-fullstack` server-functions "
+"feature to share routing and types between the browser bundle and the server."
+msgstr ""
+
+#: src/api/wisecrow-web.md:8
+msgid ""
+"**Note:** The TUI is the primary interface today. Treat the web UI as a "
+"preview — names, routes, and types may shift between releases."
+msgstr ""
+
+#: src/api/wisecrow-web.md:11 src/api/wisecrow-mobile.md:11
+msgid "Crate structure"
+msgstr ""
+
+#: src/api/wisecrow-web.md:26
+msgid ""
+"The `server` feature gates everything that touches the database. Without it, "
+"the crate compiles to WASM and the server-functions resolve at runtime "
+"against the colocated server."
+msgstr ""
+
+#: src/api/wisecrow-web.md:32
+msgid "Pulls in"
+msgstr ""
+
+#: src/api/wisecrow-web.md:32
+msgid "Used for"
+msgstr ""
+
+#: src/api/wisecrow-web.md:34
+msgid "`wisecrow-core`, `tokio`, `sqlx`, `dotenvy`, `config`, `tempfile`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:34
+msgid "Build the server binary."
+msgstr ""
+
+#: src/api/wisecrow-web.md:35 src/api/wisecrow-mobile.md:30
+msgid "`dioxus/web`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:35
+msgid "Build the browser bundle."
+msgstr ""
+
+#: src/api/wisecrow-web.md:36
+msgid "`server` + `wisecrow-core/audio` + `base64`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:36
+msgid "Serve TTS audio over the wire."
+msgstr ""
+
+#: src/api/wisecrow-web.md:37
+msgid "`server` + `wisecrow-core/images` + `base64` + `reqwest`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:37
+msgid "Serve Unsplash-fetched images."
+msgstr ""
+
+#: src/api/wisecrow-web.md:39
+msgid "A typical fullstack dev loop:"
+msgstr ""
+
+#: src/api/wisecrow-web.md:43
+msgid "\"server web\""
+msgstr ""
+
+#: src/api/wisecrow-web.md:46 src/api/wisecrow-mobile.md:43
+msgid "Routes"
+msgstr ""
+
+#: src/api/wisecrow-web.md:52 src/api/wisecrow-mobile.md:49
+msgid "\"/\""
+msgstr ""
+
+#: src/api/wisecrow-web.md:54
+msgid "\"/learn/:user_id/:native/:foreign\""
+msgstr ""
+
+#: src/api/wisecrow-web.md:56 src/api/wisecrow-mobile.md:53
+msgid "\"/nback/:native/:foreign\""
+msgstr ""
+
+#: src/api/wisecrow-web.md:58
+msgid "\"/quiz\""
+msgstr ""
+
+#: src/api/wisecrow-web.md:63
+msgid "Route"
+msgstr ""
+
+#: src/api/wisecrow-web.md:65
+msgid "`/`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:65
+msgid "Landing / language picker / user selector."
+msgstr ""
+
+#: src/api/wisecrow-web.md:66
+msgid "`/learn/:user_id/:native/:foreign`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:66
+msgid "The flashcard session UI."
+msgstr ""
+
+#: src/api/wisecrow-web.md:67
+msgid "`/nback/:native/:foreign`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:67
+msgid "The dual n-back trainer."
+msgstr ""
+
+#: src/api/wisecrow-web.md:68
+msgid "`/quiz`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:68
+msgid "Stand-alone quiz (PDF upload or rule-based generation)."
+msgstr ""
+
+#: src/api/wisecrow-web.md:70
+msgid "Server functions"
+msgstr ""
+
+#: src/api/wisecrow-web.md:72
+msgid ""
+"The server module groups the database-touching server functions. All take "
+"`wisecrow-dto` types so the WASM bundle can call them without depending on "
+"`wisecrow-core`. See `wisecrow-mobile` for the matching client-side stub "
+"declarations."
+msgstr ""
+
+#: src/api/wisecrow-web.md:77
+msgid "Reaches"
+msgstr ""
+
+#: src/api/wisecrow-web.md:79
+msgid "`server::learn`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:79
+msgid "`SessionManager`, `CardManager`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:80
+msgid "`server::nback`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:80
+msgid "`DnbEngine`, `DnbSessionRepository`, `apply_srs_feedback`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:81
+msgid "`server::quiz`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:81
+msgid "`grammar::ai_exercises`, `grammar::pdf`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:82
+msgid "`server::media`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:82
+msgid "`MediaCache`, optional Edge TTS / Unsplash"
+msgstr ""
+
+#: src/api/wisecrow-web.md:83
+msgid "`server::sync`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:83
+msgid "endpoints consumed by `wisecrow-core` `SyncClient`"
+msgstr ""
+
+#: src/api/wisecrow-web.md:87
+msgid ""
+"The server crate reuses `wisecrow-core`'s configuration loader, so the same "
+"`WISECROW__*` variables apply. The pool is initialised once at start-up in "
+"`main.rs`:"
+msgstr ""
+
+#: src/api/wisecrow-web.md:92
+msgid "\"server\""
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:3
+msgid ""
+"`wisecrow-mobile` is the Dioxus mobile/desktop shell. It mirrors the web "
+"app's routes and types but ships only client-side server-function stubs — "
+"the real implementations live in `wisecrow-web`."
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:7
+msgid ""
+"**Warning:** The mobile crate is a skeleton. It compiles and renders the "
+"route tree but the server-function stubs return errors by design. Treat this "
+"page as a starting point, not a deployment guide."
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:27
+msgid "`dioxus/server` (no DB stack)"
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:28
+msgid "`desktop`"
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:28
+msgid "`dioxus/desktop`"
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:29
+msgid "`mobile`"
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:29
+msgid "`dioxus/mobile`"
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:32
+msgid "Typical commands:"
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:35
+msgid "# Desktop binary\n"
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:38
+msgid "# Mobile (requires the dioxus mobile tooling)\n"
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:51
+msgid "\"/learn/:native/:foreign\""
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:58
+msgid ""
+"The mobile router does **not** yet expose the quiz route — quizzes require a "
+"PDF picker that has not been wired up."
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:61
+msgid "Server function surface"
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:63
+msgid ""
+"`server_fns.rs` declares the contract the mobile shell expects to talk to:"
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:81
+msgid ""
+"Every stub currently returns `ServerFnError::new(\"client-side stub\")`. To "
+"put it into use, wire each function into a real Dioxus server-function on "
+"the server side (typically in `wisecrow-web`) and point the mobile build at "
+"the resulting endpoint."
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:86
+msgid "Wiring it up"
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:88
+msgid "A common pattern when graduating from skeleton to production:"
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:90
+msgid "Stand up the `wisecrow-web` crate with `--features \"server web\"`."
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:91
+msgid "Set the mobile crate's API base URL to that server."
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:92
+msgid ""
+"Replace the stubs in `server_fns.rs` with thin HTTP calls (or use Dioxus' "
+"shared `#[server]` mechanism if both crates compile together)."
+msgstr ""
+
+#: src/api/wisecrow-mobile.md:94
+msgid "Add a settings screen that captures the API URL and the user ID."
+msgstr ""
+

@@ -10,7 +10,8 @@ categories = ["command-line-utilities", "text-processing"]
 
 [features]
 default = []
-audio = ["dep:msedge-tts", "dep:rodio"]
+tts = ["dep:msedge-tts"]
+audio = ["tts", "dep:rodio"]
 images = ["dep:ratatui-image", "dep:image"]
 
 [lib]

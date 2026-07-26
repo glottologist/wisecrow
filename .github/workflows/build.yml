@@ -26,7 +26,7 @@ jobs:
       CARGO_TERM_COLOR: always
       TEST_DATABASE_URL: postgres://wisecrow:wisecrow@localhost:5433/wisecrow_test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -48,6 +48,9 @@ jobs:
 
       - name: Clippy (web, server feature)
         run: cargo clippy -p wisecrow-web --features server --all-targets -- -D warnings
+
+      - name: Clippy (web, production media)
+        run: cargo clippy -p wisecrow-web --features server,audio,images --all-targets -- -D warnings
 
       - name: Build workspace
         run: cargo build --workspace

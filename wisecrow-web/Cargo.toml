@@ -35,10 +35,12 @@ gloo-timers = { version = "0.3", features = ["futures"] }
 default = []
 server = ["dioxus/server", "dep:wisecrow-core", "dep:tokio", "dep:sqlx", "dep:dotenvy", "dep:config", "dep:tempfile", "dep:axum", "dep:axum-server", "dep:axum-extra", "dep:tower", "dep:tower-http", "dep:governor", "dep:rustls", "dep:rustls-pemfile"]
 web = ["dioxus/web"]
-audio = ["server", "wisecrow-core/audio", "dep:base64"]
+audio = ["server", "wisecrow-core/tts", "dep:base64"]
 images = ["server", "wisecrow-core/images", "dep:base64", "dep:reqwest"]
 
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 rcgen = "0.13"
+rstest = "0.22"
+serde_json = "1"
 tempfile = "3"

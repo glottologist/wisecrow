@@ -65,12 +65,14 @@ impl Ingester {
         foreign_lang: &str,
     ) -> Result<(), WisecrowError> {
         let path = Self::download_only(&self.config, file).await?;
-        self.ingest_from_file(&path, file, native_lang, foreign_lang)
+        self.ingest_from_file(&path, &file.file_name, native_lang, foreign_lang)
             .await
     }
 
     /// Ingests a local file by parsing it and persisting translations to the
-    /// database.
+    /// database. `label` names the source in the completion log; for a
+    /// downloaded corpus that is the archive name, for a supplied file its
+    /// path.
     ///
     /// The file extension determines the parser: `.tmx` for TMX translation
     /// memory files, anything else for OPUS XML alignment format.
@@ -81,7 +83,7 @@ impl Ingester {
     pub async fn ingest_from_file(
         &self,
         path: &str,
-        file: &LanguageFileInfo,
+        label: &str,
         native_lang: &str,
         foreign_lang: &str,
     ) -> Result<(), WisecrowError> {
@@ -96,7 +98,7 @@ impl Ingester {
         let path_owned = path.to_owned();
         let native = native_lang.to_owned();
         let foreign = foreign_lang.to_owned();
-        let file_name = file.file_name.clone(); // clone: need owned for logging after await
+        let label = label.to_owned(); // owned: needed for logging after the await
 
         let parse_handle = tokio::spawn(async move {
             if std::path::Path::new(&path_owned)
@@ -118,7 +120,7 @@ impl Ingester {
 
         let count = parse_result?;
         persist_result?;
-        tracing::info!("Ingested {count} items from {file_name}");
+        tracing::info!("Ingested {count} items from {label}");
 
         Ok(())
     }

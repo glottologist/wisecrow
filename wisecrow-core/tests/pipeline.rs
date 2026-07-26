@@ -4,7 +4,6 @@ use rstest::rstest;
 use std::io::Write;
 use tempfile::Builder;
 use wisecrow::downloader::DownloadConfig;
-use wisecrow::files::{Compression, Corpus, LanguageFileInfo};
 use wisecrow::ingesting::Ingester;
 
 /// Creates a temp file with the given extension and content.
@@ -22,15 +21,6 @@ fn temp_file_with_extension(extension: &str, content: &str) -> tempfile::NamedTe
     file.flush().expect("Failed to flush temp file");
     drop(file);
     tmp
-}
-
-fn make_file_info(file_name: &str) -> LanguageFileInfo {
-    LanguageFileInfo {
-        corpus: Corpus::OpenSubtitles,
-        target_location: String::new(),
-        file_name: file_name.to_owned(),
-        compressed: Compression::GzCompressed,
-    }
 }
 
 #[rstest]
@@ -60,13 +50,12 @@ async fn ingest_local_file(#[case] format: &str, #[case] n: usize) {
 
     let tmp = temp_file_with_extension(format, &content);
     let path = tmp.path().to_str().unwrap().to_owned();
-    let file_info = make_file_info(&path);
 
     let config = DownloadConfig::default();
     let ingester = Ingester::new(pool.clone(), config); // clone: PgPool is Arc-based
 
     ingester
-        .ingest_from_file(&path, &file_info, "en", "es")
+        .ingest_from_file(&path, &path, "en", "es")
         .await
         .unwrap();
 
@@ -85,19 +74,18 @@ async fn ingest_same_file_twice_idempotent() {
 
     let tmp = temp_file_with_extension("tmx", &content);
     let path = tmp.path().to_str().unwrap().to_owned();
-    let file_info = make_file_info(&path);
 
     let config = DownloadConfig::default();
     let ingester = Ingester::new(pool.clone(), config); // clone: PgPool is Arc-based
 
     ingester
-        .ingest_from_file(&path, &file_info, "en", "es")
+        .ingest_from_file(&path, &path, "en", "es")
         .await
         .unwrap();
     assert_eq!(common::count_translations(&pool).await, 2);
 
     ingester
-        .ingest_from_file(&path, &file_info, "en", "es")
+        .ingest_from_file(&path, &path, "en", "es")
         .await
         .unwrap();
     assert_eq!(common::count_translations(&pool).await, 2);
@@ -126,9 +114,6 @@ async fn concurrent_ingest_different_languages() {
     let path_es = tmp_es.path().to_str().unwrap().to_owned();
     let path_fr = tmp_fr.path().to_str().unwrap().to_owned();
 
-    let file_info_es = make_file_info(&path_es);
-    let file_info_fr = make_file_info(&path_fr);
-
     let config = DownloadConfig::default();
 
     let ingester_es = Ingester::new(pool.clone(), config); // clone: PgPool is Arc-based
@@ -136,14 +121,14 @@ async fn concurrent_ingest_different_languages() {
 
     let handle_es = tokio::spawn(async move {
         ingester_es
-            .ingest_from_file(&path_es, &file_info_es, "en", "es")
+            .ingest_from_file(&path_es, &path_es, "en", "es")
             .await
             .unwrap();
     });
 
     let handle_fr = tokio::spawn(async move {
         ingester_fr
-            .ingest_from_file(&path_fr, &file_info_fr, "en", "fr")
+            .ingest_from_file(&path_fr, &path_fr, "en", "fr")
             .await
             .unwrap();
     });

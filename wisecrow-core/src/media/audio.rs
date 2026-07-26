@@ -1,86 +1,90 @@
+#[cfg(feature = "audio")]
 use std::path::Path;
 
 use crate::errors::WisecrowError;
 
+const TTS_VOICES: &[(&str, &str)] = &[
+    ("af", "af-ZA-AdriNeural"),
+    ("am", "am-ET-AmehaNeural"),
+    ("ar", "ar-SA-HamedNeural"),
+    ("bg", "bg-BG-BorislavNeural"),
+    ("bn", "bn-IN-BashkarNeural"),
+    ("bs", "bs-BA-GoranNeural"),
+    ("ca", "ca-ES-EnricNeural"),
+    ("cs", "cs-CZ-AntoninNeural"),
+    ("cy", "cy-GB-AledNeural"),
+    ("da", "da-DK-JeppeNeural"),
+    ("de", "de-DE-ConradNeural"),
+    ("el", "el-GR-NestorasNeural"),
+    ("en", "en-US-GuyNeural"),
+    ("es", "es-ES-AlvaroNeural"),
+    ("et", "et-EE-KertNeural"),
+    ("fa", "fa-IR-FaridNeural"),
+    ("fi", "fi-FI-HarriNeural"),
+    ("fr", "fr-FR-HenriNeural"),
+    ("ga", "ga-IE-ColmNeural"),
+    ("gl", "gl-ES-RoiNeural"),
+    ("gu", "gu-IN-NiranjanNeural"),
+    ("he", "he-IL-AvriNeural"),
+    ("hi", "hi-IN-MadhurNeural"),
+    ("hr", "hr-HR-SreckoNeural"),
+    ("hu", "hu-HU-TamasNeural"),
+    ("id", "id-ID-ArdiNeural"),
+    ("is", "is-IS-GunnarNeural"),
+    ("it", "it-IT-DiegoNeural"),
+    ("ja", "ja-JP-KeitaNeural"),
+    ("jv", "jv-ID-DimasNeural"),
+    ("ka", "ka-GE-GiorgiNeural"),
+    ("kk", "kk-KZ-DauletNeural"),
+    ("km", "km-KH-PisethNeural"),
+    ("kn", "kn-IN-GaganNeural"),
+    ("ko", "ko-KR-InJoonNeural"),
+    ("lo", "lo-LA-ChanthavongNeural"),
+    ("lt", "lt-LT-LeonasNeural"),
+    ("lv", "lv-LV-NilsNeural"),
+    ("mk", "mk-MK-AleksandarNeural"),
+    ("ml", "ml-IN-MidhunNeural"),
+    ("mn", "mn-MN-BataaNeural"),
+    ("mr", "mr-IN-ManoharNeural"),
+    ("ms", "ms-MY-OsmanNeural"),
+    ("my", "my-MM-ThihaNeural"),
+    ("ne", "ne-NP-SagarNeural"),
+    ("nl", "nl-NL-MaartenNeural"),
+    ("no", "nb-NO-FinnNeural"),
+    ("pa", "pa-IN-GurdeepNeural"),
+    ("pl", "pl-PL-MarekNeural"),
+    ("ps", "ps-AF-GulNawazNeural"),
+    ("pt", "pt-BR-AntonioNeural"),
+    ("ro", "ro-RO-EmilNeural"),
+    ("ru", "ru-RU-DmitryNeural"),
+    ("si", "si-LK-SameeraNeural"),
+    ("sk", "sk-SK-LukasNeural"),
+    ("sl", "sl-SI-RokNeural"),
+    ("so", "so-SO-MuuseNeural"),
+    ("sq", "sq-AL-IlirNeural"),
+    ("sr", "sr-RS-NicholasNeural"),
+    ("su", "su-ID-JajangNeural"),
+    ("sv", "sv-SE-MattiasNeural"),
+    ("sw", "sw-KE-RafikiNeural"),
+    ("ta", "ta-IN-ValluvarNeural"),
+    ("te", "te-IN-MohanNeural"),
+    ("th", "th-TH-NiwatNeural"),
+    ("tl", "fil-PH-BlessicaNeural"),
+    ("tr", "tr-TR-AhmetNeural"),
+    ("uk", "uk-UA-OstapNeural"),
+    ("ur", "ur-PK-AsadNeural"),
+    ("uz", "uz-UZ-SardorNeural"),
+    ("vi", "vi-VN-NamMinhNeural"),
+    ("zh", "zh-CN-YunxiNeural"),
+    ("zu", "zu-ZA-ThembaNeural"),
+];
+
 /// Maps wisecrow language codes to MS Edge TTS voice names.
 #[must_use]
 pub fn voice_for_language(lang_code: &str) -> Option<&'static str> {
-    match lang_code {
-        "af" => Some("af-ZA-AdriNeural"),
-        "am" => Some("am-ET-AmehaNeural"),
-        "ar" => Some("ar-SA-HamedNeural"),
-        "bg" => Some("bg-BG-BorislavNeural"),
-        "bn" => Some("bn-IN-BashkarNeural"),
-        "bs" => Some("bs-BA-GoranNeural"),
-        "ca" => Some("ca-ES-EnricNeural"),
-        "cs" => Some("cs-CZ-AntoninNeural"),
-        "cy" => Some("cy-GB-AledNeural"),
-        "da" => Some("da-DK-JeppeNeural"),
-        "de" => Some("de-DE-ConradNeural"),
-        "el" => Some("el-GR-NestorasNeural"),
-        "en" => Some("en-US-GuyNeural"),
-        "es" => Some("es-ES-AlvaroNeural"),
-        "et" => Some("et-EE-KertNeural"),
-        "fa" => Some("fa-IR-FaridNeural"),
-        "fi" => Some("fi-FI-HarriNeural"),
-        "fr" => Some("fr-FR-HenriNeural"),
-        "ga" => Some("ga-IE-ColmNeural"),
-        "gl" => Some("gl-ES-RoiNeural"),
-        "gu" => Some("gu-IN-NiranjanNeural"),
-        "he" => Some("he-IL-AvriNeural"),
-        "hi" => Some("hi-IN-MadhurNeural"),
-        "hr" => Some("hr-HR-SreckoNeural"),
-        "hu" => Some("hu-HU-TamasNeural"),
-        "id" => Some("id-ID-ArdiNeural"),
-        "is" => Some("is-IS-GunnarNeural"),
-        "it" => Some("it-IT-DiegoNeural"),
-        "ja" => Some("ja-JP-KeitaNeural"),
-        "jv" => Some("jv-ID-DimasNeural"),
-        "ka" => Some("ka-GE-GiorgiNeural"),
-        "kk" => Some("kk-KZ-DauletNeural"),
-        "km" => Some("km-KH-PisethNeural"),
-        "kn" => Some("kn-IN-GaganNeural"),
-        "ko" => Some("ko-KR-InJoonNeural"),
-        "lo" => Some("lo-LA-ChanthavongNeural"),
-        "lt" => Some("lt-LT-LeonasNeural"),
-        "lv" => Some("lv-LV-NilsNeural"),
-        "mk" => Some("mk-MK-AleksandarNeural"),
-        "ml" => Some("ml-IN-MidhunNeural"),
-        "mn" => Some("mn-MN-BataaNeural"),
-        "mr" => Some("mr-IN-ManoharNeural"),
-        "ms" => Some("ms-MY-OsmanNeural"),
-        "my" => Some("my-MM-ThihaNeural"),
-        "ne" => Some("ne-NP-SagarNeural"),
-        "nl" => Some("nl-NL-MaartenNeural"),
-        "no" => Some("nb-NO-FinnNeural"),
-        "pa" => Some("pa-IN-GurdeepNeural"),
-        "pl" => Some("pl-PL-MarekNeural"),
-        "ps" => Some("ps-AF-GulNawazNeural"),
-        "pt" => Some("pt-BR-AntonioNeural"),
-        "ro" => Some("ro-RO-EmilNeural"),
-        "ru" => Some("ru-RU-DmitryNeural"),
-        "si" => Some("si-LK-SameeraNeural"),
-        "sk" => Some("sk-SK-LukasNeural"),
-        "sl" => Some("sl-SI-RokNeural"),
-        "so" => Some("so-SO-MuuseNeural"),
-        "sq" => Some("sq-AL-IlirNeural"),
-        "sr" => Some("sr-RS-NicholasNeural"),
-        "su" => Some("su-ID-JajangNeural"),
-        "sv" => Some("sv-SE-MattiasNeural"),
-        "sw" => Some("sw-KE-RafikiNeural"),
-        "ta" => Some("ta-IN-ValluvarNeural"),
-        "te" => Some("te-IN-MohanNeural"),
-        "th" => Some("th-TH-NiwatNeural"),
-        "tl" => Some("fil-PH-BlessicaNeural"),
-        "tr" => Some("tr-TR-AhmetNeural"),
-        "uk" => Some("uk-UA-OstapNeural"),
-        "ur" => Some("ur-PK-AsadNeural"),
-        "uz" => Some("uz-UZ-SardorNeural"),
-        "vi" => Some("vi-VN-NamMinhNeural"),
-        "zh" => Some("zh-CN-YunxiNeural"),
-        "zu" => Some("zu-ZA-ThembaNeural"),
-        _ => None,
-    }
+    TTS_VOICES
+        .iter()
+        .find_map(|(code, voice)| (*code == lang_code).then_some(*voice))
 }
 
 /// Generates MP3 audio for the given text using MS Edge TTS.
@@ -94,8 +98,8 @@ pub async fn generate_tts(text: &str, lang_code: &str) -> Result<Vec<u8>, Wisecr
         WisecrowError::MediaError(format!("No TTS voice available for language: {lang_code}"))
     })?;
 
-    let text = text.to_owned();
-    let voice = voice.to_owned();
+    let text = String::from(text);
+    let voice = String::from(voice);
 
     tokio::task::spawn_blocking(move || {
         let mut tts = msedge_tts::tts::client::connect()
@@ -105,7 +109,7 @@ pub async fn generate_tts(text: &str, lang_code: &str) -> Result<Vec<u8>, Wisecr
             &msedge_tts::voice::get_voices_list()
                 .map_err(|e| WisecrowError::MediaError(format!("Failed to get voices: {e}")))?
                 .into_iter()
-                .find(|v| v.short_name == voice)
+                .find(|candidate| candidate.short_name.as_deref() == Some(voice.as_str()))
                 .ok_or_else(|| WisecrowError::MediaError(format!("Voice not found: {voice}")))?,
         );
 
@@ -125,6 +129,7 @@ pub async fn generate_tts(text: &str, lang_code: &str) -> Result<Vec<u8>, Wisecr
 ///
 /// Returns an error if the audio file cannot be opened or the output
 /// device is unavailable.
+#[cfg(feature = "audio")]
 pub fn play_audio(path: &Path) -> Result<(), WisecrowError> {
     use std::fs::File;
     use std::io::BufReader;
