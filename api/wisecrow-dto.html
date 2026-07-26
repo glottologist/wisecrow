@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Introduction - WiseCrow Documentation</title>
+        <title>wisecrow-dto - WiseCrow Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -12,20 +12,20 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="favicon-de23e50b.svg">
-        <link rel="shortcut icon" href="favicon-8114d1fc.png">
-        <link rel="stylesheet" href="css/variables-8adf115d.css">
-        <link rel="stylesheet" href="css/general-e96d0476.css">
-        <link rel="stylesheet" href="css/chrome-d279d366.css">
-        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-e96d0476.css">
+        <link rel="stylesheet" href="../css/chrome-d279d366.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
-        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
-        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
 
         <!-- Custom theme stylesheets -->
 
@@ -34,13 +34,13 @@
 
         <!-- Provide site root and default themes to javascript -->
         <script>
-            const path_to_root = "";
+            const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-0de4a196.js";
+            window.path_to_searchindex_js = "../searchindex-0de4a196.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-d4c59dab.js"></script>
+        <script src="../toc-d4c59dab.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -107,7 +107,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
             </noscript>
             <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -142,7 +142,7 @@
                     <h1 class="menu-title">WiseCrow Documentation</h1>
 
                     <div class="right-buttons">
-                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
                         </a>
                         <a href="https://github.com/glottologist/wisecrow" title="Git repository" aria-label="Git repository">
@@ -179,76 +179,187 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
-<p>Wisecrow is an intensive language-cramming toolkit built around the idea that
-<em>frequency drives fluency</em>. It mines large multilingual subtitle and translation
-corpora from <a href="https://opus.nlpl.eu">OPUS</a> — OpenSubtitles, CCAligned, CCMatrix,
-ParaCrawl and NLLB —
-and turns them into a frequency-ordered flashcard deck backed by an
-<a href="https://github.com/open-spaced-repetition/rs-fsrs">FSRS</a> spaced-repetition
-scheduler.</p>
-<p>It is designed for learners who want to <strong>front-load high-frequency vocabulary</strong>
-in a target language, see it in subtitle context, and review it in a focused
-loop without leaving the terminal.</p>
-<h2 id="what-wisecrow-does"><a class="header" href="#what-wisecrow-does">What Wisecrow does</a></h2>
+                        <h1 id="wisecrow-dto"><a class="header" href="#wisecrow-dto">wisecrow-dto</a></h1>
+<p><code>wisecrow-dto</code> is the small types-only crate shared between the server, the
+web UI, and the mobile shell. It depends only on <code>chrono</code> and <code>serde</code> so it
+can be compiled to WASM without dragging in a Tokio runtime.</p>
+<h2 id="when-to-depend-on-it"><a class="header" href="#when-to-depend-on-it">When to depend on it</a></h2>
 <ul>
-<li><strong>Ingests</strong> TMX and OPUS XML alignment archives directly from OPUS, with
-retry, decompression, and size limits.</li>
-<li><strong>Persists</strong> translation pairs into PostgreSQL with frequency counts and a
-unique <code>(from_phrase, to_phrase)</code> constraint that makes re-ingestion safe.</li>
-<li><strong>Schedules</strong> review using FSRS, with sessions that can be paused and resumed.</li>
-<li><strong>Drills</strong> with two TUI modes: a Leitner-style flashcard runner, and a
-research-grade dual n-back that uses your own vocabulary as stimuli.</li>
-<li><strong>Generates</strong> CEFR-graded grammar rules and quizzes via Anthropic or OpenAI
-LLM providers.</li>
-<li><strong>Syncs</strong> translations and grammar rules between Wisecrow instances over
-HTTP.</li>
-<li><strong>Augments</strong> cards with on-demand audio (Microsoft Edge TTS) and imagery
-(Unsplash) — both feature-gated and optional.</li>
+<li>You are writing a Dioxus client that calls server-functions.</li>
+<li>You need to deserialize Wisecrow JSON payloads from another tool.</li>
+<li>You want to keep your binary small and cannot afford <code>wisecrow-core</code>’s
+dependency footprint.</li>
 </ul>
-<h2 id="what-it-is-not"><a class="header" href="#what-it-is-not">What it is not</a></h2>
-<ul>
-<li>Wisecrow is <strong>not a translator</strong>. It assumes the target corpora already
-contain translations.</li>
-<li>It is <strong>not a course</strong>. It will not teach you grammar progressively;
-it ranks by frequency and lets you grind.</li>
-<li>The web and mobile front-ends in this workspace are <strong>early-stage</strong>.
-The TUI is the production interface today.</li>
-</ul>
-<h2 id="workspace-at-a-glance"><a class="header" href="#workspace-at-a-glance">Workspace at a glance</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Crate</th><th>Purpose</th></tr>
-</thead>
-<tbody>
-<tr><td><code>wisecrow-core</code></td><td>Library plus the <code>wisecrow</code> CLI binary. All ingestion, scheduling, drilling, and persistence lives here.</td></tr>
-<tr><td><code>wisecrow-dto</code></td><td>Plain-old serializable types shared between the server and front-end clients.</td></tr>
-<tr><td><code>wisecrow-web</code></td><td><a href="https://dioxuslabs.com">Dioxus</a> fullstack web UI. Server features gate the database-backed routes.</td></tr>
-<tr><td><code>wisecrow-mobile</code></td><td>Dioxus mobile/desktop shell that calls into the web server functions.</td></tr>
-</tbody>
-</table>
-</div>
-<blockquote>
-<p><strong>Note:</strong> Wisecrow expects you to bring your own PostgreSQL database. The
-first <code>ingest</code> (or any database-touching command) automatically applies the
-bundled migrations from <code>wisecrow-core/migrations/</code>.</p>
-</blockquote>
-<h2 id="where-to-start"><a class="header" href="#where-to-start">Where to start</a></h2>
-<ul>
-<li>New here? Jump to <a href="./getting-started/installation.html">Installation</a>, then
-<a href="./getting-started/configuration.html">Configuration</a>.</li>
-<li>Trying to drill on existing data? See the <a href="./guides/learn-tui.html">Learn TUI guide</a>.</li>
-<li>Building on the library? Open the <a href="./reference/architecture.html">Architecture overview</a>
-followed by the <a href="./api/wisecrow-core.html">API references</a>.</li>
-</ul>
+<p>If you also need the database, scheduling, or LLM logic, depend on
+<code>wisecrow-core</code> instead — it re-exports <code>wisecrow-dto</code> indirectly via
+<code>dto_convert</code>.</p>
+<h2 id="cards-and-reviews"><a class="header" href="#cards-and-reviews">Cards and reviews</a></h2>
+<pre><code class="language-rust ignore">pub struct CardDto {
+    pub card_id: i32,
+    pub translation_id: i32,
+    pub from_phrase: String,
+    pub to_phrase: String,
+    pub frequency: i32,
+    pub stability: f64,
+    pub difficulty: f64,
+    pub state: CardStatusDto,
+    pub due: DateTime&lt;Utc&gt;,
+    pub reps: i32,
+    pub lapses: i32,
+}
+
+pub enum CardStatusDto { New, Learning, Review, Relearning }
+pub enum ReviewRatingDto { Again, Hard, Good, Easy }</code></pre>
+<p><code>CardDto</code> is a snapshot — once mutated server-side, expect a fresh
+<code>CardDto</code> back from the next call. Do not patch in place.</p>
+<h2 id="sessions"><a class="header" href="#sessions">Sessions</a></h2>
+<pre><code class="language-rust ignore">pub struct SessionDto {
+    pub id: i32,
+    pub native_lang: String,
+    pub foreign_lang: String,
+    pub deck_size: i32,
+    pub speed_ms: i32,
+    pub current_index: i32,
+    pub cards: Vec&lt;CardDto&gt;,
+}
+
+pub struct SessionSummary {
+    pub cards_seen: usize,
+    pub total: usize,
+    pub streak: usize,
+}</code></pre>
+<h2 id="quizzes"><a class="header" href="#quizzes">Quizzes</a></h2>
+<pre><code class="language-rust ignore">pub struct ClozeQuizDto {
+    pub sentence_with_blank: String,
+    pub answer: String,
+    pub hint: Option&lt;String&gt;,
+    pub rule_context: Option&lt;RuleContextDto&gt;,
+}
+
+pub struct MultipleChoiceQuizDto {
+    pub question: String,
+    pub options: Vec&lt;String&gt;,
+    pub correct_index: usize,
+    pub rule_context: Option&lt;RuleContextDto&gt;,
+}
+
+pub struct RuleContextDto {
+    pub rule_title: String,
+    pub rule_explanation: String,
+    pub cefr_level: String,
+    pub extra_examples: Vec&lt;String&gt;,
+}
+
+pub enum QuizItemDto {
+    Cloze(ClozeQuizDto),
+    MultipleChoice(MultipleChoiceQuizDto),
+}</code></pre>
+<p><code>rule_context</code> is filled in for quizzes generated from stored grammar rules
+and left <code>None</code> for quizzes generated ad-hoc (for example via
+<code>wisecrow quiz</code>).</p>
+<h2 id="languages-and-users"><a class="header" href="#languages-and-users">Languages and users</a></h2>
+<pre><code class="language-rust ignore">pub struct LanguageInfo {
+    pub code: String,
+    pub name: String,
+    pub script_direction: ScriptDirection,
+}
+
+pub enum ScriptDirection { Ltr, Rtl }
+
+pub struct UserDto {
+    pub id: i32,
+    pub display_name: String,
+}</code></pre>
+<p><code>ScriptDirection::Rtl</code> is set for <code>ar</code>, <code>he</code>, <code>fa</code>, <code>ur</code>, <code>ps</code>, <code>sd</code>, <code>yi</code>.
+The list lives in <code>wisecrow_core::dto_convert::RTL_LANGUAGES</code>.</p>
+<h2 id="grammar-rules"><a class="header" href="#grammar-rules">Grammar rules</a></h2>
+<pre><code class="language-rust ignore">pub struct CefrLevelDto { pub code: String, pub name: String }
+
+pub struct GrammarRuleDto {
+    pub id: i32,
+    pub title: String,
+    pub explanation: String,
+    pub cefr_level: String,
+    pub source: String,
+    pub examples: Vec&lt;RuleExampleDto&gt;,
+}
+
+pub struct RuleExampleDto {
+    pub sentence: String,
+    pub translation: Option&lt;String&gt;,
+    pub is_correct: bool,
+}
+
+pub struct GrammarRuleImport {
+    pub title: String,
+    pub explanation: String,
+    pub cefr_level: String,
+    pub examples: Vec&lt;RuleExampleImport&gt;,
+}
+
+pub struct RuleExampleImport {
+    pub sentence: String,
+    pub translation: Option&lt;String&gt;,
+    pub is_correct: bool,   // serde default = true
+}</code></pre>
+<p><code>GrammarRuleImport</code> is the file format consumed by
+<code>wisecrow import-grammar --file rules.json</code>.</p>
+<h2 id="sync-dtos"><a class="header" href="#sync-dtos">Sync DTOs</a></h2>
+<pre><code class="language-rust ignore">pub struct SyncLanguageDto    { pub id: i32, pub code: String, pub name: String }
+pub struct SyncTranslationDto { pub id: i32, pub from_language_code: String, pub from_phrase: String,
+                                pub to_language_code: String, pub to_phrase: String, pub frequency: i32 }
+pub struct SyncGrammarRuleDto { pub id, pub language_code, pub cefr_level_code, pub title, pub explanation,
+                                pub source, pub examples: Vec&lt;SyncRuleExampleDto&gt; }
+pub struct SyncRuleExampleDto { pub sentence, pub translation, pub is_correct }
+pub struct SyncProgressDto    { pub table: String, pub synced: usize, pub total: usize }</code></pre>
+<p>These mirror the production schema closely but use codes instead of foreign
+keys so a sync can succeed against a server with a different <code>languages.id</code>
+mapping.</p>
+<h2 id="dual-n-back"><a class="header" href="#dual-n-back">Dual n-back</a></h2>
+<pre><code class="language-rust ignore">pub enum DnbModeDto { AudioWritten, WordTranslation, AudioImage }
+
+pub struct DnbConfigDto {
+    pub mode: DnbModeDto,
+    pub n_level: u8,
+    pub interval_ms: u32,
+    pub native_lang: String,
+    pub foreign_lang: String,
+    pub user_id: i32,
+}
+
+pub struct DnbTrialDto { /* trial_number, n_level, audio_phrase, visual_phrase, audio_match, visual_match, interval_ms */ }
+pub struct DnbTrialResultDto { /* trial_number, audio_response, visual_response, response_time_ms */ }
+pub struct DnbAdaptationDto { /* new_n_level, new_interval_ms, audio_accuracy, visual_accuracy, should_terminate */ }
+pub struct DnbSessionResultsDto { /* session_id, mode, n_level_start/peak/end, trials_completed, accuracy_audio/visual, interval_ms_start/end */ }</code></pre>
+<h2 id="speedcontroller"><a class="header" href="#speedcontroller">SpeedController</a></h2>
+<p>The crate also exposes a small value type used by the auto-advance UI:</p>
+<pre><code class="language-rust ignore">pub struct SpeedController { /* private fields */ }
+
+impl SpeedController {
+    pub fn new(interval_ms: u32) -&gt; Self;          // clamped to [500, 10000]
+    pub fn tick(&amp;mut self, elapsed_ms: u32) -&gt; bool;
+    pub fn reset(&amp;mut self);
+    pub fn speed_up(&amp;mut self);                    // -500ms, min 500
+    pub fn slow_down(&amp;mut self);                   // +500ms, max 10000
+    pub fn pause(&amp;mut self);
+    pub fn unpause(&amp;mut self);
+    pub fn is_paused(&amp;self) -&gt; bool;
+    pub fn remaining_fraction(&amp;self) -&gt; f64;       // 0.0..=1.0
+    pub fn interval_ms(&amp;self) -&gt; u32;
+    pub fn remaining_ms(&amp;self) -&gt; u32;
+}</code></pre>
+<p><code>SpeedController</code> is <code>Serialize + Deserialize</code> so it can survive a round-trip
+through a server function.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../api/wisecrow-core.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
 
-                            <a rel="next prefetch" href="getting-started/installation.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../api/wisecrow-web.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -258,8 +369,11 @@ followed by the <a href="./api/wisecrow-core.html">API references</a>.</li>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../api/wisecrow-core.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
 
-                    <a rel="next prefetch" href="getting-started/installation.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../api/wisecrow-web.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -281,19 +395,19 @@ followed by the <a href="./api/wisecrow-core.html">API references</a>.</li>
             window.playground_copyable = true;
         </script>
 
-        <script src="ace-2a3cd908.js"></script>
-        <script src="mode-rust-2c9d5c9a.js"></script>
-        <script src="editor-16ca416c.js"></script>
-        <script src="theme-dawn-4493f9c8.js"></script>
-        <script src="theme-tomorrow_night-9dbe62a9.js"></script>
+        <script src="../ace-2a3cd908.js"></script>
+        <script src="../mode-rust-2c9d5c9a.js"></script>
+        <script src="../editor-16ca416c.js"></script>
+        <script src="../theme-dawn-4493f9c8.js"></script>
+        <script src="../theme-tomorrow_night-9dbe62a9.js"></script>
 
-        <script src="elasticlunr-ef4e11c1.min.js"></script>
-        <script src="mark-09e88c2c.min.js"></script>
-        <script src="searcher-09f2665d.js"></script>
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-09f2665d.js"></script>
 
-        <script src="clipboard-1626706a.min.js"></script>
-        <script src="highlight-abc7f01d.js"></script>
-        <script src="book-609e4cb8.js"></script>
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-609e4cb8.js"></script>
 
         <!-- Custom JS scripts -->
 

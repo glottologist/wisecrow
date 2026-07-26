@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Introduction - WiseCrow Documentation</title>
+        <title>Contributing - WiseCrow Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -12,20 +12,20 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="favicon-de23e50b.svg">
-        <link rel="shortcut icon" href="favicon-8114d1fc.png">
-        <link rel="stylesheet" href="css/variables-8adf115d.css">
-        <link rel="stylesheet" href="css/general-e96d0476.css">
-        <link rel="stylesheet" href="css/chrome-d279d366.css">
-        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-e96d0476.css">
+        <link rel="stylesheet" href="../css/chrome-d279d366.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
-        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
-        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
 
         <!-- Custom theme stylesheets -->
 
@@ -34,13 +34,13 @@
 
         <!-- Provide site root and default themes to javascript -->
         <script>
-            const path_to_root = "";
+            const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-0de4a196.js";
+            window.path_to_searchindex_js = "../searchindex-0de4a196.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-d4c59dab.js"></script>
+        <script src="../toc-d4c59dab.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -107,7 +107,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
             </noscript>
             <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -142,7 +142,7 @@
                     <h1 class="menu-title">WiseCrow Documentation</h1>
 
                     <div class="right-buttons">
-                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
                         </a>
                         <a href="https://github.com/glottologist/wisecrow" title="Git repository" aria-label="Git repository">
@@ -179,76 +179,117 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
-<p>Wisecrow is an intensive language-cramming toolkit built around the idea that
-<em>frequency drives fluency</em>. It mines large multilingual subtitle and translation
-corpora from <a href="https://opus.nlpl.eu">OPUS</a> — OpenSubtitles, CCAligned, CCMatrix,
-ParaCrawl and NLLB —
-and turns them into a frequency-ordered flashcard deck backed by an
-<a href="https://github.com/open-spaced-repetition/rs-fsrs">FSRS</a> spaced-repetition
-scheduler.</p>
-<p>It is designed for learners who want to <strong>front-load high-frequency vocabulary</strong>
-in a target language, see it in subtitle context, and review it in a focused
-loop without leaving the terminal.</p>
-<h2 id="what-wisecrow-does"><a class="header" href="#what-wisecrow-does">What Wisecrow does</a></h2>
-<ul>
-<li><strong>Ingests</strong> TMX and OPUS XML alignment archives directly from OPUS, with
-retry, decompression, and size limits.</li>
-<li><strong>Persists</strong> translation pairs into PostgreSQL with frequency counts and a
-unique <code>(from_phrase, to_phrase)</code> constraint that makes re-ingestion safe.</li>
-<li><strong>Schedules</strong> review using FSRS, with sessions that can be paused and resumed.</li>
-<li><strong>Drills</strong> with two TUI modes: a Leitner-style flashcard runner, and a
-research-grade dual n-back that uses your own vocabulary as stimuli.</li>
-<li><strong>Generates</strong> CEFR-graded grammar rules and quizzes via Anthropic or OpenAI
-LLM providers.</li>
-<li><strong>Syncs</strong> translations and grammar rules between Wisecrow instances over
-HTTP.</li>
-<li><strong>Augments</strong> cards with on-demand audio (Microsoft Edge TTS) and imagery
-(Unsplash) — both feature-gated and optional.</li>
-</ul>
-<h2 id="what-it-is-not"><a class="header" href="#what-it-is-not">What it is not</a></h2>
-<ul>
-<li>Wisecrow is <strong>not a translator</strong>. It assumes the target corpora already
-contain translations.</li>
-<li>It is <strong>not a course</strong>. It will not teach you grammar progressively;
-it ranks by frequency and lets you grind.</li>
-<li>The web and mobile front-ends in this workspace are <strong>early-stage</strong>.
-The TUI is the production interface today.</li>
-</ul>
-<h2 id="workspace-at-a-glance"><a class="header" href="#workspace-at-a-glance">Workspace at a glance</a></h2>
+                        <h1 id="contributing"><a class="header" href="#contributing">Contributing</a></h1>
+<p>Wisecrow is a small project with strong conventions. This page distils the
+ones you need to follow before submitting a patch.</p>
+<h2 id="tooling"><a class="header" href="#tooling">Tooling</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Crate</th><th>Purpose</th></tr>
+<tr><th>Tool</th><th>Why</th></tr>
 </thead>
 <tbody>
-<tr><td><code>wisecrow-core</code></td><td>Library plus the <code>wisecrow</code> CLI binary. All ingestion, scheduling, drilling, and persistence lives here.</td></tr>
-<tr><td><code>wisecrow-dto</code></td><td>Plain-old serializable types shared between the server and front-end clients.</td></tr>
-<tr><td><code>wisecrow-web</code></td><td><a href="https://dioxuslabs.com">Dioxus</a> fullstack web UI. Server features gate the database-backed routes.</td></tr>
-<tr><td><code>wisecrow-mobile</code></td><td>Dioxus mobile/desktop shell that calls into the web server functions.</td></tr>
+<tr><td><code>cargo build</code> / <code>cargo check</code></td><td>Verify the workspace compiles.</td></tr>
+<tr><td><code>cargo nextest run</code></td><td>Run the test suite (fall back to <code>cargo test</code> if you don’t have nextest).</td></tr>
+<tr><td><code>cargo clippy --workspace --all-targets</code></td><td>The codebase is required to be clippy-clean — no <code>#[allow]</code> annotations are acceptable.</td></tr>
+<tr><td><code>cargo fmt --all</code></td><td>The repository is <code>rustfmt</code>-formatted.</td></tr>
 </tbody>
 </table>
 </div>
-<blockquote>
-<p><strong>Note:</strong> Wisecrow expects you to bring your own PostgreSQL database. The
-first <code>ingest</code> (or any database-touching command) automatically applies the
-bundled migrations from <code>wisecrow-core/migrations/</code>.</p>
-</blockquote>
-<h2 id="where-to-start"><a class="header" href="#where-to-start">Where to start</a></h2>
+<p>A pre-commit hook is wired through <code>pre-commit-config.yaml</code>; install
+<a href="https://pre-commit.com/"><code>pre-commit</code></a> and run <code>pre-commit install</code> to get
+the hooks locally.</p>
+<h2 id="workspace-conventions"><a class="header" href="#workspace-conventions">Workspace conventions</a></h2>
+<p>These rules live in the project’s <code>CLAUDE.md</code> and are enforced in review:</p>
 <ul>
-<li>New here? Jump to <a href="./getting-started/installation.html">Installation</a>, then
-<a href="./getting-started/configuration.html">Configuration</a>.</li>
-<li>Trying to drill on existing data? See the <a href="./guides/learn-tui.html">Learn TUI guide</a>.</li>
-<li>Building on the library? Open the <a href="./reference/architecture.html">Architecture overview</a>
-followed by the <a href="./api/wisecrow-core.html">API references</a>.</li>
+<li><strong>No <code>as</code> numeric casts.</strong> Use <code>try_from</code>, <code>into</code>, or <code>From</code>. Compile-time
+literals are the only exception.</li>
+<li><strong>No silent error discards.</strong> <code>let _ = expr_returning_Result</code> is a bug.
+Either propagate with <code>?</code> or log with <code>tracing::warn!</code>.</li>
+<li><strong>No <code>unreachable!()</code> outside tests.</strong> “Should never happen” branches still
+return <code>Err</code>.</li>
+<li><strong>Justify every <code>.clone()</code>.</strong> Production clones must carry an inline
+<code>// clone: &lt;reason&gt;</code> comment. Tests are exempt.</li>
+<li><strong>Use <code>Url</code> for URL construction.</strong> Never <code>format!()</code> URLs — that is how
+double-slash bugs are born.</li>
+<li><strong><code>unwrap</code>/<code>expect</code>/<code>panic!</code> are forbidden</strong> in async tasks and HTTP
+handlers. Convert to <code>?</code>.</li>
+</ul>
+<h2 id="test-hierarchy"><a class="header" href="#test-hierarchy">Test hierarchy</a></h2>
+<p>Pick the test type <em>before</em> writing it:</p>
+<ol>
+<li><strong>Property-based (<code>proptest</code>)</strong> — pure functions, parsers, validators,
+serializers. The first choice for anything with an invariant.</li>
+<li><strong>Parameterised (<code>rstest</code>)</strong> — bounded enum exhaustion or fewer than ~10
+specific cases.</li>
+<li><strong>Standalone</strong> — only when you genuinely need bespoke setup or mocking.</li>
+</ol>
+<p>Do not write a standalone test “to get it working” with the intent of
+converting it later. The conversion never happens.</p>
+<p>Tests live alongside the code in <code>#[cfg(test)] mod tests</code> blocks. Use
+<code>tests/</code> directories only for crate-spanning integration tests.</p>
+<h2 id="database-changes"><a class="header" href="#database-changes">Database changes</a></h2>
+<ul>
+<li>New migrations go in <code>wisecrow-core/migrations/</code> numbered sequentially
+(<code>0NN_short_name.sql</code>).</li>
+<li>Migrations run automatically on first connection, so the workspace’s tests
+must be runnable against a fresh database.</li>
+<li>Always include the matching <code>DROP</code> semantics by relying on <code>ON DELETE CASCADE</code> rather than ad-hoc cleanup.</li>
+</ul>
+<h2 id="documentation-changes"><a class="header" href="#documentation-changes">Documentation changes</a></h2>
+<ul>
+<li>Public types should have rustdoc comments (<code>///</code>). Document <code># Errors</code>
+and <code># Panics</code> sections where they apply.</li>
+<li>This mdBook (<code>docs/</code>) is not auto-generated; if you change a CLI surface
+or a library type, update the relevant page in <code>docs/src/</code>.</li>
+<li>Code examples in this book are not currently doctested. Keep them small
+and obviously correct; copy them from real source where possible.</li>
+</ul>
+<h2 id="commit-messages"><a class="header" href="#commit-messages">Commit messages</a></h2>
+<p>Recent history is the source of truth. Run <code>git log --oneline -20</code> and
+follow the prevailing style — short subject, optional body, no
+<code>Co-Authored-By:</code> for human contributors.</p>
+<h2 id="adding-a-new-command"><a class="header" href="#adding-a-new-command">Adding a new command</a></h2>
+<p>A typical CLI addition has the following touch-points:</p>
+<ol>
+<li>New <code>Args</code> struct + <code>Command</code> variant in <code>wisecrow-core/src/cli.rs</code>.</li>
+<li>New handler function in <code>wisecrow-core/src/bin/wisecrow.rs</code>.</li>
+<li>Library code in the appropriate module under <code>wisecrow-core/src/</code>.</li>
+<li>Updated rstest cases in <code>cli.rs</code> covering both the long and short alias.</li>
+<li>New page in <code>docs/src/reference/cli-reference.md</code> and (if user-facing) a
+guide in <code>docs/src/guides/</code>.</li>
+<li>Updated <code>docs/src/SUMMARY.md</code>.</li>
+</ol>
+<h2 id="reporting-issues"><a class="header" href="#reporting-issues">Reporting issues</a></h2>
+<p>The repository is at <a href="https://github.com/glottologist/wisecrow">https://github.com/glottologist/wisecrow</a>. Please
+include:</p>
+<ul>
+<li>The exact command you ran.</li>
+<li>The output of <code>wisecrow --version</code>.</li>
+<li>A minimal reproduction (a small ingest script, a redacted SQL snapshot, …).</li>
+<li>Logs at <code>RUST_LOG=wisecrow=debug,info</code>.</li>
+</ul>
+<h2 id="dependency-policy"><a class="header" href="#dependency-policy">Dependency policy</a></h2>
+<p>Wisecrow leans on a curated set of crates. Adding new dependencies is a
+review-able event:</p>
+<ul>
+<li>Prefer <code>tokio</code>-native crates for async work.</li>
+<li>Database access goes through <code>sqlx</code>. Adding a different driver is unlikely
+to be accepted.</li>
+<li>Audio/image dependencies must stay behind their respective feature flags.</li>
+<li>HTTP clients should be <code>reqwest</code> with <code>rustls-tls</code> to keep cross-platform
+builds simple.</li>
 </ul>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../reference/translating.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
 
-                            <a rel="next prefetch" href="getting-started/installation.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../api/wisecrow-core.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -258,8 +299,11 @@ followed by the <a href="./api/wisecrow-core.html">API references</a>.</li>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../reference/translating.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
 
-                    <a rel="next prefetch" href="getting-started/installation.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../api/wisecrow-core.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -281,19 +325,19 @@ followed by the <a href="./api/wisecrow-core.html">API references</a>.</li>
             window.playground_copyable = true;
         </script>
 
-        <script src="ace-2a3cd908.js"></script>
-        <script src="mode-rust-2c9d5c9a.js"></script>
-        <script src="editor-16ca416c.js"></script>
-        <script src="theme-dawn-4493f9c8.js"></script>
-        <script src="theme-tomorrow_night-9dbe62a9.js"></script>
+        <script src="../ace-2a3cd908.js"></script>
+        <script src="../mode-rust-2c9d5c9a.js"></script>
+        <script src="../editor-16ca416c.js"></script>
+        <script src="../theme-dawn-4493f9c8.js"></script>
+        <script src="../theme-tomorrow_night-9dbe62a9.js"></script>
 
-        <script src="elasticlunr-ef4e11c1.min.js"></script>
-        <script src="mark-09e88c2c.min.js"></script>
-        <script src="searcher-09f2665d.js"></script>
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-09f2665d.js"></script>
 
-        <script src="clipboard-1626706a.min.js"></script>
-        <script src="highlight-abc7f01d.js"></script>
-        <script src="book-609e4cb8.js"></script>
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-609e4cb8.js"></script>
 
         <!-- Custom JS scripts -->
 

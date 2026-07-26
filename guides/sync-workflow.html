@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Introduction - WiseCrow Documentation</title>
+        <title>Sync workflow - WiseCrow Documentation</title>
 
 
         <!-- Custom HTML head -->
@@ -12,20 +12,20 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="favicon-de23e50b.svg">
-        <link rel="shortcut icon" href="favicon-8114d1fc.png">
-        <link rel="stylesheet" href="css/variables-8adf115d.css">
-        <link rel="stylesheet" href="css/general-e96d0476.css">
-        <link rel="stylesheet" href="css/chrome-d279d366.css">
-        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-e96d0476.css">
+        <link rel="stylesheet" href="../css/chrome-d279d366.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
-        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
-        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
 
         <!-- Custom theme stylesheets -->
 
@@ -34,13 +34,13 @@
 
         <!-- Provide site root and default themes to javascript -->
         <script>
-            const path_to_root = "";
+            const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-0de4a196.js";
+            window.path_to_searchindex_js = "../searchindex-0de4a196.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-d4c59dab.js"></script>
+        <script src="../toc-d4c59dab.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -107,7 +107,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
             </noscript>
             <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -142,7 +142,7 @@
                     <h1 class="menu-title">WiseCrow Documentation</h1>
 
                     <div class="right-buttons">
-                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
                         </a>
                         <a href="https://github.com/glottologist/wisecrow" title="Git repository" aria-label="Git repository">
@@ -179,76 +179,103 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
-<p>Wisecrow is an intensive language-cramming toolkit built around the idea that
-<em>frequency drives fluency</em>. It mines large multilingual subtitle and translation
-corpora from <a href="https://opus.nlpl.eu">OPUS</a> — OpenSubtitles, CCAligned, CCMatrix,
-ParaCrawl and NLLB —
-and turns them into a frequency-ordered flashcard deck backed by an
-<a href="https://github.com/open-spaced-repetition/rs-fsrs">FSRS</a> spaced-repetition
-scheduler.</p>
-<p>It is designed for learners who want to <strong>front-load high-frequency vocabulary</strong>
-in a target language, see it in subtitle context, and review it in a focused
-loop without leaving the terminal.</p>
-<h2 id="what-wisecrow-does"><a class="header" href="#what-wisecrow-does">What Wisecrow does</a></h2>
-<ul>
-<li><strong>Ingests</strong> TMX and OPUS XML alignment archives directly from OPUS, with
-retry, decompression, and size limits.</li>
-<li><strong>Persists</strong> translation pairs into PostgreSQL with frequency counts and a
-unique <code>(from_phrase, to_phrase)</code> constraint that makes re-ingestion safe.</li>
-<li><strong>Schedules</strong> review using FSRS, with sessions that can be paused and resumed.</li>
-<li><strong>Drills</strong> with two TUI modes: a Leitner-style flashcard runner, and a
-research-grade dual n-back that uses your own vocabulary as stimuli.</li>
-<li><strong>Generates</strong> CEFR-graded grammar rules and quizzes via Anthropic or OpenAI
-LLM providers.</li>
-<li><strong>Syncs</strong> translations and grammar rules between Wisecrow instances over
-HTTP.</li>
-<li><strong>Augments</strong> cards with on-demand audio (Microsoft Edge TTS) and imagery
-(Unsplash) — both feature-gated and optional.</li>
-</ul>
-<h2 id="what-it-is-not"><a class="header" href="#what-it-is-not">What it is not</a></h2>
-<ul>
-<li>Wisecrow is <strong>not a translator</strong>. It assumes the target corpora already
-contain translations.</li>
-<li>It is <strong>not a course</strong>. It will not teach you grammar progressively;
-it ranks by frequency and lets you grind.</li>
-<li>The web and mobile front-ends in this workspace are <strong>early-stage</strong>.
-The TUI is the production interface today.</li>
-</ul>
-<h2 id="workspace-at-a-glance"><a class="header" href="#workspace-at-a-glance">Workspace at a glance</a></h2>
+                        <h1 id="sync-workflow"><a class="header" href="#sync-workflow">Sync workflow</a></h1>
+<p>The <code>sync</code> command pulls <code>languages</code>, <code>translations</code>, and <code>grammar_rules</code>
+from a remote Wisecrow instance and merges them into your local database.
+It is one-way (pull-only) and idempotent: running it twice in a row is a
+no-op the second time.</p>
+<h2 id="concept"><a class="header" href="#concept">Concept</a></h2>
+<pre><code class="language-text">┌──────────────────┐    /api/sync_languages?after_id=...    ┌──────────────────┐
+│ local Wisecrow   │ ─────────────────────────────────────▶ │  remote Wisecrow │
+│ PostgreSQL       │ ◀───── paginated DTOs (id-cursor) ──── │  HTTP server     │
+└──────────────────┘                                        └──────────────────┘
+</code></pre>
+<p>The cursor is the remote primary key (<code>after_id</code>). Each page is upserted
+into the local database in code-not-id space, so the local PKs can drift
+freely from the remote.</p>
+<h2 id="run-it"><a class="header" href="#run-it">Run it</a></h2>
+<pre><code class="language-sh">wisecrow sync --remote https://wisecrow.example.com --api-key "$WISECROW_REMOTE_KEY"
+</code></pre>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Crate</th><th>Purpose</th></tr>
+<tr><th>Flag</th><th style="text-align: center">Required</th><th>Purpose</th></tr>
 </thead>
 <tbody>
-<tr><td><code>wisecrow-core</code></td><td>Library plus the <code>wisecrow</code> CLI binary. All ingestion, scheduling, drilling, and persistence lives here.</td></tr>
-<tr><td><code>wisecrow-dto</code></td><td>Plain-old serializable types shared between the server and front-end clients.</td></tr>
-<tr><td><code>wisecrow-web</code></td><td><a href="https://dioxuslabs.com">Dioxus</a> fullstack web UI. Server features gate the database-backed routes.</td></tr>
-<tr><td><code>wisecrow-mobile</code></td><td>Dioxus mobile/desktop shell that calls into the web server functions.</td></tr>
+<tr><td><code>--remote</code></td><td style="text-align: center">yes</td><td>Base URL of the remote. The path components are joined via <code>Url::join</code>.</td></tr>
+<tr><td><code>--api-key</code></td><td style="text-align: center">no</td><td>Sent verbatim as the <code>x-api-key</code> header.</td></tr>
 </tbody>
 </table>
 </div>
-<blockquote>
-<p><strong>Note:</strong> Wisecrow expects you to bring your own PostgreSQL database. The
-first <code>ingest</code> (or any database-touching command) automatically applies the
-bundled migrations from <code>wisecrow-core/migrations/</code>.</p>
-</blockquote>
-<h2 id="where-to-start"><a class="header" href="#where-to-start">Where to start</a></h2>
+<p>You can also set <code>WISECROW__SYNC_API_KEY</code> and skip <code>--api-key</code>.</p>
+<h2 id="what-is-synced"><a class="header" href="#what-is-synced">What is synced</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Table</th><th>Endpoint</th><th>Conflict resolution</th></tr>
+</thead>
+<tbody>
+<tr><td><code>languages</code></td><td><code>/api/sync_languages</code></td><td>Insert by code; updates do nothing meaningful (codes are unique).</td></tr>
+<tr><td><code>translations</code></td><td><code>/api/sync_translations</code></td><td>Upsert with <code>frequency = GREATEST(local, remote)</code>.</td></tr>
+<tr><td><code>grammar_rules</code> (and examples)</td><td><code>/api/sync_grammar_rules</code></td><td>Upsert by <code>(language_id, cefr_level_id, title)</code>; examples are wiped and re-inserted to keep them consistent.</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>media_cache</code>, <code>cards</code>, <code>sessions</code>, <code>dnb_*</code>, and <code>users</code> are <strong>not</strong> synced
+— they are per-instance state.</p>
+<h2 id="track-what-was-synced"><a class="header" href="#track-what-was-synced">Track what was synced</a></h2>
+<p>After a successful run the local <code>sync_metadata</code> table is updated:</p>
+<pre><code class="language-sql">SELECT remote_url, table_name, last_synced_at
+FROM sync_metadata
+ORDER BY last_synced_at DESC;
+</code></pre>
+<p>The row exists per <code>(remote_url, table_name)</code>, and <code>last_synced_at</code> is the
+end-of-table timestamp, not a per-row marker. If a sync errors halfway
+through, the row is not updated and the next run starts from the last
+successful <code>after_id</code>.</p>
+<h2 id="standing-up-the-remote"><a class="header" href="#standing-up-the-remote">Standing up the remote</a></h2>
+<p>The sync client expects three GET endpoints:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Endpoint</th><th>Query</th><th>Returns</th></tr>
+</thead>
+<tbody>
+<tr><td><code>GET /api/sync_languages?after_id=N</code></td><td><code>after_id</code></td><td><code>Vec&lt;SyncLanguageDto&gt;</code> ordered by id ascending</td></tr>
+<tr><td><code>GET /api/sync_translations?after_id=N</code></td><td><code>after_id</code></td><td><code>Vec&lt;SyncTranslationDto&gt;</code> ordered by id ascending</td></tr>
+<tr><td><code>GET /api/sync_grammar_rules?after_id=N</code></td><td><code>after_id</code></td><td><code>Vec&lt;SyncGrammarRuleDto&gt;</code> ordered by id ascending</td></tr>
+</tbody>
+</table>
+</div>
+<p>Implementations live in <code>wisecrow-web/src/server/sync.rs</code> (server feature
+required). DTO definitions are in <a href="../api/wisecrow-dto.html#sync-dtos"><code>wisecrow-dto</code></a>.</p>
+<h2 id="when-to-use-it"><a class="header" href="#when-to-use-it">When to use it</a></h2>
 <ul>
-<li>New here? Jump to <a href="./getting-started/installation.html">Installation</a>, then
-<a href="./getting-started/configuration.html">Configuration</a>.</li>
-<li>Trying to drill on existing data? See the <a href="./guides/learn-tui.html">Learn TUI guide</a>.</li>
-<li>Building on the library? Open the <a href="./reference/architecture.html">Architecture overview</a>
-followed by the <a href="./api/wisecrow-core.html">API references</a>.</li>
+<li><strong>Bootstrapping a new replica.</strong> Start with an empty database, run
+<code>wisecrow sync</code> once. You inherit all translations and grammar rules.</li>
+<li><strong>Adding language pairs from a colleague.</strong> They ingest, you sync. No
+need to re-download the corpora.</li>
+<li><strong>Backups via replication.</strong> Sync into a read-only replica and snapshot it.</li>
+</ul>
+<h2 id="limitations"><a class="header" href="#limitations">Limitations</a></h2>
+<ul>
+<li>Sync is one-way. Pushing local data is not implemented.</li>
+<li>There is no conflict UI — the upsert rules above always win.</li>
+<li>Large syncs are linear: paginate-and-upsert is <code>O(n)</code> round-trips. A
+fresh sync of a heavy production database may take a few minutes.</li>
+<li>The HTTP client uses a shared <code>reqwest::Client</code> with rustls-tls; HTTP
+proxies must be configured via <code>HTTPS_PROXY</code>.</li>
 </ul>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../guides/grammar-workflows.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
 
-                            <a rel="next prefetch" href="getting-started/installation.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../guides/library-integration.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -258,8 +285,11 @@ followed by the <a href="./api/wisecrow-core.html">API references</a>.</li>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../guides/grammar-workflows.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
 
-                    <a rel="next prefetch" href="getting-started/installation.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../guides/library-integration.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -281,19 +311,19 @@ followed by the <a href="./api/wisecrow-core.html">API references</a>.</li>
             window.playground_copyable = true;
         </script>
 
-        <script src="ace-2a3cd908.js"></script>
-        <script src="mode-rust-2c9d5c9a.js"></script>
-        <script src="editor-16ca416c.js"></script>
-        <script src="theme-dawn-4493f9c8.js"></script>
-        <script src="theme-tomorrow_night-9dbe62a9.js"></script>
+        <script src="../ace-2a3cd908.js"></script>
+        <script src="../mode-rust-2c9d5c9a.js"></script>
+        <script src="../editor-16ca416c.js"></script>
+        <script src="../theme-dawn-4493f9c8.js"></script>
+        <script src="../theme-tomorrow_night-9dbe62a9.js"></script>
 
-        <script src="elasticlunr-ef4e11c1.min.js"></script>
-        <script src="mark-09e88c2c.min.js"></script>
-        <script src="searcher-09f2665d.js"></script>
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-09f2665d.js"></script>
 
-        <script src="clipboard-1626706a.min.js"></script>
-        <script src="highlight-abc7f01d.js"></script>
-        <script src="book-609e4cb8.js"></script>
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-609e4cb8.js"></script>
 
         <!-- Custom JS scripts -->
 
