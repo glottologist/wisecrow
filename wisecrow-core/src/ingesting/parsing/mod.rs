@@ -238,6 +238,59 @@ impl CorpusParser {
         }
     }
 
+    /// Removes NUL characters from a phrase. PostgreSQL cannot store `U+0000`
+    /// in a `text` column at all, and web-mined corpora do carry them: a single
+    /// stray byte in the CCMatrix Gaelic release aborted an entire ingest with
+    /// `invalid byte sequence for encoding "UTF8": 0x00`. Stripping is
+    /// preferable to skipping the pair, since the rest of the sentence is
+    /// perfectly good text.
+    fn strip_nuls(text: String) -> String {
+        if text.contains('\0') {
+            text.replace('\0', "")
+        } else {
+            text
+        }
+    }
+
+    /// Mirrors `chk_from_phrase_length` and `chk_to_phrase_length` from
+    /// migration `003_performance_indexes.sql`. A pair breaching this is
+    /// dropped here rather than at the database, because a rejected row aborts
+    /// the whole batch and with it the rest of the corpus — CCAligned Welsh
+    /// lost several hundred thousand pairs to one over-long paragraph. Nothing
+    /// of value goes with it: deck selection only ever considers phrases
+    /// between 2 and 200 characters.
+    const MAX_PHRASE_CHARS: usize = 1000;
+
+    fn is_storable(text: &str) -> bool {
+        text.chars().count() <= Self::MAX_PHRASE_CHARS
+    }
+
+    /// PostgreSQL's version-4 btree cannot index a tuple larger than this.
+    const BTREE_MAX_INDEX_TUPLE_BYTES: usize = 2704;
+
+    /// Headroom reserved within a btree tuple for the index tuple header, its
+    /// two `int4` language keys and the per-datum varlena headers and
+    /// alignment padding that accompany the two phrases.
+    const INDEX_TUPLE_OVERHEAD_BYTES: usize = 104;
+
+    /// The unique index `translations_unique_pair` (migration
+    /// `005_fix_translation_unique_constraint.sql`) spans both phrases, so the
+    /// two `char_length(..) <= 1000` CHECK constraints — which bound each
+    /// phrase independently, in characters — do not bound their combined byte
+    /// length. A pair of long multi-byte phrases therefore satisfies both
+    /// CHECKs and `is_storable` yet overflows the index: CCAligned Welsh
+    /// aborted on exactly such a row with `index row size 2752 exceeds btree
+    /// version 4 maximum 2704`. Deriving the budget from the btree maximum
+    /// keeps the two in step (and an oversized overhead would fail to compile
+    /// on const underflow). Nothing usable is lost: deck selection only
+    /// considers phrases between 2 and 200 characters.
+    const MAX_INDEX_KEY_BYTES: usize =
+        Self::BTREE_MAX_INDEX_TUPLE_BYTES - Self::INDEX_TUPLE_OVERHEAD_BYTES;
+
+    fn fits_unique_index(src: &str, tgt: &str) -> bool {
+        src.len() + tgt.len() <= Self::MAX_INDEX_KEY_BYTES
+    }
+
     async fn send_pair(
         source: &mut Option<String>,
         target: &mut Option<String>,
@@ -245,6 +298,15 @@ impl CorpusParser {
         count: &mut usize,
     ) -> bool {
         if let (Some(src), Some(tgt)) = (source.take(), target.take()) {
+            let (src, tgt) = (Self::strip_nuls(src), Self::strip_nuls(tgt));
+            if src.is_empty()
+                || tgt.is_empty()
+                || !Self::is_storable(&src)
+                || !Self::is_storable(&tgt)
+                || !Self::fits_unique_index(&src, &tgt)
+            {
+                return true;
+            }
             let pair = TranslationPair {
                 source_text: src,
                 target_text: tgt,
@@ -354,6 +416,132 @@ mod tests {
             pairs.push(pair);
         }
         pairs
+    }
+
+    #[tokio::test]
+    async fn nul_bytes_are_stripped_rather_than_aborting_the_ingest() {
+        // A single NUL in the CCMatrix Gaelic release aborted a whole ingest
+        // with PostgreSQL's `invalid byte sequence for encoding "UTF8": 0x00`.
+        let tmx_content = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
+<tmx version=\"1.4\"><body>\
+<tu><tuv xml:lang=\"en\"><seg>Hel\u{0}lo</seg></tuv>\
+<tuv xml:lang=\"gd\"><seg>Hal\u{0}o</seg></tuv></tu>\
+<tu><tuv xml:lang=\"en\"><seg>\u{0}</seg></tuv>\
+<tuv xml:lang=\"gd\"><seg>Ceart</seg></tuv></tu>\
+</body></tmx>";
+
+        let mut tmp = NamedTempFile::new().unwrap();
+        tmp.write_all(tmx_content.as_bytes()).unwrap();
+        let (tx, rx) = mpsc::channel(100);
+        let count = CorpusParser::parse_tmx_file(tmp.path().to_str().unwrap(), "en", "gd", &tx)
+            .await
+            .unwrap();
+        drop(tx);
+
+        assert_eq!(count, 1, "the all-NUL pair is dropped, the usable one kept");
+        let pairs = collect_translations(rx);
+        assert_eq!(pairs[0].source_text, "Hello");
+        assert_eq!(pairs[0].target_text, "Halo");
+        assert!(!pairs
+            .iter()
+            .any(|p| p.source_text.contains('\0') || p.target_text.contains('\0')));
+    }
+
+    #[tokio::test]
+    async fn over_long_phrases_are_dropped_rather_than_aborting_the_ingest() {
+        // CCAligned Welsh lost the remainder of its corpus to one paragraph
+        // breaching chk_from_phrase_length.
+        let long = "a".repeat(CorpusParser::MAX_PHRASE_CHARS + 1);
+        let at_limit = "b".repeat(CorpusParser::MAX_PHRASE_CHARS);
+        let tmx_content = format!(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
+<tmx version=\"1.4\"><body>\
+<tu><tuv xml:lang=\"en\"><seg>{long}</seg></tuv>\
+<tuv xml:lang=\"cy\"><seg>iawn</seg></tuv></tu>\
+<tu><tuv xml:lang=\"en\"><seg>{at_limit}</seg></tuv>\
+<tuv xml:lang=\"cy\"><seg>iawn</seg></tuv></tu>\
+</body></tmx>"
+        );
+
+        let mut tmp = NamedTempFile::new().unwrap();
+        tmp.write_all(tmx_content.as_bytes()).unwrap();
+        let (tx, rx) = mpsc::channel(100);
+        let count = CorpusParser::parse_tmx_file(tmp.path().to_str().unwrap(), "en", "cy", &tx)
+            .await
+            .unwrap();
+        drop(tx);
+
+        assert_eq!(count, 1, "over-limit dropped, exactly-at-limit kept");
+        let pairs = collect_translations(rx);
+        assert_eq!(
+            pairs[0].source_text.chars().count(),
+            CorpusParser::MAX_PHRASE_CHARS
+        );
+    }
+
+    #[test]
+    fn phrase_limit_matches_the_database_constraint() {
+        let migration = include_str!("../../../migrations/003_performance_indexes.sql");
+        for column in ["from_phrase", "to_phrase"] {
+            assert!(
+                migration.contains(&format!(
+                    "char_length({column}) <= {}",
+                    CorpusParser::MAX_PHRASE_CHARS
+                )),
+                "MAX_PHRASE_CHARS must match the CHECK constraint on {column}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn over_long_combined_pairs_are_dropped_rather_than_aborting_the_ingest() {
+        // Each phrase clears char_length(..) <= 1000, but together they
+        // overflow the composite unique index — the failure that aborted
+        // CCAligned Welsh with `index row size 2752 exceeds btree version 4
+        // maximum 2704`. "é" is two UTF-8 bytes, so the char counts stay
+        // within MAX_PHRASE_CHARS while the byte counts cross the index limit.
+        let half_chars = CorpusParser::MAX_INDEX_KEY_BYTES / 4; // per side, at the limit
+        let at_limit = "é".repeat(half_chars); // 2 sides * half_chars * 2 bytes = limit
+        let over = "é".repeat(half_chars + 1); // two bytes past the budget per side
+        let tmx_content = format!(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
+<tmx version=\"1.4\"><body>\
+<tu><tuv xml:lang=\"en\"><seg>{over}</seg></tuv>\
+<tuv xml:lang=\"cy\"><seg>{over}</seg></tuv></tu>\
+<tu><tuv xml:lang=\"en\"><seg>{at_limit}</seg></tuv>\
+<tuv xml:lang=\"cy\"><seg>{at_limit}</seg></tuv></tu>\
+</body></tmx>"
+        );
+
+        let mut tmp = NamedTempFile::new().unwrap();
+        tmp.write_all(tmx_content.as_bytes()).unwrap();
+        let (tx, rx) = mpsc::channel(100);
+        let count = CorpusParser::parse_tmx_file(tmp.path().to_str().unwrap(), "en", "cy", &tx)
+            .await
+            .unwrap();
+        drop(tx);
+
+        assert_eq!(count, 1, "combined over-limit dropped, at-limit kept");
+        let pairs = collect_translations(rx);
+        assert_eq!(
+            pairs[0].source_text.len() + pairs[0].target_text.len(),
+            CorpusParser::MAX_INDEX_KEY_BYTES,
+            "the kept pair sits exactly at the combined byte budget"
+        );
+    }
+
+    #[test]
+    fn guard_tracks_the_composite_unique_index() {
+        // The byte budget only matters because migration 005 creates a unique
+        // constraint spanning both phrases; its btree tuple is what overflows.
+        // The budget-versus-btree-maximum relationship is asserted at compile
+        // time above, so it cannot silently drift.
+        let migration =
+            include_str!("../../../migrations/005_fix_translation_unique_constraint.sql");
+        assert!(
+            migration.contains("UNIQUE (from_language_id, from_phrase, to_language_id, to_phrase)"),
+            "translations_unique_pair must span both phrases for the byte budget to matter"
+        );
     }
 
     #[tokio::test]

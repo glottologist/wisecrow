@@ -54,7 +54,17 @@ services:
     networks: [wisecrow]
 
 volumes:
+  # Bind the database onto the 3.5 TB DATA2 disk rather than the default
+  # named-volume location under /var/lib/docker on the 200 GB root. `type: none,
+  # o: bind` binds an existing path, so Docker refuses to start Postgres if
+  # /mnt/DATA2/pgdata is absent (disk unmounted) instead of silently
+  # re-initialising an empty database back on root.
   wisecrow-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/DATA2/pgdata
 
 networks:
   wisecrow:
