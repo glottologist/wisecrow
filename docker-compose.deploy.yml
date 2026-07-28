@@ -39,6 +39,13 @@ services:
       PORT: 8443
     volumes:
       - ${WISECROW_CERT_DIR:-./certs}:/certs:ro
+      # Scratch space for corpus ingest. The container's own /tmp sits on the
+      # overlay filesystem, which is the 200 GB root shared with the trading
+      # stack; a single OpenSubtitles archive decompresses to tens of
+      # gigabytes and would crowd it. Pass `--workdir /ingest-tmp` to the
+      # ingest command so downloads and decompression land on the 3.5 TB disk
+      # instead.
+      - ${WISECROW_INGEST_TMP:-/mnt/DATA2/ingest-tmp}:/ingest-tmp
     ports:
       - "${WISECROW_WEB_BIND:-0.0.0.0}:${WISECROW_WEB_PORT:-8443}:8443"
     # Liveness, not authorization: an unauthenticated GET / is answered with the
