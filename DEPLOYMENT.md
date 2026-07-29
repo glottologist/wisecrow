@@ -168,21 +168,48 @@ container that is already up.
 ### Where the downloads land
 
 `ingest` writes each archive to its working directory and does not delete it
-afterwards. The container's `WORKDIR` is `/app/web`, which has no volume behind
-it, so an unqualified ingest quietly fills the container's writable layer with
-several gigabytes that `docker volume ls` will never show and the next
-`--build` will discard. Run ingests with an explicit working directory and
-clear it afterwards:
+afterwards. Both the container's `WORKDIR` (`/app/web`) and its `/tmp` sit on
+the image's writable layer, which is the host's Docker storage — on a host that
+shares that disk with other services, a large ingest crowds them all. The
+compose file therefore binds a dedicated scratch directory:
+
+```yaml
+- ${WISECROW_INGEST_TMP:-/mnt/DATA2/ingest-tmp}:/ingest-tmp
+```
+
+Point every ingest at it with `--workdir`, and clear the archives afterwards:
 
 ```sh
-docker compose -f docker-compose.deploy.yml exec --workdir /tmp wisecrow-web \
+docker compose -f docker-compose.deploy.yml exec --workdir /ingest-tmp wisecrow-web \
   wisecrow ingest -n en -f es
-docker compose -f docker-compose.deploy.yml exec wisecrow-web sh -c 'rm -f /tmp/*.tmx*'
+docker compose -f docker-compose.deploy.yml exec wisecrow-web sh -c 'rm -f /ingest-tmp/*.tmx*'
+```
+
+**The host directory must be created and owned by the container's user before
+the stack starts.** Docker creates a missing bind source itself, but as
+`root:root`, and the runtime image runs as uid 10001 / gid 999 — an ingest then
+fails with `Permission denied` on its first write:
+
+```sh
+sudo mkdir -p /mnt/DATA2/ingest-tmp
+sudo chown 10001:999 /mnt/DATA2/ingest-tmp
 ```
 
 Check free space first. A pair's archives are held compressed and expanded at
-the same time, and the NLLB releases are the heavy ones — the Irish TMX arrives
-as 1.3 GB and expands to roughly 5 GB.
+the same time. The NLLB releases are heavy — the Irish TMX arrives as 1.3 GB and
+expands to roughly 5 GB — but the large OpenSubtitles pairs are heavier still,
+and they meet a second limit: `ingest` refuses any archive expanding beyond
+`--max-decompressed-mb`, which defaults to 8192. The guard exists to stop a
+malicious or corrupt archive filling the disk, so raise it deliberately, to a
+figure the target filesystem can absorb, rather than removing the ceiling:
+
+```sh
+docker compose -f docker-compose.deploy.yml exec --workdir /ingest-tmp wisecrow-web \
+  wisecrow ingest -n en -f fr --corpus open_subtitles --max-decompressed-mb 65536
+```
+
+A failed archive is logged and skipped, and the process still exits 0, so check
+the output for `Ingestion failed` rather than trusting the exit status.
 
 ### Choose the corpora
 
@@ -204,7 +231,7 @@ pair; raise `--max-decompressed-mb` above its 8192 default only if a release
 genuinely needs it.
 
 ```sh
-docker compose -f docker-compose.deploy.yml exec --workdir /tmp wisecrow-web \
+docker compose -f docker-compose.deploy.yml exec --workdir /ingest-tmp wisecrow-web \
   wisecrow ingest -n en -f cy --corpus "open_subtitles cc_aligned"
 ```
 
