@@ -37,7 +37,10 @@ rustls-pemfile = { version = "2", optional = true }
 gloo-timers = { version = "0.3", features = ["futures"] }
 
 [features]
-default = []
+# Sound (TTS) and images are on by default so learn sessions get pronunciation
+# and Unsplash art without remembering extra --features flags. Disable with
+# `--no-default-features` if you need a minimal build.
+default = ["audio", "images"]
 server = ["dioxus/server", "dep:wisecrow-core", "dep:tokio", "dep:sqlx", "dep:dotenvy", "dep:config", "dep:tempfile", "dep:axum", "dep:axum-server", "dep:axum-extra", "dep:tower", "dep:tower-http", "dep:governor", "dep:rustls", "dep:rustls-pemfile"]
 web = ["dioxus/web"]
 # These deliberately do not imply `server`: dx enables that itself for the

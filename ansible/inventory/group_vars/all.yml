@@ -52,7 +52,10 @@ postgres_user: wisecrow
 postgres_db: wisecrow
 
 # Optional knobs — leave blank to omit from the generated .env.
-llm_provider: ""        # anthropic | openai
+llm_provider: "anthropic"   # anthropic | openai
+# Model id for the chosen provider. Blank = provider default
+# (anthropic → claude-sonnet-5, openai → gpt-4o).
+llm_model: "claude-sonnet-5"
 remote_url: ""
 remote_api_key: ""
 sync_api_key: ""

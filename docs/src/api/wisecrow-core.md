@@ -63,6 +63,7 @@ pub struct Config {
     pub unsplash_api_key: Option<SecureString>,
     pub llm_provider: Option<String>,
     pub llm_api_key: Option<SecureString>,
+    pub llm_model: Option<String>,
     pub remote_url: Option<String>,
     pub remote_api_key: Option<SecureString>,
     pub sync_api_key: Option<SecureString>,

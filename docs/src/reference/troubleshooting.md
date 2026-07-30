@@ -213,9 +213,10 @@ Pass the bare host (`https://example.com`) and let Wisecrow add the path.
 ## Web UI
 
 The web UI is experimental and is not covered here. If you hit issues,
-build with `--features "server web"` and run `dx serve --features
-"server web"` from `wisecrow-web/`. Check the server log for SQL errors —
-they are the same as for the CLI.
+run `dx serve` from `wisecrow-web/` (audio + images are default). Check
+the server log for SQL errors — they are the same as for the CLI. Card
+images need `WISECROW__UNSPLASH_API_KEY`; audio uses Edge TTS and needs
+outbound network access.
 
 ## Logs
 

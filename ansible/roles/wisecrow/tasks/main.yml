@@ -13,6 +13,7 @@
       - "--exclude=node_modules"
       - "--exclude=claude/"
       - "--exclude=codex/"
+      - "--exclude=agents/"
       - "--exclude=docs/book"
       - "--exclude=.direnv"
       - "--exclude=.devenv"

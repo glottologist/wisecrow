@@ -13,6 +13,7 @@ pub mod lang;
 pub mod llm;
 pub mod media;
 pub mod preview;
+pub mod pruning;
 pub mod srs;
 pub mod sync;
 pub mod tui;

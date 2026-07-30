@@ -14,8 +14,8 @@ use wisecrow::{
     cli::{
         is_supported_language, Cli, Command, DownloadAllArgs, FrequencyArgs, GenerateExercisesArgs,
         GlossArgs, GradedReaderArgs, GradedReaderFormat, ImportGrammarArgs, ImportPdfArgs,
-        IngestArgs, LanguageArgs, LearnArgs, NbackArgs, PrefetchMediaArgs, PreviewArgs, QuizArgs,
-        SeedGrammarArgs, SyncArgs, SyncClientCmd, UserCmd, SUPPORTED_LANGUAGE_INFO,
+        IngestArgs, LanguageArgs, LearnArgs, NbackArgs, PrefetchMediaArgs, PreviewArgs, PruneArgs,
+        QuizArgs, SeedGrammarArgs, SyncArgs, SyncClientCmd, UserCmd, SUPPORTED_LANGUAGE_INFO,
     },
     config::Config,
     downloader::DownloadConfig,
@@ -457,6 +457,21 @@ async fn handle_frequency(args: FrequencyArgs) -> Result<(), Error> {
     Ok(())
 }
 
+async fn handle_prune(args: PruneArgs) -> Result<(), Error> {
+    let (_config, pool) = load_config_and_pool().await?;
+    let report = wisecrow::pruning::Pruner::run(&pool, &args.lang, args.dry_run).await?;
+    let verb = if args.dry_run {
+        "Would remove"
+    } else {
+        "Removed"
+    };
+    info!(
+        "{verb} {} wrong-script pairs and demote {} unsegmented runs for {}, from {} phrases scanned",
+        report.deleted, report.demoted, args.lang, report.scanned
+    );
+    Ok(())
+}
+
 async fn handle_gloss(args: GlossArgs) -> Result<(), Error> {
     let (config, pool) = load_config_and_pool().await?;
     let provider = wisecrow::llm::create_provider(&config)?;
@@ -643,6 +658,7 @@ async fn main() -> Result<(), Error> {
             }
         }
         Command::PrefetchMedia(args) => handle_prefetch_media(args).await?,
+        Command::Prune(args) => handle_prune(args).await?,
         Command::Preview(args) => handle_preview(args).await?,
         Command::Quiz(args) => handle_quiz(args)?,
         Command::SeedGrammar(args) => handle_seed_grammar(args).await?,

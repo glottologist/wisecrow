@@ -9,7 +9,7 @@ use crate::router::Route;
 pub fn Home() -> Element {
     let languages = use_server_future(list_languages)?;
 
-    let mut native = use_signal(String::new);
+    let mut native = use_signal(|| "en".to_string());
     let mut foreign = use_signal(String::new);
 
     let lang_list = languages.read();
@@ -36,9 +36,12 @@ pub fn Home() -> Element {
                         class: "w-full bg-gray-700 rounded px-3 py-2 text-white",
                         value: "{native}",
                         onchange: move |evt| native.set(evt.value()),
-                        option { value: "", "Select..." }
                         for lang in langs.iter() {
-                            option { value: "{lang.code}", "{lang.name} ({lang.code})" }
+                            option {
+                                value: "{lang.code}",
+                                selected: native() == lang.code,
+                                "{lang.name} ({lang.code})"
+                            }
                         }
                     }
                 }

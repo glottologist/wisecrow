@@ -23,7 +23,11 @@ const MATCH_TRIM_CHARS: &[char] = &['.', ',', '!', '?', ';', ':', '"', '\'', '¡
 /// [`MATCH_TRIM_CHARS`] as the body of a SQL string literal, with the single
 /// quote doubled. `trim_set_is_consistent_across_rust_sql_and_migration` holds
 /// the three copies together.
-const MATCH_TRIM_SQL: &str = ".,!?;:\"''¡¿";
+///
+/// [`crate::vocabulary::VocabularyRepository::unlearned`] deduplicates a deck on
+/// the same normalised form, and borrows this rather than spelling out a fourth
+/// copy that nothing would hold in step.
+pub(crate) const MATCH_TRIM_SQL: &str = ".,!?;:\"''¡¿";
 
 pub struct FrequencyUpdater;
 
@@ -137,7 +141,9 @@ impl FrequencyUpdater {
 
             for (_, phrase) in &rows {
                 for token in tokenizer.tokenize(phrase) {
-                    Self::accumulate(counts, token, 1);
+                    if crate::lang::is_word_length(&token) {
+                        Self::accumulate(counts, token, 1);
+                    }
                 }
             }
         }

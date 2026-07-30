@@ -38,13 +38,14 @@ The release binary ends up at `target/release/wisecrow`. Add it to your
 
 | Feature | Adds | Cost |
 |---------|------|------|
-| `audio`  | Microsoft Edge TTS streaming via `msedge-tts`, playback via `rodio`. | Pulls ALSA on Linux. |
-| `images` | Unsplash image fetch and inline rendering via `ratatui-image`. | Pulls `image` decoders. |
+| `tts` (default) | Microsoft Edge TTS generation via `msedge-tts`. | Needs outbound network at runtime. |
+| `images` (default) | Unsplash image fetch and TUI rendering via `ratatui-image`. | Pulls `image` decoders; needs Unsplash API key for fetch. |
+| `audio` | Adds local playback via `rodio` (implies `tts`). | Pulls ALSA on Linux. |
 
-Enable them at build time:
+Defaults cover generation + images. Opt into local speaker playback:
 
 ```sh
-cargo build --release -p wisecrow-core --features "audio images"
+cargo build --release -p wisecrow-core --features audio
 ```
 
 ## Build the web UI (experimental)
@@ -54,11 +55,13 @@ The web crate uses Dioxus fullstack and requires the `dioxus-cli`:
 ```sh
 cargo install dioxus-cli
 cd wisecrow-web
-dx serve --features server
+dx serve
 ```
 
-The `server` feature pulls in `wisecrow-core`, so you need a configured
-PostgreSQL connection (see [Configuration](./configuration.md)).
+Default features enable TTS audio and Unsplash images on learn cards.
+`dx` enables the `server` / `web` halves itself. You need a configured
+PostgreSQL connection (see [Configuration](./configuration.md)). For
+images, set `WISECROW__UNSPLASH_API_KEY`.
 
 ## Verify the install
 

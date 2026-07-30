@@ -51,12 +51,20 @@ pub fn create_provider(config: &Config) -> Result<Box<dyn LlmProvider>, Wisecrow
     })?;
 
     match provider_name {
-        "anthropic" => Ok(Box::new(anthropic::AnthropicProvider::new(
-            api_key.expose().to_owned(),
-        ))),
-        "openai" => Ok(Box::new(openai::OpenAiProvider::new(
-            api_key.expose().to_owned(),
-        ))),
+        "anthropic" => {
+            let model = config.llm_model_or(anthropic::DEFAULT_MODEL).to_owned();
+            Ok(Box::new(anthropic::AnthropicProvider::new(
+                api_key.expose(),
+                model,
+            )))
+        }
+        "openai" => {
+            let model = config.llm_model_or(openai::DEFAULT_MODEL).to_owned();
+            Ok(Box::new(openai::OpenAiProvider::new(
+                api_key.expose(),
+                model,
+            )))
+        }
         other => Err(WisecrowError::ConfigurationError(format!(
             "Unsupported LLM provider: {other}"
         ))),

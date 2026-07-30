@@ -150,12 +150,17 @@ async fn ensure_language_idempotent() {
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL"]
-async fn phrase_exceeding_1000_chars_rejected() {
+async fn phrase_exceeding_1000_chars_is_skipped_without_losing_the_rest() {
+    // This asserted a CHECK constraint violation until `CorpusParser::send_pair`
+    // grew a length guard, which is the point: an unstorable row that reaches
+    // the database aborts its batch, kills the ingest task and discards every
+    // remaining pair in the corpus — and the process still exits 0. The pair is
+    // now dropped at the parser, so the ingest carries on past it.
     let pool = common::test_pool().await;
     common::truncate_tables(&pool).await;
 
     let long_phrase: String = "x".repeat(1001);
-    let pairs: Vec<(&str, &str)> = vec![(long_phrase.as_str(), "short")];
+    let pairs: Vec<(&str, &str)> = vec![(long_phrase.as_str(), "short"), ("hello", "hola")];
 
     let tmp = tmx_temp_file(&pairs, "en", "es");
     let (tx, rx) = mpsc::channel::<TranslationPair>(100);
@@ -177,7 +182,12 @@ async fn phrase_exceeding_1000_chars_rejected() {
     let (_count, persist_result) = tokio::try_join!(parse_handle, persist_handle).unwrap();
 
     assert!(
-        persist_result.is_err(),
-        "Expected CHECK constraint violation for phrase >1000 chars"
+        persist_result.is_ok(),
+        "an over-long phrase must not fail the ingest: {persist_result:?}"
+    );
+    assert_eq!(
+        common::get_translation_pairs(&pool).await,
+        vec![("hello".to_owned(), "hola".to_owned())],
+        "the over-long pair is dropped and the pair after it still lands"
     );
 }

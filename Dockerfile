@@ -25,15 +25,14 @@ RUN cargo install --locked dioxus-cli@0.7.3 \
 WORKDIR /build
 COPY . .
 
-# CLI binary — default features only, so the runtime image does not need
-# local audio playback or image-display libraries.
+# CLI binary — default features include TTS + images (no rodio/ALSA).
 RUN cargo build --release --bin wisecrow
 
 # Fullstack web bundle. `Dioxus.toml` configures `out_dir = "dist"` inside
 # the wisecrow-web crate, so artifacts land in /build/wisecrow-web/dist.
-# Web audio enables TTS generation without the CLI-only rodio playback stack.
+# Default features already enable TTS audio + Unsplash images (no rodio).
 RUN cd wisecrow-web \
- && dx bundle --release --platform web --features "audio images"
+ && dx bundle --release --platform web
 
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime
 RUN apt-get update \

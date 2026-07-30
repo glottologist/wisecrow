@@ -29,18 +29,21 @@ against the colocated server.
 
 ## Cargo features
 
-| Feature | Pulls in | Used for |
-|---------|----------|----------|
-| `server` | `wisecrow-core`, `tokio`, `sqlx`, `dotenvy`, `config`, `tempfile` | Build the server binary. |
-| `web` | `dioxus/web` | Build the browser bundle. |
-| `audio` | `server` + `wisecrow-core/audio` + `base64` | Serve TTS audio over the wire. |
-| `images` | `server` + `wisecrow-core/images` + `base64` + `reqwest` | Serve Unsplash-fetched images. |
+| Feature | Default | Pulls in | Used for |
+|---------|---------|----------|----------|
+| `audio` | yes | `wisecrow-core/tts` + `base64` | Serve Edge TTS pronunciation over the wire. |
+| `images` | yes | `wisecrow-core/images` + `base64` + `reqwest` | Serve Unsplash-fetched images. |
+| `server` | no | `wisecrow-core`, `tokio`, `sqlx`, … | Build the server binary (`dx` enables this). |
+| `web` | no | `dioxus/web` | Build the browser bundle (`dx` enables this). |
+
+`audio` and `images` are on by default. Use `--no-default-features` for a
+minimal build. Images also need `WISECROW__UNSPLASH_API_KEY` at runtime.
 
 A typical fullstack dev loop:
 
 ```sh
 cd wisecrow-web
-dx serve --features "server web"
+dx serve
 ```
 
 ## Routes

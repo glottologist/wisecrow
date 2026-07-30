@@ -100,3 +100,6 @@ ansible/vars/secrets.yml
 
 # Local environment variables (contains secrets — API keys, DB credentials)
 .env
+
+# Local agent notes / session handoffs (not project source)
+agents/

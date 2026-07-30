@@ -9,7 +9,9 @@ keywords = ["language", "flashcard", "frequency", "nlp", "corpus"]
 categories = ["command-line-utilities", "text-processing"]
 
 [features]
-default = []
+# TTS generation + Unsplash/TUI images are on by default. Local playback
+# (`audio` / rodio) stays opt-in so Linux builds do not require ALSA.
+default = ["tts", "images"]
 tts = ["dep:msedge-tts"]
 audio = ["tts", "dep:rodio"]
 images = ["dep:ratatui-image", "dep:image"]

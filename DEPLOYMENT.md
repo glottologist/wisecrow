@@ -338,6 +338,7 @@ Log in at `https://<host>:8443/login`.
 | `WISECROW__TLS_CERT_PATH` / `WISECROW__TLS_KEY_PATH` | PEM cert/key paths inside the container (`/certs/*`). |
 | `IP` / `PORT` | Bind address (default `0.0.0.0:8443`). |
 | `WISECROW__LLM_PROVIDER` / `WISECROW__LLM_API_KEY` | LLM provider for gloss / graded-reader / quizzes. |
+| `WISECROW__LLM_MODEL` | Optional model id (default: `claude-sonnet-5` or `gpt-4o` by provider). |
 | `WISECROW__LLM_RATELIMIT_PER_MIN` | Per-user LLM request cap (default 20). |
 | `WISECROW__UNSPLASH_API_KEY` | Optional image enrichment key; omit to disable images gracefully. |
 | `WISECROW__SYNC_API_KEY` | Legacy single sync key (per-client keys preferred). |

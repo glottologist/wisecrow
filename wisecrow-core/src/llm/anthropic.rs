@@ -6,20 +6,29 @@ use super::LlmProvider;
 use crate::errors::WisecrowError;
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
-const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
+
+/// Default Anthropic model when `WISECROW__LLM_MODEL` is unset.
+pub const DEFAULT_MODEL: &str = "claude-sonnet-5";
 
 pub struct AnthropicProvider {
     client: Client,
     api_key: String,
+    model: String,
 }
 
 impl AnthropicProvider {
     #[must_use]
-    pub fn new(api_key: String) -> Self {
+    pub fn new(api_key: impl Into<String>, model: impl Into<String>) -> Self {
         Self {
             client: Client::new(),
-            api_key,
+            api_key: api_key.into(),
+            model: model.into(),
         }
+    }
+
+    #[must_use]
+    pub fn model(&self) -> &str {
+        &self.model
     }
 }
 
@@ -50,7 +59,7 @@ struct ContentBlock {
 impl LlmProvider for AnthropicProvider {
     async fn generate(&self, prompt: &str, max_tokens: u32) -> Result<String, WisecrowError> {
         let request = AnthropicRequest {
-            model: DEFAULT_MODEL,
+            model: &self.model,
             max_tokens,
             messages: vec![Message {
                 role: "user",

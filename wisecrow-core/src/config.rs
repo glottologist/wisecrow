@@ -41,12 +41,25 @@ pub struct Config {
     pub unsplash_api_key: Option<SecureString>,
     pub llm_provider: Option<String>,
     pub llm_api_key: Option<SecureString>,
+    /// Optional model id (e.g. `claude-sonnet-5`, `gpt-4o`). When unset or
+    /// blank, each provider uses its built-in default.
+    pub llm_model: Option<String>,
     pub remote_url: Option<String>,
     pub remote_api_key: Option<SecureString>,
     pub sync_api_key: Option<SecureString>,
 }
 
 impl Config {
+    /// Returns a configured model id, or `default` when unset/blank.
+    #[must_use]
+    pub fn llm_model_or<'a>(&'a self, default: &'a str) -> &'a str {
+        self.llm_model
+            .as_deref()
+            .map(str::trim)
+            .filter(|model| !model.is_empty())
+            .unwrap_or(default)
+    }
+
     /// Returns the database URL, either directly from `db_url` or assembled
     /// from the component fields.
     ///
@@ -102,6 +115,7 @@ mod tests {
             unsplash_api_key: None,
             llm_provider: None,
             llm_api_key: None,
+            llm_model: None,
             remote_url: None,
             remote_api_key: None,
             sync_api_key: None,
@@ -118,6 +132,7 @@ mod tests {
             unsplash_api_key: None,
             llm_provider: None,
             llm_api_key: None,
+            llm_model: None,
             remote_url: None,
             remote_api_key: None,
             sync_api_key: None,
@@ -152,6 +167,7 @@ mod tests {
             unsplash_api_key: None,
             llm_provider: None,
             llm_api_key: None,
+            llm_model: None,
             remote_url: None,
             remote_api_key: None,
             sync_api_key: None,
@@ -170,11 +186,22 @@ mod tests {
             unsplash_api_key: None,
             llm_provider: None,
             llm_api_key: None,
+            llm_model: None,
             remote_url: None,
             remote_api_key: None,
             sync_api_key: None,
         };
         let url = config.database_url().unwrap();
         assert_eq!(url.as_ref(), "postgres://direct@host/db");
+    }
+
+    #[test]
+    fn llm_model_or_prefers_configured_non_blank() {
+        let mut config = config_with_url("postgres://u:p@h/db");
+        assert_eq!(config.llm_model_or("default-model"), "default-model");
+        config.llm_model = Some("  claude-sonnet-5  ".to_owned());
+        assert_eq!(config.llm_model_or("default-model"), "claude-sonnet-5");
+        config.llm_model = Some("   ".to_owned());
+        assert_eq!(config.llm_model_or("default-model"), "default-model");
     }
 }

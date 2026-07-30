@@ -95,6 +95,8 @@ impl XmlParseHandler for TmxState {
                 if !CorpusParser::send_pair(
                     &mut self.source_text,
                     &mut self.target_text,
+                    source_lang,
+                    target_lang,
                     sender,
                     count,
                 )
@@ -182,6 +184,8 @@ impl XmlParseHandler for XmlState {
                     if !CorpusParser::send_pair(
                         &mut self.source_text,
                         &mut self.target_text,
+                        source_lang,
+                        target_lang,
                         sender,
                         count,
                     )
@@ -294,6 +298,8 @@ impl CorpusParser {
     async fn send_pair(
         source: &mut Option<String>,
         target: &mut Option<String>,
+        source_lang: &str,
+        target_lang: &str,
         sender: &Sender<TranslationPair>,
         count: &mut usize,
     ) -> bool {
@@ -304,6 +310,8 @@ impl CorpusParser {
                 || !Self::is_storable(&src)
                 || !Self::is_storable(&tgt)
                 || !Self::fits_unique_index(&src, &tgt)
+                || !crate::lang::is_plausible_script(&src, source_lang)
+                || !crate::lang::is_plausible_script(&tgt, target_lang)
             {
                 return true;
             }
@@ -477,6 +485,55 @@ mod tests {
             pairs[0].source_text.chars().count(),
             CorpusParser::MAX_PHRASE_CHARS
         );
+    }
+
+    #[tokio::test]
+    async fn pairs_written_in_the_wrong_script_are_dropped() {
+        // Over two thirds of the CCMatrix Gaelic release carries no Gaelic. One
+        // 95-character kana blob appeared 166,950 times against unrelated
+        // English sentences and, once ranked from the corpus, became the first
+        // card of every Gaelic deck.
+        let tmx_content = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
+<tmx version=\"1.4\"><body>\
+<tu><tuv xml:lang=\"en\"><seg>We spent every weekend together</seg></tuv>\
+<tuv xml:lang=\"gd\"><seg>うぐぅうぐぅうぐぅうぐぅ</seg></tuv></tu>\
+<tu><tuv xml:lang=\"en\"><seg>Hello my friend</seg></tuv>\
+<tuv xml:lang=\"gd\"><seg>Halò a charaid</seg></tuv></tu>\
+</body></tmx>";
+
+        let mut tmp = NamedTempFile::new().unwrap();
+        tmp.write_all(tmx_content.as_bytes()).unwrap();
+        let (tx, rx) = mpsc::channel(100);
+        let count = CorpusParser::parse_tmx_file(tmp.path().to_str().unwrap(), "en", "gd", &tx)
+            .await
+            .unwrap();
+        drop(tx);
+
+        assert_eq!(count, 1, "kana dropped, Gaelic kept");
+        let pairs = collect_translations(rx);
+        assert_eq!(pairs[0].target_text, "Halò a charaid");
+    }
+
+    #[tokio::test]
+    async fn a_borrowed_name_does_not_cost_a_good_pair() {
+        // The script guard is a majority test, not a purity test.
+        let tmx_content = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
+<tmx version=\"1.4\"><body>\
+<tu><tuv xml:lang=\"en\"><seg>He went to Tokyo yesterday</seg></tuv>\
+<tuv xml:lang=\"gd\"><seg>Chaidh e gu 東京 an-dè</seg></tuv></tu>\
+</body></tmx>";
+
+        let mut tmp = NamedTempFile::new().unwrap();
+        tmp.write_all(tmx_content.as_bytes()).unwrap();
+        let (tx, rx) = mpsc::channel(100);
+        let count = CorpusParser::parse_tmx_file(tmp.path().to_str().unwrap(), "en", "gd", &tx)
+            .await
+            .unwrap();
+        drop(tx);
+
+        assert_eq!(count, 1);
+        let pairs = collect_translations(rx);
+        assert_eq!(pairs[0].target_text, "Chaidh e gu 東京 an-dè");
     }
 
     #[test]

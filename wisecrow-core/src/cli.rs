@@ -246,6 +246,17 @@ pub struct FrequencyArgs {
 }
 
 #[derive(Args)]
+pub struct PruneArgs {
+    #[arg(short, long)]
+    pub lang: String,
+    /// Report what would change without writing anything. Worth running first:
+    /// a corpus that turns out to be mostly the wrong language loses most of
+    /// its rows, and that is better seen than discovered.
+    #[arg(long, default_value_t = false)]
+    pub dry_run: bool,
+}
+
+#[derive(Args)]
 pub struct NbackArgs {
     #[arg(short, long)]
     pub native_lang: String,
@@ -408,6 +419,8 @@ pub enum Command {
     PrefetchMedia(PrefetchMediaArgs),
     #[command(aliases = ["pv"])]
     Preview(PreviewArgs),
+    #[command(aliases = ["pr"])]
+    Prune(PruneArgs),
     #[command(aliases = ["q"])]
     Quiz(QuizArgs),
     #[command(aliases = ["sg"])]

@@ -53,6 +53,8 @@ The `gloss` and `graded-reader` commands — and `preview --gloss-unknowns` — 
 ```sh
 export WISECROW__LLM_PROVIDER=anthropic   # or: openai
 export WISECROW__LLM_API_KEY=sk-...
+# optional; blank uses provider default (claude-sonnet-5 / gpt-4o)
+export WISECROW__LLM_MODEL=claude-sonnet-5
 ```
 
 ## Database Setup

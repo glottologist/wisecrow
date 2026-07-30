@@ -13,10 +13,17 @@
         delete: false
         rsync_opts:
           - "--exclude=target"
+          # The container test runner writes here (CARGO_TARGET_DIR=target-docker,
+          # documented in agents/claude/), and "--exclude=target" does not cover
+          # it: rsync matches whole path components. Without this the deploy
+          # ships several gigabytes of build artefacts before it reaches the
+          # source it exists to sync.
+          - "--exclude=target-docker"
           - "--exclude=.git"
           - "--exclude=node_modules"
           - "--exclude=claude/"
           - "--exclude=codex/"
+          - "--exclude=agents/"
           - "--exclude=docs/book"
           - "--exclude=.direnv"
           - "--exclude=.devenv"

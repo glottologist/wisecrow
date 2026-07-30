@@ -36,8 +36,9 @@ export WISECROW__DB_PASSWORD=secret
 
 | Variable | Purpose | Used by |
 |----------|---------|---------|
-| `WISECROW__LLM_PROVIDER` | `anthropic` or `openai`. | `seed-grammar`, `generate-exercises` |
-| `WISECROW__LLM_API_KEY`  | API key for the chosen provider. | `seed-grammar`, `generate-exercises` |
+| `WISECROW__LLM_PROVIDER` | `anthropic` or `openai`. | `seed-grammar`, `generate-exercises`, gloss, graded-reader |
+| `WISECROW__LLM_API_KEY`  | API key for the chosen provider. | same |
+| `WISECROW__LLM_MODEL` | Optional model id (e.g. `claude-sonnet-5`, `gpt-4o`). Blank = provider default. | same |
 | `WISECROW__UNSPLASH_API_KEY` | Unsplash access key for card imagery. | `learn`, `prefetch-media` (when built with `images`) |
 | `WISECROW__REMOTE_URL`   | Remote Wisecrow base URL. | reserved for future remote-fetch flows |
 | `WISECROW__REMOTE_API_KEY` | API key for the remote URL. | reserved |

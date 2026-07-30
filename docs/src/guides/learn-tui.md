@@ -89,7 +89,7 @@ the next card draws.
 `wisecrow learn` accepts no media flags — they are configured at build time
 and runtime:
 
-- Build the binary with `--features "audio images"`.
+- Default build enables TTS generation + images. Add `--features audio` for local speaker playback (rodio/ALSA).
 - Set `WISECROW__UNSPLASH_API_KEY` for image fetch.
 - Run `wisecrow prefetch-media` ahead of time to warm the cache.
 

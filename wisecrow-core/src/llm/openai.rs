@@ -6,20 +6,29 @@ use super::LlmProvider;
 use crate::errors::WisecrowError;
 
 const OPENAI_API_URL: &str = "https://api.openai.com/v1/chat/completions";
-const DEFAULT_MODEL: &str = "gpt-4o";
+
+/// Default OpenAI model when `WISECROW__LLM_MODEL` is unset.
+pub const DEFAULT_MODEL: &str = "gpt-4o";
 
 pub struct OpenAiProvider {
     client: Client,
     api_key: String,
+    model: String,
 }
 
 impl OpenAiProvider {
     #[must_use]
-    pub fn new(api_key: String) -> Self {
+    pub fn new(api_key: impl Into<String>, model: impl Into<String>) -> Self {
         Self {
             client: Client::new(),
-            api_key,
+            api_key: api_key.into(),
+            model: model.into(),
         }
+    }
+
+    #[must_use]
+    pub fn model(&self) -> &str {
+        &self.model
     }
 }
 
@@ -55,7 +64,7 @@ struct ResponseMessage {
 impl LlmProvider for OpenAiProvider {
     async fn generate(&self, prompt: &str, max_tokens: u32) -> Result<String, WisecrowError> {
         let request = OpenAiRequest {
-            model: DEFAULT_MODEL,
+            model: &self.model,
             max_tokens,
             messages: vec![OpenAiMessage {
                 role: "user",
