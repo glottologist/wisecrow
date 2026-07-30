@@ -39,7 +39,10 @@ export WISECROW__DB_PASSWORD=secret
 | `WISECROW__LLM_PROVIDER` | `anthropic` or `openai`. | `seed-grammar`, `generate-exercises`, gloss, graded-reader |
 | `WISECROW__LLM_API_KEY`  | API key for the chosen provider. | same |
 | `WISECROW__LLM_MODEL` | Optional model id (e.g. `claude-sonnet-5`, `gpt-4o`). Blank = provider default. | same |
-| `WISECROW__UNSPLASH_API_KEY` | Unsplash access key for card imagery. | `learn`, `prefetch-media` (when built with `images`) |
+| `WISECROW__IMAGE_PROVIDER` | Image backend: `auto` (default), `unsplash`, `pexels`, or `pixabay`. | `learn`, `prefetch-media` (with `images`) |
+| `WISECROW__UNSPLASH_API_KEY` | Unsplash access key for card imagery. | same |
+| `WISECROW__PEXELS_API_KEY` | Pexels access key (alternative / fallback). | same |
+| `WISECROW__PIXABAY_API_KEY` | Pixabay access key (alternative / fallback). | same |
 | `WISECROW__REMOTE_URL`   | Remote Wisecrow base URL. | reserved for future remote-fetch flows |
 | `WISECROW__REMOTE_API_KEY` | API key for the remote URL. | reserved |
 | `WISECROW__SYNC_API_KEY` | API key sent as `x-api-key` to a sync remote. | `sync` |

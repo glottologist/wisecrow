@@ -103,7 +103,8 @@ ansible-vault encrypt ansible/vars/secrets.yml
   update the vault.
 - `sync_api_key_secret` is the optional legacy single sync key; prefer per-client
   keys (step 6).
-- `unsplash_api_key` enables optional learning-card images. Leave it blank to
+- Stock image keys (`unsplash_api_key` / Pexels / Pixabay env vars) enable
+  optional learning-card images. Leave them blank to
   keep image enrichment disabled; audio TTS does not require an API key.
 - `wisecrow_desec_token` is the deSEC API token used to write the DNS-01
   challenge record (step 1). Leave blank if `wisecrow_tls_obtain_cert` is false.
@@ -340,7 +341,10 @@ Log in at `https://<host>:8443/login`.
 | `WISECROW__LLM_PROVIDER` / `WISECROW__LLM_API_KEY` | LLM provider for gloss / graded-reader / quizzes. |
 | `WISECROW__LLM_MODEL` | Optional model id (default: `claude-sonnet-5` or `gpt-4o` by provider). |
 | `WISECROW__LLM_RATELIMIT_PER_MIN` | Per-user LLM request cap (default 20). |
-| `WISECROW__UNSPLASH_API_KEY` | Optional image enrichment key; omit to disable images gracefully. |
+| `WISECROW__IMAGE_PROVIDER` | Optional: `auto` (default), `unsplash`, `pexels`, or `pixabay`. |
+| `WISECROW__UNSPLASH_API_KEY` | Optional Unsplash key; omit with no other keys to disable images. |
+| `WISECROW__PEXELS_API_KEY` | Optional Pexels key (fallback / sole provider). |
+| `WISECROW__PIXABAY_API_KEY` | Optional Pixabay key (fallback / sole provider). |
 | `WISECROW__SYNC_API_KEY` | Legacy single sync key (per-client keys preferred). |
 | `RUST_LOG` / `RUST_BACKTRACE` | Logging (backtrace off by default in the image). |
 

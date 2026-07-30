@@ -312,6 +312,9 @@ impl CorpusParser {
                 || !Self::fits_unique_index(&src, &tgt)
                 || !crate::lang::is_plausible_script(&src, source_lang)
                 || !crate::lang::is_plausible_script(&tgt, target_lang)
+                || crate::lang::has_invisible_chars(&src)
+                || crate::lang::has_invisible_chars(&tgt)
+                || crate::lang::is_degenerate_pair(&src, &tgt)
             {
                 return true;
             }
@@ -557,16 +560,22 @@ mod tests {
         // CCAligned Welsh with `index row size 2752 exceeds btree version 4
         // maximum 2704`. "é" is two UTF-8 bytes, so the char counts stay
         // within MAX_PHRASE_CHARS while the byte counts cross the index limit.
+        // The two sides use different letters, both two bytes in UTF-8, so the
+        // byte arithmetic is unchanged while the pairs stay translations rather
+        // than degenerate ones. Were both sides identical, `is_degenerate_pair`
+        // would drop them and this test would pass for the wrong reason.
         let half_chars = CorpusParser::MAX_INDEX_KEY_BYTES / 4; // per side, at the limit
-        let at_limit = "é".repeat(half_chars); // 2 sides * half_chars * 2 bytes = limit
-        let over = "é".repeat(half_chars + 1); // two bytes past the budget per side
+        let at_limit_en = "é".repeat(half_chars); // 2 sides * half_chars * 2 bytes = limit
+        let at_limit_cy = "ü".repeat(half_chars);
+        let over_en = "é".repeat(half_chars + 1); // two bytes past the budget per side
+        let over_cy = "ü".repeat(half_chars + 1);
         let tmx_content = format!(
             "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
 <tmx version=\"1.4\"><body>\
-<tu><tuv xml:lang=\"en\"><seg>{over}</seg></tuv>\
-<tuv xml:lang=\"cy\"><seg>{over}</seg></tuv></tu>\
-<tu><tuv xml:lang=\"en\"><seg>{at_limit}</seg></tuv>\
-<tuv xml:lang=\"cy\"><seg>{at_limit}</seg></tuv></tu>\
+<tu><tuv xml:lang=\"en\"><seg>{over_en}</seg></tuv>\
+<tuv xml:lang=\"cy\"><seg>{over_cy}</seg></tuv></tu>\
+<tu><tuv xml:lang=\"en\"><seg>{at_limit_en}</seg></tuv>\
+<tuv xml:lang=\"cy\"><seg>{at_limit_cy}</seg></tuv></tu>\
 </body></tmx>"
         );
 
@@ -585,6 +594,35 @@ mod tests {
             CorpusParser::MAX_INDEX_KEY_BYTES,
             "the kept pair sits exactly at the combined byte budget"
         );
+    }
+
+    #[tokio::test]
+    async fn degenerate_and_invisible_pairs_never_reach_the_channel() {
+        // "An"/"An" is a real corpus line and a useless card: the prompt is the
+        // answer. The zero-width space is worse, being invisible to anyone
+        // trying to work out why a card looks wrong.
+        let tmx_content = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
+<tmx version=\"1.4\"><body>\
+<tu><tuv xml:lang=\"en\"><seg>An.</seg></tuv>\
+<tuv xml:lang=\"cy\"><seg>an</seg></tuv></tu>\
+<tu><tuv xml:lang=\"en\"><seg>She\u{200B}</seg></tuv>\
+<tuv xml:lang=\"cy\"><seg>Hi</seg></tuv></tu>\
+<tu><tuv xml:lang=\"en\"><seg>Yes</seg></tuv>\
+<tuv xml:lang=\"cy\"><seg>Ie</seg></tuv></tu>\
+</body></tmx>";
+
+        let mut tmp = NamedTempFile::new().unwrap();
+        tmp.write_all(tmx_content.as_bytes()).unwrap();
+        let (tx, rx) = mpsc::channel(100);
+        let count = CorpusParser::parse_tmx_file(tmp.path().to_str().unwrap(), "en", "cy", &tx)
+            .await
+            .unwrap();
+        drop(tx);
+
+        assert_eq!(count, 1, "only the genuine translation survives");
+        let pairs = collect_translations(rx);
+        assert_eq!(pairs[0].source_text, "Yes");
+        assert_eq!(pairs[0].target_text, "Ie");
     }
 
     #[test]

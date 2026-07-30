@@ -95,7 +95,7 @@ mod implementation {
 
     #[cfg(feature = "images")]
     pub(super) async fn image(translation_id: i32, word: &str) -> Result<String, ServerFnError> {
-        let api_key = unsplash_api_key()?;
+        let fetcher = image_fetcher()?;
         let db = crate::server::pool()?;
         let client = reqwest::Client::new();
         let cache =
@@ -105,7 +105,7 @@ mod implementation {
                 })?;
         let path = cache
             .get_or_fetch(translation_id, MediaType::Image, || {
-                wisecrow::media::images::fetch_image(&client, word, &api_key)
+                wisecrow::media::images::fetch_image(&client, word, &fetcher)
             })
             .await
             .map_err(|error| crate::server::internal_error("image fetch", &error))?;
@@ -115,7 +115,7 @@ mod implementation {
     }
 
     #[cfg(feature = "images")]
-    fn unsplash_api_key() -> Result<String, ServerFnError> {
+    fn image_fetcher() -> Result<wisecrow::media::images::ImageFetcher, ServerFnError> {
         let settings = config::Config::builder()
             .add_source(config::Environment::with_prefix("WISECROW").separator("__"))
             .build()
@@ -123,15 +123,12 @@ mod implementation {
         let cfg: wisecrow::config::Config = settings
             .try_deserialize()
             .map_err(|error| crate::server::internal_error("image configuration", &error))?;
-        cfg.unsplash_api_key
-            .filter(|key| !key.expose().trim().is_empty())
-            .map(|key| String::from(key.expose()))
-            .ok_or_else(|| {
-                crate::server::client_error(
-                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                    "Image capability is not configured",
-                )
-            })
+        wisecrow::media::images::ImageFetcher::from_config(&cfg).ok_or_else(|| {
+            crate::server::client_error(
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "Image capability is not configured",
+            )
+        })
     }
 
     async fn read_bounded_file(

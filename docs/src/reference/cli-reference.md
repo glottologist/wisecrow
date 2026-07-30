@@ -298,8 +298,9 @@ wisecrow prefetch-media -n <NATIVE> -f <FOREIGN> [--audio BOOL] [--images BOOL]
 ```
 
 Walks the deck and warms the on-disk cache for audio and/or image media.
-Audio uses Microsoft Edge TTS (no API key); images need
-`WISECROW__UNSPLASH_API_KEY`.
+Audio uses Microsoft Edge TTS (no API key). Images need at least one
+stock-photo key (`WISECROW__UNSPLASH_API_KEY`, `WISECROW__PEXELS_API_KEY`,
+and/or `WISECROW__PIXABAY_API_KEY`; optional `WISECROW__IMAGE_PROVIDER`).
 
 This command is a no-op for media types whose feature is not compiled in.
 

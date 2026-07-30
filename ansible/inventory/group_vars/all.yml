@@ -52,6 +52,8 @@ postgres_user: wisecrow
 postgres_db: wisecrow
 
 # Optional knobs — leave blank to omit from the generated .env.
+# Image backend: auto | unsplash | pexels | pixabay (blank = app default auto).
+image_provider: "auto"
 llm_provider: "anthropic"   # anthropic | openai
 # Model id for the chosen provider. Blank = provider default
 # (anthropic → claude-sonnet-5, openai → gpt-4o).

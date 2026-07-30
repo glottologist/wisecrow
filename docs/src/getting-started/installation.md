@@ -40,7 +40,7 @@ The release binary ends up at `target/release/wisecrow`. Add it to your
 | Feature | Adds | Cost |
 |---------|------|------|
 | `tts` (default) | Microsoft Edge TTS generation via `msedge-tts`. | Needs outbound network at runtime. |
-| `images` (default) | Unsplash image fetch and TUI rendering via `ratatui-image`. | Pulls `image` decoders; needs Unsplash API key for fetch. |
+| `images` (default) | Stock image fetch (Unsplash / Pexels / Pixabay) + TUI rendering via `ratatui-image`. | Needs at least one provider API key. |
 | `audio` | Adds local playback via `rodio` (implies `tts`). | Pulls ALSA on Linux. |
 
 Defaults cover generation + images. Opt into local speaker playback:
@@ -62,7 +62,8 @@ dx serve
 Default features enable TTS audio and Unsplash images on learn cards.
 `dx` enables the `server` / `web` halves itself. You need a configured
 PostgreSQL connection (see [Configuration](./configuration.md)). For
-images, set `WISECROW__UNSPLASH_API_KEY`.
+images, set one of `WISECROW__UNSPLASH_API_KEY`, `WISECROW__PEXELS_API_KEY`,
+or `WISECROW__PIXABAY_API_KEY` (or several with `WISECROW__IMAGE_PROVIDER=auto`).
 
 ## Verify the install
 

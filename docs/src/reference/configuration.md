@@ -19,7 +19,10 @@ All variables are prefixed with `WISECROW__` (double underscore separator).
 | `LLM_PROVIDER` | `anthropic` \| `openai` | optional | gloss / graded-reader / seed-grammar / generate-exercises |
 | `LLM_API_KEY` | secret | with `LLM_PROVIDER` | same |
 | `LLM_MODEL` | string | optional | Model id; defaults: `claude-sonnet-5` (anthropic), `gpt-4o` (openai) |
+| `IMAGE_PROVIDER` | string | optional (`auto`) | `auto` \| `unsplash` \| `pexels` \| `pixabay` |
 | `UNSPLASH_API_KEY` | secret | optional | `learn`, `prefetch-media` (with `images`) |
+| `PEXELS_API_KEY` | secret | optional | same |
+| `PIXABAY_API_KEY` | secret | optional | same |
 | `REMOTE_URL` | URL | optional | reserved |
 | `REMOTE_API_KEY` | secret | optional | reserved |
 | `SYNC_API_KEY` | secret | optional | `sync` |

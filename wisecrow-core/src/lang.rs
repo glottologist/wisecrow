@@ -45,6 +45,49 @@ pub fn is_unsegmented_run(phrase: &str) -> bool {
     )
 }
 
+/// Characters that occupy no width and carry no meaning in a phrase: the
+/// zero-width space and its relatives, the word joiner, and the byte-order mark
+/// used as one.
+///
+/// Subtitle corpora are full of them, and they are invisible in every tool that
+/// would otherwise reveal the problem. The Irish deck served a card reading
+/// "She" whose English side ended in U+200B, which no amount of looking at it
+/// could explain.
+const INVISIBLE_CHARS: [char; 6] = [
+    '\u{200B}', '\u{200C}', '\u{200D}', '\u{2060}', '\u{FEFF}', '\u{00AD}',
+];
+
+/// Returns `true` if `phrase` contains a character that renders as nothing.
+///
+/// Such a phrase is not merely untidy: it defeats deduplication, because two
+/// strings a reader cannot tell apart compare as different.
+#[must_use]
+pub fn has_invisible_chars(phrase: &str) -> bool {
+    phrase.chars().any(|c| INVISIBLE_CHARS.contains(&c))
+}
+
+/// Returns `true` if both sides of a pair are the same phrase once normalised.
+///
+/// A card whose prompt equals its answer teaches nothing, however common the
+/// word. These arise where a corpus line was not translated at all, or where the
+/// two languages genuinely share a spelling — Irish `An` against English `An`,
+/// and Gaelic `Air` against English `Air`, both of which reached real decks.
+#[must_use]
+pub fn is_degenerate_pair(source: &str, target: &str) -> bool {
+    normalise_for_match(source) == normalise_for_match(target)
+}
+
+/// Lowercases and strips the edge punctuation that
+/// [`crate::frequency::MATCH_TRIM_CHARS`] defines, so that "Tha", "Tha." and
+/// "Tha?" compare equal. Shared rather than restated, because the deck
+/// deduplicates on the same form.
+#[must_use]
+pub fn normalise_for_match(phrase: &str) -> String {
+    phrase
+        .trim_matches(crate::frequency::MATCH_TRIM_CHARS)
+        .to_lowercase()
+}
+
 /// A writing system. Only the scripts used by the languages in
 /// [`crate::cli::SUPPORTED_LANGUAGE_INFO`] are represented.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -308,5 +351,33 @@ mod tests {
                 let _ = script_of(c);
             }
         }
+    }
+
+    #[rstest]
+    #[case("She\u{200B}", true, "zero-width space")]
+    #[case("T\u{FEFF}\u{00E1}", true, "byte-order mark used mid-word")]
+    #[case("soft\u{00AD}hyphen", true, "soft hyphen")]
+    #[case("She", false, "nothing invisible")]
+    #[case("Dìreach", false, "accented Latin is visible")]
+    fn invisible_characters_are_detected(
+        #[case] phrase: &str,
+        #[case] expected: bool,
+        #[case] why: &str,
+    ) {
+        assert_eq!(has_invisible_chars(phrase), expected, "{why}");
+    }
+
+    #[rstest]
+    #[case("An.", "An.", true, "identical but for nothing")]
+    #[case("Air.", "Air", true, "edge punctuation is normalised away")]
+    #[case("YES", "yes", true, "case is normalised away")]
+    #[case("Yes.", "Tha.", false, "a genuine translation")]
+    fn degenerate_pairs_are_recognised(
+        #[case] source: &str,
+        #[case] target: &str,
+        #[case] expected: bool,
+        #[case] why: &str,
+    ) {
+        assert_eq!(is_degenerate_pair(source, target), expected, "{why}");
     }
 }

@@ -18,7 +18,7 @@ const PHRASE_PAGE_SIZE: usize = 5000;
 /// This set must stay in step with the `btrim` argument in migration
 /// `016_normalised_phrase_indexes.sql` and in [`FrequencyUpdater::bulk_update`];
 /// a mismatch silently costs the index rather than failing loudly.
-const MATCH_TRIM_CHARS: &[char] = &['.', ',', '!', '?', ';', ':', '"', '\'', '¡', '¿'];
+pub(crate) const MATCH_TRIM_CHARS: &[char] = &['.', ',', '!', '?', ';', ':', '"', '\'', '¡', '¿'];
 
 /// [`MATCH_TRIM_CHARS`] as the body of a SQL string literal, with the single
 /// quote doubled. `trim_set_is_consistent_across_rust_sql_and_migration` holds
@@ -278,8 +278,13 @@ impl FrequencyUpdater {
         // `-n en -f cy` holds Welsh in to_phrase, and a Welsh list should rank
         // it. The btrim sets match migration 016, so both expression indexes
         // are usable.
+        //
+        // This writes `corpus_frequency`, never `frequency`. Ranking is the only
+        // source of a real corpus count, and keeping the two columns apart is
+        // what stops an ingest collision count reaching a deck — see migration
+        // 017 for what that cost the Irish deck.
         let statement = format!(
-            "UPDATE translations SET frequency = t.freq
+            "UPDATE translations SET corpus_frequency = t.freq
              FROM unnest($1::text[], $2::int[]) AS t(phrase, freq)
              WHERE (translations.from_language_id = $3
                     AND lower(btrim(translations.from_phrase, '{MATCH_TRIM_SQL}')) = t.phrase)

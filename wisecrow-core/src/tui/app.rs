@@ -232,16 +232,15 @@ mod media_support {
 
                 #[cfg(feature = "images")]
                 {
-                    let Some(ref api_key) = ctx.unsplash_api_key else {
+                    let Some(ref fetcher) = ctx.image_fetcher else {
                         return;
                     };
                     let client = ctx.http_client.clone(); // clone: reqwest::Client is Arc-based
-                    let api_key = String::from(api_key.expose());
                     let word = to_phrase;
                     let result = ctx
                         .cache
                         .get_or_fetch(translation_id, crate::media::MediaType::Image, || async {
-                            crate::media::images::fetch_image(&client, &word, &api_key).await
+                            crate::media::images::fetch_image(&client, &word, fetcher).await
                         })
                         .await;
                     match result {

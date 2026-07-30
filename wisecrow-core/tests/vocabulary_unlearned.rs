@@ -36,7 +36,24 @@ async fn cleanup(pool: &PgPool) {
     .expect("translations cleanup");
 }
 
-async fn seed(pool: &PgPool, english: &str, welsh: &str, frequency: i32) {
+/// Seeds a pair as ranking would leave it: a corpus count in `corpus_frequency`.
+async fn seed(pool: &PgPool, english: &str, welsh: &str, corpus_frequency: i32) {
+    seed_pair(pool, english, welsh, Some(corpus_frequency), 1).await;
+}
+
+/// Seeds a pair as the ingest alone would leave it: a collision count in
+/// `frequency` and no corpus count at all.
+async fn seed_unranked(pool: &PgPool, english: &str, welsh: &str, frequency: i32) {
+    seed_pair(pool, english, welsh, None, frequency).await;
+}
+
+async fn seed_pair(
+    pool: &PgPool,
+    english: &str,
+    welsh: &str,
+    corpus_frequency: Option<i32>,
+    frequency: i32,
+) {
     sqlx::query(
         "INSERT INTO languages (code, name) VALUES ('en', 'English'), ('cy', 'Welsh')
          ON CONFLICT (code) DO NOTHING",
@@ -46,12 +63,14 @@ async fn seed(pool: &PgPool, english: &str, welsh: &str, frequency: i32) {
     .expect("languages seed");
 
     sqlx::query(
-        "INSERT INTO translations (from_language_id, from_phrase, to_language_id, to_phrase, frequency)
+        "INSERT INTO translations
+             (from_language_id, from_phrase, to_language_id, to_phrase, corpus_frequency, frequency)
          VALUES ((SELECT id FROM languages WHERE code='en'), $1,
-                 (SELECT id FROM languages WHERE code='cy'), $2, $3)",
+                 (SELECT id FROM languages WHERE code='cy'), $2, $3, $4)",
     )
     .bind(english)
     .bind(welsh)
+    .bind(corpus_frequency)
     .bind(frequency)
     .execute(pool)
     .await
@@ -125,6 +144,70 @@ async fn the_native_phrase_shown_is_the_one_the_corpus_agrees_on() {
         deck[0].from_phrase.starts_with("Yes"),
         "expected the agreed translation, got {:?}",
         deck[0].from_phrase
+    );
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn a_pair_ranking_never_scored_stays_out_of_the_deck() {
+    let pool = test_pool().await;
+    cleanup(&pool).await;
+
+    // This is the Irish deck's fault reduced to two rows. The ingest upsert is
+    // `ON CONFLICT ... DO UPDATE SET frequency = frequency + 1`, so a pair
+    // carried by two corpora climbs that column without being common in either.
+    // 3,246,887 Irish rows sat above 1 on this evidence and only 1,689 had ever
+    // been ranked, so the deck served sentences ordered by duplication.
+    seed_unranked(&pool, "Whatever the corpus repeated", "Beth bynnag", 5000).await;
+    seed(&pool, "Yes", "Ie", 40).await;
+
+    let deck = VocabularyQuery::unlearned(&pool, "en", "cy", 50)
+        .await
+        .expect("unlearned");
+
+    let welsh: Vec<&str> = deck.iter().map(|e| e.to_phrase.as_str()).collect();
+    assert_eq!(
+        welsh,
+        vec!["Ie"],
+        "only the ranked pair belongs in a deck, however high the collision count"
+    );
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn a_corrupt_fragment_loses_to_a_widely_attested_native_phrase() {
+    let pool = test_pool().await;
+    cleanup(&pool).await;
+
+    // The Gaelic deck gave "Bha" the English "Bthey", "Seo" the English "Seaso"
+    // and "Dè" the English "Dthat". Each of those words had only singleton
+    // pairs, so agreement tied at one and the ordering fell through to the
+    // shortest native phrase — which is precisely what a corrupt fragment is.
+    //
+    // "was" is attested against three other Welsh words here; "Bthey" against
+    // one. Nothing about the two strings distinguishes them, and "Bthey" is the
+    // longer, so only the breadth of attestation can decide it.
+    seed(&pool, "Bthey", "Bu", 900).await;
+    seed(&pool, "was", "Bu", 900).await;
+    seed(&pool, "was", "Oedd", 800).await;
+    seed(&pool, "was", "Roedd", 700).await;
+    seed(&pool, "was", "Ydoedd", 600).await;
+
+    let deck = VocabularyQuery::unlearned(&pool, "en", "cy", 50)
+        .await
+        .expect("unlearned");
+
+    let bu = deck
+        .iter()
+        .find(|e| e.to_phrase == "Bu")
+        .expect("the word is in the deck");
+    assert_eq!(
+        bu.from_phrase, "was",
+        "a native phrase the corpus uses widely beats a one-off fragment"
     );
 
     cleanup(&pool).await;

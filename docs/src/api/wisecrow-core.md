@@ -60,7 +60,10 @@ pub struct Config {
     pub db_name: Option<String>,
     pub db_user: Option<String>,
     pub db_password: Option<SecureString>,
+    pub image_provider: Option<String>,
     pub unsplash_api_key: Option<SecureString>,
+    pub pexels_api_key: Option<SecureString>,
+    pub pixabay_api_key: Option<SecureString>,
     pub llm_provider: Option<String>,
     pub llm_api_key: Option<SecureString>,
     pub llm_model: Option<String>,
@@ -353,7 +356,7 @@ Source: `wisecrow-core/src/llm/`.
 
 ```rust,ignore
 pub enum MediaType { Audio, Image }
-pub struct MediaContext { pub cache, pub http_client, pub foreign_lang, pub unsplash_api_key }
+pub struct MediaContext { pub cache, pub http_client, pub foreign_lang, pub image_fetcher }
 pub struct MediaCache { /* cache_dir + PgPool */ }
 
 impl MediaCache {
@@ -365,7 +368,7 @@ impl MediaCache {
 ```
 
 Audio (`audio` feature) goes through Microsoft Edge TTS via `msedge-tts`;
-images (`images` feature) hit Unsplash.
+images (`images` feature) hit Unsplash / Pexels / Pixabay via `ImageFetcher`.
 Source: `wisecrow-core/src/media/`.
 
 ## `sync`

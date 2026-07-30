@@ -7,6 +7,9 @@ use tracing::info;
 use crate::errors::WisecrowError;
 use crate::media::cache::MediaCache;
 
+#[cfg(feature = "images")]
+use crate::media::images::ImageFetcher;
+
 const MAX_CONCURRENT_FETCHES: usize = 4;
 type MediaRow = (i32, String);
 type PrefetchHandle = tokio::task::JoinHandle<usize>;
@@ -27,7 +30,7 @@ pub async fn prefetch_media(
     foreign_lang: &str,
     fetch_audio: bool,
     fetch_images: bool,
-    unsplash_api_key: Option<&str>,
+    #[cfg(feature = "images")] image_fetcher: Option<&ImageFetcher>,
 ) -> Result<usize, WisecrowError> {
     let rows = load_media_rows(pool, native_lang, foreign_lang).await?;
     if rows.is_empty() {
@@ -43,7 +46,8 @@ pub async fn prefetch_media(
         foreign_lang,
         fetch_audio,
         fetch_images,
-        unsplash_api_key,
+        #[cfg(feature = "images")]
+        image_fetcher,
         &progress,
     )
     .await?;
@@ -88,10 +92,12 @@ async fn spawn_prefetches(
     foreign_lang: &str,
     fetch_audio: bool,
     fetch_images: bool,
-    unsplash_api_key: Option<&str>,
+    #[cfg(feature = "images")] image_fetcher: Option<&ImageFetcher>,
     progress: &ProgressBar,
 ) -> Result<Vec<PrefetchHandle>, WisecrowError> {
     let semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_FETCHES));
+    #[cfg(feature = "images")]
+    let image_fetcher = image_fetcher.cloned(); // clone: ImageFetcher shares Arc providers
     let mut handles = Vec::new();
     for (translation_id, to_phrase) in rows {
         let permit = Arc::clone(&semaphore) // clone: Arc shared ownership for semaphore
@@ -100,8 +106,9 @@ async fn spawn_prefetches(
             .map_err(|error| WisecrowError::InvalidInput(format!("Semaphore closed: {error}")))?;
         let pool_owned = pool.clone(); // clone: PgPool is Arc-based
         let foreign = String::from(foreign_lang);
-        let api_key = unsplash_api_key.map(String::from);
         let progress_ref = progress.clone(); // clone: ProgressBar is Arc-based
+        #[cfg(feature = "images")]
+        let image_fetcher = image_fetcher.clone(); // clone: share provider chain across tasks
         let handle = tokio::spawn(async move {
             let fetched = prefetch_single(
                 &pool_owned,
@@ -110,7 +117,8 @@ async fn spawn_prefetches(
                 &foreign,
                 fetch_audio,
                 fetch_images,
-                api_key.as_deref(),
+                #[cfg(feature = "images")]
+                image_fetcher.as_ref(),
             )
             .await;
             progress_ref.inc(1);
@@ -140,7 +148,7 @@ async fn prefetch_single(
     foreign_lang: &str,
     fetch_audio: bool,
     fetch_images: bool,
-    unsplash_api_key: Option<&str>,
+    #[cfg(feature = "images")] image_fetcher: Option<&ImageFetcher>,
 ) -> usize {
     let cache = match MediaCache::new(pool.clone()) {
         // clone: MediaCache owns an Arc-backed pool handle
@@ -158,7 +166,8 @@ async fn prefetch_single(
         translation_id,
         to_phrase,
         fetch_images,
-        unsplash_api_key,
+        #[cfg(feature = "images")]
+        image_fetcher,
     )
     .await;
 
@@ -203,20 +212,19 @@ async fn prefetch_image(
     translation_id: i32,
     to_phrase: &str,
     fetch_images: bool,
-    unsplash_api_key: Option<&str>,
+    image_fetcher: Option<&ImageFetcher>,
 ) -> usize {
     if !fetch_images {
         return 0;
     }
-    let Some(key) = unsplash_api_key else {
+    let Some(fetcher) = image_fetcher else {
         return 0;
     };
     let client = reqwest::Client::new();
     let word = String::from(to_phrase);
-    let key_owned = String::from(key);
     let result = cache
         .get_or_fetch(translation_id, crate::media::MediaType::Image, || async {
-            crate::media::images::fetch_image(&client, &word, &key_owned).await
+            crate::media::images::fetch_image(&client, &word, fetcher).await
         })
         .await;
     usize::from(result.is_ok())
@@ -228,7 +236,6 @@ async fn prefetch_image(
     _translation_id: i32,
     _to_phrase: &str,
     _fetch_images: bool,
-    _unsplash_api_key: Option<&str>,
 ) -> usize {
     0
 }

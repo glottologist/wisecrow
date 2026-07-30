@@ -29,6 +29,12 @@ impl VocabularyQuery {
         // unlearned. Per-user "what should I learn next" should additionally
         // filter against this user's cards once consumed.
         //
+        // The deck is drawn from `corpus_frequency`, which only ranking writes,
+        // so a pair that was merely ingested twice cannot reach it: NULL fails
+        // `> 1` without a special case. Filtering on `frequency` served 3.2M
+        // Irish sentences ordered by how often a pair happened to be duplicated
+        // (migration 017).
+        //
         // The deck is deduplicated on the phrase being *learned*, normalised.
         // Deduplicating on `from_phrase` instead put one foreign word into as
         // many cards as it had native-language partners: a Gaelic deck opened
@@ -44,28 +50,43 @@ impl VocabularyQuery {
         // stored pairs give the same native phrase, so a translation the corpus
         // repeats beats a one-off, and mojibake and run-together fragments lose
         // by construction rather than by a rule enumerating them.
+        //
+        // Agreement alone was not enough. Where every one of a word's pairs is a
+        // singleton it ties at one, and the ordering then fell through to the
+        // shortest native phrase — which is exactly what a short corrupt
+        // fragment is, so "Bthey", "Seaso" and "Dthat" took the Gaelic cards for
+        // "Bha", "Seo" and "Dè". `native_support` breaks that tie by how widely
+        // the native phrase is attested across the pair as a whole: a real word
+        // appears against many partners, a corruption against one. It sits below
+        // agreement deliberately, so a word's own evidence still outranks mere
+        // commonness and a frequent generic phrase cannot hijack every card.
         let statement = format!(
             "SELECT id, from_phrase, to_phrase, frequency FROM (
                SELECT DISTINCT ON (norm_to) id, from_phrase, to_phrase, frequency
                FROM (
-                 SELECT t.id, t.from_phrase, t.to_phrase, t.frequency,
+                 SELECT t.id, t.from_phrase, t.to_phrase,
+                        t.corpus_frequency AS frequency,
                         lower(btrim(t.to_phrase, '{trim}')) AS norm_to,
                         count(*) OVER (
                           PARTITION BY lower(btrim(t.to_phrase, '{trim}')),
                                        lower(btrim(t.from_phrase, '{trim}'))
-                        ) AS agreement
+                        ) AS agreement,
+                        count(*) OVER (
+                          PARTITION BY lower(btrim(t.from_phrase, '{trim}'))
+                        ) AS native_support
                  FROM translations t
                  JOIN languages fl ON t.from_language_id = fl.id
                  JOIN languages tl ON t.to_language_id = tl.id
                  LEFT JOIN cards c ON c.translation_id = t.id
                  WHERE fl.code = $1 AND tl.code = $2 AND c.id IS NULL
-                   AND t.frequency > 1
+                   AND t.corpus_frequency > 1
                    AND LENGTH(t.from_phrase) BETWEEN 2 AND 200
                    AND LENGTH(t.to_phrase) BETWEEN 2 AND 200
                ) scored
                ORDER BY norm_to,
                         frequency DESC,
                         agreement DESC,
+                        native_support DESC,
                         LENGTH(to_phrase),
                         LENGTH(from_phrase),
                         id
@@ -109,7 +130,11 @@ impl VocabularyQuery {
         limit: u32,
     ) -> Result<Vec<VocabularyEntry>, WisecrowError> {
         let rows = sqlx::query_as::<_, (i32, String, String, i32)>(
-            "SELECT t.id, t.from_phrase, t.to_phrase, t.frequency
+            // `COALESCE` because, unlike `unlearned`, nothing here filters out
+            // rows ranking has never touched: a card seeded before migration 017
+            // may have no corpus count, and it should sort last rather than
+            // fail to decode.
+            "SELECT t.id, t.from_phrase, t.to_phrase, COALESCE(t.corpus_frequency, 0)
              FROM translations t
              JOIN languages fl ON t.from_language_id = fl.id
              JOIN languages tl ON t.to_language_id = tl.id
@@ -118,7 +143,7 @@ impl VocabularyQuery {
                AND c.user_id = $3
                AND c.state = ANY($4)
                AND ($5::REAL IS NULL OR c.stability >= $5)
-             ORDER BY t.frequency DESC
+             ORDER BY t.corpus_frequency DESC NULLS LAST
              LIMIT $6",
         )
         .bind(native_lang)

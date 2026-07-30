@@ -460,13 +460,13 @@ async fn handle_frequency(args: FrequencyArgs) -> Result<(), Error> {
 async fn handle_prune(args: PruneArgs) -> Result<(), Error> {
     let (_config, pool) = load_config_and_pool().await?;
     let report = wisecrow::pruning::Pruner::run(&pool, &args.lang, args.dry_run).await?;
-    let verb = if args.dry_run {
-        "Would remove"
+    let (verb, demote_verb) = if args.dry_run {
+        ("Would remove", "demote")
     } else {
-        "Removed"
+        ("Removed", "demoted")
     };
     info!(
-        "{verb} {} wrong-script pairs and demote {} unsegmented runs for {}, from {} phrases scanned",
+        "{verb} {} unusable pairs and {demote_verb} {} unsegmented runs for {}, from {} phrases scanned",
         report.deleted, report.demoted, args.lang, report.scanned
     );
     Ok(())
@@ -612,17 +612,16 @@ async fn handle_prefetch_media(args: PrefetchMediaArgs) -> Result<(), Error> {
     validate_languages(&args.native_lang, &args.foreign_lang)?;
     let (config, pool) = load_config_and_pool().await?;
 
-    let api_key = config
-        .unsplash_api_key
-        .as_ref()
-        .map(wisecrow::config::SecureString::expose);
+    #[cfg(feature = "images")]
+    let image_fetcher = wisecrow::media::images::ImageFetcher::from_config(&config);
     let count = wisecrow::media::prefetch::prefetch_media(
         &pool,
         &args.native_lang,
         &args.foreign_lang,
         args.audio,
         args.images,
-        api_key,
+        #[cfg(feature = "images")]
+        image_fetcher.as_ref(),
     )
     .await?;
 
@@ -1063,7 +1062,7 @@ async fn handle_learn(args: LearnArgs) -> Result<(), Error> {
     let foreign_lang_name = resolve_language_name(&args.foreign_lang)?.to_owned();
 
     let gloss_ctx = build_gloss_context(&config, &pool);
-    let media_ctx = build_media_context(pool.clone(), args.foreign_lang, config.unsplash_api_key);
+    let media_ctx = build_media_context(pool.clone(), args.foreign_lang, &config);
 
     app::run_tui(pool, session, media_ctx, gloss_ctx, foreign_lang_name).await?;
     Ok(())
@@ -1089,9 +1088,9 @@ fn build_gloss_context(config: &Config, pool: &PgPool) -> Option<wisecrow::tui::
 fn build_media_context(
     pool: PgPool,
     foreign_lang: String,
-    unsplash_api_key: Option<wisecrow::config::SecureString>,
+    config: &Config,
 ) -> Option<MediaContext> {
-    match MediaContext::new(pool, foreign_lang, unsplash_api_key) {
+    match MediaContext::from_config(pool, foreign_lang, config) {
         Ok(ctx) => Some(ctx),
         Err(e) => {
             tracing::warn!("Media cache init failed, running without media: {e}");
