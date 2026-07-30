@@ -104,7 +104,7 @@ impl XmlParseHandler for TmxState {
                 {
                     return false;
                 }
-                if *count > 0 && *count % 1000 == 0 {
+                if *count > 0 && (*count).is_multiple_of(1000) {
                     tracing::info!("Parsed {count} TMX pairs");
                 }
             }
@@ -193,7 +193,7 @@ impl XmlParseHandler for XmlState {
                     {
                         return false;
                     }
-                    if *count > 0 && *count % 1000 == 0 {
+                    if *count > 0 && (*count).is_multiple_of(1000) {
                         tracing::info!("Parsed {count} XML alignment pairs");
                     }
                 }

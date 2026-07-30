@@ -6,12 +6,13 @@
 |-------------|---------|-----|
 | Rust toolchain | stable (≥ 1.75) | Workspace targets `edition = "2021"` and uses recent `clap`/`tokio`/`sqlx` features. |
 | PostgreSQL | 15+ | Wisecrow uses `unnest` array bulk-inserts and `ON CONFLICT DO UPDATE`. |
-| `pkg-config` and OpenSSL headers | system-provided | Required by transitive dependencies on Linux. |
+| `pkg-config` and OpenSSL headers | system-provided | Required by transitive TTS deps (`msedge-tts` → `curl` / `native-tls`) on Linux. |
 | Optional: ALSA dev headers | `libasound2-dev` (Debian) | Only when building with the `audio` feature. |
 
 > **Note:** The repository ships a `flake.nix` and `devbox.json`. If you use
 > Nix or [Devbox](https://www.jetify.com/devbox), `nix develop` or
-> `devbox shell` gives you a ready toolchain.
+> `devbox shell` gives you a ready toolchain (including OpenSSL `out`/`dev`
+> outputs and `PKG_CONFIG_PATH` for `openssl-sys`).
 
 ## Clone the repository
 

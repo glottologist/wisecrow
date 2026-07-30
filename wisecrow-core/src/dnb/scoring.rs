@@ -91,7 +91,7 @@ pub fn apply_adaptation(state: &mut AdaptationState, trials: &[CompletedTrial]) 
         return;
     }
 
-    if trials.len() % ADAPTATION_WINDOW != 0 {
+    if !trials.len().is_multiple_of(ADAPTATION_WINDOW) {
         return;
     }
 

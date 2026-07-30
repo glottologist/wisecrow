@@ -580,7 +580,7 @@ async fn handle_preview(args: PreviewArgs) -> Result<(), Error> {
         .into_iter()
         .filter(|a| !args.unknown_only || matches!(a.status, Status::New | Status::Unknown))
         .collect();
-    filtered.sort_by(|a, b| b.frequency.unwrap_or(0).cmp(&a.frequency.unwrap_or(0)));
+    filtered.sort_by_key(|b| std::cmp::Reverse(b.frequency.unwrap_or(0)));
     if let Some(n) = args.top_n {
         filtered.truncate(usize::try_from(n).unwrap_or(usize::MAX));
     }

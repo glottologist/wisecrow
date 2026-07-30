@@ -1,1 +1,58 @@
-/nix/store/773lld3vwj55s3mxnzwg7mjs8akq0ahl-pre-commit-config.json
+# Local pre-commit hooks. Prefer PATH toolchain (Devbox/devenv shell) over
+# hard-coded nix store paths so cargo-check/clippy match the active Rust.
+default_stages:
+  - pre-commit
+
+repos:
+  - repo: local
+    hooks:
+      - id: alejandra
+        name: alejandra
+        language: system
+        entry: alejandra
+        files: \.nix$
+        types: [file]
+        stages: [pre-commit]
+
+      - id: cargo-check
+        name: cargo-check
+        language: system
+        entry: cargo check --workspace --manifest-path ./Cargo.toml
+        files: \.rs$
+        pass_filenames: false
+        types: [file]
+        stages: [pre-commit]
+
+      - id: clippy
+        name: clippy
+        language: system
+        entry: cargo clippy --workspace --all-targets --manifest-path ./Cargo.toml --
+        files: \.rs$
+        pass_filenames: false
+        types: [file]
+        stages: [pre-commit]
+
+      - id: commitizen
+        name: commitizen check
+        language: system
+        entry: cz check --allow-abort --commit-msg-file
+        stages: [commit-msg]
+        pass_filenames: true
+        types: [file]
+
+      - id: nil
+        name: nil
+        language: system
+        entry: bash -c 'status=0; for f in "$@"; do nil diagnostics "$f" || status=$?; done; exit $status' --
+        files: \.nix$
+        types: [file]
+        stages: [pre-commit]
+
+      - id: rustfmt
+        name: rustfmt
+        language: system
+        entry: cargo fmt --manifest-path ./Cargo.toml --all -- --color always --check
+        files: \.rs$
+        pass_filenames: false
+        types: [file]
+        stages: [pre-commit]

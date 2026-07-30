@@ -103,3 +103,4 @@ ansible/vars/secrets.yml
 
 # Local agent notes / session handoffs (not project source)
 agents/
+

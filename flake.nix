@@ -102,8 +102,10 @@
             mdbook --version
           '';
           languages = {
+            # Keep in step with Devbox (rustc@latest). Unpinned "nightly"
+            # froze pre-commit hooks on cargo 1.81 and broke edition2024 crates.
             rust.enable = true;
-            rust.channel = "nightly";
+            rust.channel = "stable";
             rust.targets = ["wasm32-unknown-unknown"];
             nix.enable = true;
           };
@@ -147,17 +149,10 @@
           };
           dotenv.enable = true;
           difftastic.enable = true;
-          pre-commit = {
-            hooks = {
-              alejandra.enable = true;
-              commitizen.enable = true;
-              cargo-check.enable = true;
-              clippy.enable = true;
-              rustfmt.enable = true;
-              nil.enable = true;
-            };
-            settings.rust.cargoManifestPath = "./Cargo.toml";
-          };
+          # Hand-maintained .pre-commit-config.yaml (PATH cargo). Disable
+          # devenv generation so it does not replace that file with a
+          # nix-store symlink pinning an old cargo (broke edition2024).
+          pre-commit.enable = false;
         };
       };
     };
