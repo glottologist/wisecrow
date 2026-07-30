@@ -249,6 +249,12 @@ pub struct FrequencyArgs {
 pub struct PruneArgs {
     #[arg(short, long)]
     pub lang: String,
+    /// Language of the phrase a learner reads as the prompt. Given this, the
+    /// prune fetches its published word list and demotes pairs whose prompt
+    /// holds no recognised word — corpus corruption such as "Bthey" or
+    /// "andthatthe", which no ordering rule inside the deck query can catch.
+    #[arg(short, long)]
+    pub native_lang: Option<String>,
     /// Report what would change without writing anything. Worth running first:
     /// a corpus that turns out to be mostly the wrong language loses most of
     /// its rows, and that is better seen than discovered.

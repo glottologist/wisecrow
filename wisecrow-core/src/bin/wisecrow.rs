@@ -459,14 +459,27 @@ async fn handle_frequency(args: FrequencyArgs) -> Result<(), Error> {
 
 async fn handle_prune(args: PruneArgs) -> Result<(), Error> {
     let (_config, pool) = load_config_and_pool().await?;
-    let report = wisecrow::pruning::Pruner::run(&pool, &args.lang, args.dry_run).await?;
+    let vocabulary = match args.native_lang.as_deref() {
+        Some(native) => {
+            let words = wisecrow::frequency::FrequencyUpdater::fetch_vocabulary(native).await?;
+            info!(
+                "Loaded {} {native} words to judge native phrases by",
+                words.len()
+            );
+            Some(words)
+        }
+        None => None,
+    };
+    let report =
+        wisecrow::pruning::Pruner::run(&pool, &args.lang, vocabulary.as_ref(), args.dry_run)
+            .await?;
     let (verb, demote_verb) = if args.dry_run {
         ("Would remove", "demote")
     } else {
         ("Removed", "demoted")
     };
     info!(
-        "{verb} {} unusable pairs and {demote_verb} {} unsegmented runs for {}, from {} phrases scanned",
+        "{verb} {} unusable pairs and {demote_verb} {} unteachable ones for {}, from {} phrases scanned",
         report.deleted, report.demoted, args.lang, report.scanned
     );
     Ok(())

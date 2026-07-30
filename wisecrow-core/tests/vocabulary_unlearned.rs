@@ -176,39 +176,3 @@ async fn a_pair_ranking_never_scored_stays_out_of_the_deck() {
 
     cleanup(&pool).await;
 }
-
-#[tokio::test]
-#[ignore = "requires PostgreSQL"]
-async fn a_corrupt_fragment_loses_to_a_widely_attested_native_phrase() {
-    let pool = test_pool().await;
-    cleanup(&pool).await;
-
-    // The Gaelic deck gave "Bha" the English "Bthey", "Seo" the English "Seaso"
-    // and "Dè" the English "Dthat". Each of those words had only singleton
-    // pairs, so agreement tied at one and the ordering fell through to the
-    // shortest native phrase — which is precisely what a corrupt fragment is.
-    //
-    // "was" is attested against three other Welsh words here; "Bthey" against
-    // one. Nothing about the two strings distinguishes them, and "Bthey" is the
-    // longer, so only the breadth of attestation can decide it.
-    seed(&pool, "Bthey", "Bu", 900).await;
-    seed(&pool, "was", "Bu", 900).await;
-    seed(&pool, "was", "Oedd", 800).await;
-    seed(&pool, "was", "Roedd", 700).await;
-    seed(&pool, "was", "Ydoedd", 600).await;
-
-    let deck = VocabularyQuery::unlearned(&pool, "en", "cy", 50)
-        .await
-        .expect("unlearned");
-
-    let bu = deck
-        .iter()
-        .find(|e| e.to_phrase == "Bu")
-        .expect("the word is in the deck");
-    assert_eq!(
-        bu.from_phrase, "was",
-        "a native phrase the corpus uses widely beats a one-off fragment"
-    );
-
-    cleanup(&pool).await;
-}

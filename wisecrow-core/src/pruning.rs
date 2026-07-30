@@ -8,6 +8,7 @@
 
 use crate::errors::WisecrowError;
 use sqlx::PgPool;
+use std::collections::HashSet;
 
 /// A row as the prune reads it: its id, the phrase on the language's own side,
 /// then both phrases and the corpus count.
@@ -27,8 +28,8 @@ pub struct PruneReport {
     /// Pairs deleted: the phrase is not in the language's script, a side holds
     /// characters that render as nothing, or both sides say the same thing.
     pub deleted: usize,
-    /// Pairs demoted to corpus_frequency 1 because the phrase is one unsegmented
-    /// run.
+    /// Pairs demoted to corpus_frequency 1: the phrase is one unsegmented run,
+    /// or the native side holds no word the published list recognises.
     pub demoted: usize,
 }
 
@@ -50,6 +51,7 @@ impl Pruner {
     pub async fn run(
         pool: &PgPool,
         lang_code: &str,
+        native_vocabulary: Option<&HashSet<String>>,
         dry_run: bool,
     ) -> Result<PruneReport, WisecrowError> {
         if !crate::lang::is_valid_code(lang_code) {
@@ -59,7 +61,15 @@ impl Pruner {
         }
         let mut report = PruneReport::default();
         for column in ["from", "to"] {
-            Self::prune_side(pool, lang_code, column, dry_run, &mut report).await?;
+            Self::prune_side(
+                pool,
+                lang_code,
+                column,
+                native_vocabulary,
+                dry_run,
+                &mut report,
+            )
+            .await?;
         }
         Ok(report)
     }
@@ -68,6 +78,7 @@ impl Pruner {
         pool: &PgPool,
         lang_code: &str,
         column: &str,
+        native_vocabulary: Option<&HashSet<String>>,
         dry_run: bool,
         report: &mut PruneReport,
     ) -> Result<(), WisecrowError> {
@@ -99,7 +110,7 @@ impl Pruner {
             after_id = *last_id;
             report.scanned += rows.len();
 
-            let (doomed, demoted) = Self::classify(&rows, lang_code);
+            let (doomed, demoted) = Self::classify(&rows, lang_code, column, native_vocabulary);
             report.deleted += doomed.len();
             report.demoted += demoted.len();
 
@@ -115,10 +126,18 @@ impl Pruner {
     /// A pair that fails any deletion rule is never also considered for
     /// demotion: it is going regardless, and counting it twice would overstate
     /// the report.
-    fn classify(rows: &[PrunableRow], lang_code: &str) -> (Vec<i32>, Vec<i32>) {
+    fn classify(
+        rows: &[PrunableRow],
+        lang_code: &str,
+        column: &str,
+        native_vocabulary: Option<&HashSet<String>>,
+    ) -> (Vec<i32>, Vec<i32>) {
         let mut doomed = Vec::new();
         let mut demoted = Vec::new();
         for (id, phrase, source, target, corpus_frequency) in rows {
+            // The native phrase is whichever side is not the language being
+            // pruned; that is the one a learner reads as the prompt.
+            let native = if column == "to" { source } else { target };
             if !crate::lang::is_plausible_script(phrase, lang_code)
                 || crate::lang::has_invisible_chars(source)
                 || crate::lang::has_invisible_chars(target)
@@ -126,7 +145,9 @@ impl Pruner {
             {
                 doomed.push(*id);
             } else if corpus_frequency.is_some_and(|f| f > 1)
-                && crate::lang::is_unsegmented_run(phrase)
+                && (crate::lang::is_unsegmented_run(phrase)
+                    || native_vocabulary
+                        .is_some_and(|v| !crate::lang::has_recognised_word(native, v)))
             {
                 demoted.push(*id);
             }
@@ -194,7 +215,7 @@ mod tests {
             row(5, &latin_run, 1),
         ];
 
-        let (doomed, demoted) = Pruner::classify(&rows, "gd");
+        let (doomed, demoted) = Pruner::classify(&rows, "gd", "to", None);
 
         assert_eq!(doomed, vec![2], "only the kana blob is not Gaelic");
         assert_eq!(
@@ -216,7 +237,7 @@ mod tests {
             pair(3, "Yes.", "Tha.", Some(37_126)),
         ];
 
-        let (doomed, demoted) = Pruner::classify(&rows, "gd");
+        let (doomed, demoted) = Pruner::classify(&rows, "gd", "to", None);
 
         assert_eq!(
             doomed,
@@ -236,9 +257,46 @@ mod tests {
             pair(3, "Yes.", "T\u{FEFF}á.", Some(371_740)),
         ];
 
-        let (doomed, _) = Pruner::classify(&rows, "ga");
+        let (doomed, _) = Pruner::classify(&rows, "ga", "to", None);
 
         assert_eq!(doomed, vec![1, 3], "either side spoils the pair");
+    }
+
+    #[test]
+    fn demotes_pairs_whose_native_phrase_is_not_the_language_it_claims() {
+        // Measured on the real Gaelic deck: "Bthey" was the *only* English
+        // partner "Bha" had, and "Dthat" tied with "What?" on every statistic the
+        // deck query can see, winning on the lower id. Ordering cannot separate
+        // these; the corruption has to leave the data.
+        let vocabulary: HashSet<String> = ["what", "yes", "the", "of", "was", "by"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let rows = vec![
+            pair(1, "Bthey", "Bha", Some(6091)),
+            pair(2, "andthatthe", "Dè", Some(3486)),
+            pair(3, "What?", "Dè", Some(3486)),
+            pair(4, "by Denk", "Rud", Some(500)),
+        ];
+
+        let (doomed, demoted) = Pruner::classify(&rows, "gd", "to", Some(&vocabulary));
+
+        assert!(doomed.is_empty(), "a bad prompt is not bad data");
+        assert_eq!(
+            demoted,
+            vec![1, 2],
+            "one recognised word is enough to survive, so \"by Denk\" stays"
+        );
+    }
+
+    #[test]
+    fn without_a_vocabulary_no_pair_is_judged_on_its_native_phrase() {
+        let rows = vec![pair(1, "Bthey", "Bha", Some(6091))];
+
+        let (doomed, demoted) = Pruner::classify(&rows, "gd", "to", None);
+
+        assert!(doomed.is_empty());
+        assert!(demoted.is_empty(), "the rule is opt-in via --native-lang");
     }
 
     #[test]
@@ -248,7 +306,7 @@ mod tests {
         // change.
         let rows = vec![row(1, &"i".repeat(122), 1)];
 
-        let (doomed, demoted) = Pruner::classify(&rows, "gd");
+        let (doomed, demoted) = Pruner::classify(&rows, "gd", "to", None);
 
         assert!(doomed.is_empty());
         assert!(demoted.is_empty());
@@ -261,7 +319,7 @@ mod tests {
         // value where the absence of one is the more truthful state.
         let rows = vec![unranked_row(1, &"i".repeat(122))];
 
-        let (doomed, demoted) = Pruner::classify(&rows, "gd");
+        let (doomed, demoted) = Pruner::classify(&rows, "gd", "to", None);
 
         assert!(doomed.is_empty());
         assert!(demoted.is_empty(), "NULL already fails the deck filter");
@@ -271,7 +329,7 @@ mod tests {
     fn a_language_it_knows_nothing_about_loses_nothing_to_the_script_rule() {
         let rows = vec![row(1, "うぐぅ", 5)];
 
-        let (doomed, _) = Pruner::classify(&rows, "xx");
+        let (doomed, _) = Pruner::classify(&rows, "xx", "to", None);
 
         assert!(doomed.is_empty());
     }

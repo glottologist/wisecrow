@@ -51,15 +51,13 @@ impl VocabularyQuery {
         // repeats beats a one-off, and mojibake and run-together fragments lose
         // by construction rather than by a rule enumerating them.
         //
-        // Agreement alone was not enough. Where every one of a word's pairs is a
-        // singleton it ties at one, and the ordering then fell through to the
-        // shortest native phrase — which is exactly what a short corrupt
-        // fragment is, so "Bthey", "Seaso" and "Dthat" took the Gaelic cards for
-        // "Bha", "Seo" and "Dè". `native_support` breaks that tie by how widely
-        // the native phrase is attested across the pair as a whole: a real word
-        // appears against many partners, a corruption against one. It sits below
-        // agreement deliberately, so a word's own evidence still outranks mere
-        // commonness and a frequent generic phrase cannot hijack every card.
+        // Ordering cannot rescue a corrupt native phrase, and it was a mistake to
+        // try. Measured on the Gaelic deck, 200 of its 315 words have exactly one
+        // candidate partner, so there is nothing to order; and where there are
+        // several, the corruption ties with the correct answer on every statistic
+        // this query can see — "What?" and "Dthat" both partnered "Dè" twice, and
+        // the card fell to whichever held the lower id. Junk native phrases have
+        // to be removed from the data, which is [`crate::pruning`]'s job.
         let statement = format!(
             "SELECT id, from_phrase, to_phrase, frequency FROM (
                SELECT DISTINCT ON (norm_to) id, from_phrase, to_phrase, frequency
@@ -70,10 +68,7 @@ impl VocabularyQuery {
                         count(*) OVER (
                           PARTITION BY lower(btrim(t.to_phrase, '{trim}')),
                                        lower(btrim(t.from_phrase, '{trim}'))
-                        ) AS agreement,
-                        count(*) OVER (
-                          PARTITION BY lower(btrim(t.from_phrase, '{trim}'))
-                        ) AS native_support
+                        ) AS agreement
                  FROM translations t
                  JOIN languages fl ON t.from_language_id = fl.id
                  JOIN languages tl ON t.to_language_id = tl.id
@@ -86,7 +81,6 @@ impl VocabularyQuery {
                ORDER BY norm_to,
                         frequency DESC,
                         agreement DESC,
-                        native_support DESC,
                         LENGTH(to_phrase),
                         LENGTH(from_phrase),
                         id

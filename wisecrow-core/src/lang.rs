@@ -88,6 +88,21 @@ pub fn normalise_for_match(phrase: &str) -> String {
         .to_lowercase()
 }
 
+/// Returns `true` if any token of `phrase` appears in `vocabulary`.
+///
+/// Deliberately generous: one recognised word is enough. A subtitle line may
+/// carry names, numbers and slang that no published list holds, and demoting a
+/// real translation is the worse error. What this does catch is the phrase with
+/// no recognised word anywhere in it — "Bthey", "Seaso", "andthatthe" — which is
+/// corpus corruption rather than the language it claims to be.
+#[must_use]
+pub fn has_recognised_word(phrase: &str, vocabulary: &std::collections::HashSet<String>) -> bool {
+    phrase
+        .split_whitespace()
+        .map(normalise_for_match)
+        .any(|token| !token.is_empty() && vocabulary.contains(&token))
+}
+
 /// A writing system. Only the scripts used by the languages in
 /// [`crate::cli::SUPPORTED_LANGUAGE_INFO`] are represented.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

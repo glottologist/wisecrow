@@ -1,7 +1,7 @@
 use crate::errors::WisecrowError;
 use reqwest::Client;
 use sqlx::PgPool;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 use url::Url;
 
@@ -62,6 +62,44 @@ impl FrequencyUpdater {
         let body = response.text().await?;
         let frequencies = Self::parse_frequency_text(&body);
         Self::bulk_update(pool, lang_code, &frequencies).await
+    }
+
+    /// Fetches a published word list and returns its words as a set, without
+    /// touching the database.
+    ///
+    /// The prune uses this to judge whether a native phrase is the language it
+    /// claims to be. A corpus line reading "Bthey" is not English, and no
+    /// ordering rule inside the deck query can tell, because the corruption ties
+    /// with the correct answer on every statistic the query can see.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the language code is malformed, or the list cannot be
+    /// fetched.
+    pub async fn fetch_vocabulary(lang_code: &str) -> Result<HashSet<String>, WisecrowError> {
+        if !crate::lang::is_valid_code(lang_code) {
+            return Err(WisecrowError::InvalidInput(format!(
+                "Invalid language code: {lang_code}"
+            )));
+        }
+        let base = Url::parse(HERMIT_DAVE_BASE)?;
+        let url = base.join(&format!("{lang_code}/{lang_code}_50k.txt"))?;
+        let client = Client::builder().timeout(Duration::from_secs(60)).build()?;
+        let response = client.get(url).send().await?;
+
+        if !response.status().is_success() {
+            return Err(WisecrowError::InvalidInput(format!(
+                "Failed to fetch frequency list for {lang_code}: HTTP {}",
+                response.status()
+            )));
+        }
+
+        let body = response.text().await?;
+        Ok(Self::parse_frequency_text(&body)
+            .into_keys()
+            .map(|word| word.trim_matches(MATCH_TRIM_CHARS).to_lowercase())
+            .filter(|word| !word.is_empty())
+            .collect())
     }
 
     /// Derives a word-frequency list from the phrases already stored for
