@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0de4a196.js";
+            window.path_to_searchindex_js = "../searchindex-b1b67770.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -262,7 +262,7 @@ the next card draws.</p>
 <p><code>wisecrow learn</code> accepts no media flags — they are configured at build time
 and runtime:</p>
 <ul>
-<li>Build the binary with <code>--features "audio images"</code>.</li>
+<li>Default build enables TTS generation + images. Add <code>--features audio</code> for local speaker playback (rodio/ALSA).</li>
 <li>Set <code>WISECROW__UNSPLASH_API_KEY</code> for image fetch.</li>
 <li>Run <code>wisecrow prefetch-media</code> ahead of time to warm the cache.</li>
 </ul>

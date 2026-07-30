@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0de4a196.js";
+            window.path_to_searchindex_js = "../searchindex-b1b67770.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -197,8 +197,9 @@ narrative version.</p>
 <tr><td><code>DB_NAME</code></td><td>string</td><td>one of B</td><td>All database commands</td></tr>
 <tr><td><code>DB_USER</code></td><td>string</td><td>one of B</td><td>All database commands</td></tr>
 <tr><td><code>DB_PASSWORD</code></td><td>secret</td><td>one of B</td><td>All database commands</td></tr>
-<tr><td><code>LLM_PROVIDER</code></td><td><code>anthropic</code> | <code>openai</code></td><td>optional</td><td><code>seed-grammar</code>, <code>generate-exercises</code></td></tr>
+<tr><td><code>LLM_PROVIDER</code></td><td><code>anthropic</code> | <code>openai</code></td><td>optional</td><td>gloss / graded-reader / seed-grammar / generate-exercises</td></tr>
 <tr><td><code>LLM_API_KEY</code></td><td>secret</td><td>with <code>LLM_PROVIDER</code></td><td>same</td></tr>
+<tr><td><code>LLM_MODEL</code></td><td>string</td><td>optional</td><td>Model id; defaults: <code>claude-sonnet-5</code> (anthropic), <code>gpt-4o</code> (openai)</td></tr>
 <tr><td><code>UNSPLASH_API_KEY</code></td><td>secret</td><td>optional</td><td><code>learn</code>, <code>prefetch-media</code> (with <code>images</code>)</td></tr>
 <tr><td><code>REMOTE_URL</code></td><td>URL</td><td>optional</td><td>reserved</td></tr>
 <tr><td><code>REMOTE_API_KEY</code></td><td>secret</td><td>optional</td><td>reserved</td></tr>

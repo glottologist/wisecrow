@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0de4a196.js";
+            window.path_to_searchindex_js = "../searchindex-b1b67770.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -189,7 +189,7 @@
 <tbody>
 <tr><td>Rust toolchain</td><td>stable (≥ 1.75)</td><td>Workspace targets <code>edition = "2021"</code> and uses recent <code>clap</code>/<code>tokio</code>/<code>sqlx</code> features.</td></tr>
 <tr><td>PostgreSQL</td><td>15+</td><td>Wisecrow uses <code>unnest</code> array bulk-inserts and <code>ON CONFLICT DO UPDATE</code>.</td></tr>
-<tr><td><code>pkg-config</code> and OpenSSL headers</td><td>system-provided</td><td>Required by transitive dependencies on Linux.</td></tr>
+<tr><td><code>pkg-config</code> and OpenSSL headers</td><td>system-provided</td><td>Required by transitive TTS deps (<code>msedge-tts</code> → <code>curl</code> / <code>native-tls</code>) on Linux.</td></tr>
 <tr><td>Optional: ALSA dev headers</td><td><code>libasound2-dev</code> (Debian)</td><td>Only when building with the <code>audio</code> feature.</td></tr>
 </tbody>
 </table>
@@ -197,7 +197,8 @@
 <blockquote>
 <p><strong>Note:</strong> The repository ships a <code>flake.nix</code> and <code>devbox.json</code>. If you use
 Nix or <a href="https://www.jetify.com/devbox">Devbox</a>, <code>nix develop</code> or
-<code>devbox shell</code> gives you a ready toolchain.</p>
+<code>devbox shell</code> gives you a ready toolchain (including OpenSSL <code>out</code>/<code>dev</code>
+outputs and <code>PKG_CONFIG_PATH</code> for <code>openssl-sys</code>).</p>
 </blockquote>
 <h2 id="clone-the-repository"><a class="header" href="#clone-the-repository">Clone the repository</a></h2>
 <pre><code class="language-sh">git clone https://github.com/glottologist/wisecrow
@@ -218,22 +219,25 @@ contains the experimental web and mobile front-ends.</p>
 <tr><th>Feature</th><th>Adds</th><th>Cost</th></tr>
 </thead>
 <tbody>
-<tr><td><code>audio</code></td><td>Microsoft Edge TTS streaming via <code>msedge-tts</code>, playback via <code>rodio</code>.</td><td>Pulls ALSA on Linux.</td></tr>
-<tr><td><code>images</code></td><td>Unsplash image fetch and inline rendering via <code>ratatui-image</code>.</td><td>Pulls <code>image</code> decoders.</td></tr>
+<tr><td><code>tts</code> (default)</td><td>Microsoft Edge TTS generation via <code>msedge-tts</code>.</td><td>Needs outbound network at runtime.</td></tr>
+<tr><td><code>images</code> (default)</td><td>Unsplash image fetch and TUI rendering via <code>ratatui-image</code>.</td><td>Pulls <code>image</code> decoders; needs Unsplash API key for fetch.</td></tr>
+<tr><td><code>audio</code></td><td>Adds local playback via <code>rodio</code> (implies <code>tts</code>).</td><td>Pulls ALSA on Linux.</td></tr>
 </tbody>
 </table>
 </div>
-<p>Enable them at build time:</p>
-<pre><code class="language-sh">cargo build --release -p wisecrow-core --features "audio images"
+<p>Defaults cover generation + images. Opt into local speaker playback:</p>
+<pre><code class="language-sh">cargo build --release -p wisecrow-core --features audio
 </code></pre>
 <h2 id="build-the-web-ui-experimental"><a class="header" href="#build-the-web-ui-experimental">Build the web UI (experimental)</a></h2>
 <p>The web crate uses Dioxus fullstack and requires the <code>dioxus-cli</code>:</p>
 <pre><code class="language-sh">cargo install dioxus-cli
 cd wisecrow-web
-dx serve --features server
+dx serve
 </code></pre>
-<p>The <code>server</code> feature pulls in <code>wisecrow-core</code>, so you need a configured
-PostgreSQL connection (see <a href="./configuration.html">Configuration</a>).</p>
+<p>Default features enable TTS audio and Unsplash images on learn cards.
+<code>dx</code> enables the <code>server</code> / <code>web</code> halves itself. You need a configured
+PostgreSQL connection (see <a href="./configuration.html">Configuration</a>). For
+images, set <code>WISECROW__UNSPLASH_API_KEY</code>.</p>
 <h2 id="verify-the-install"><a class="header" href="#verify-the-install">Verify the install</a></h2>
 <pre><code class="language-sh">wisecrow --help
 wisecrow list-languages | head

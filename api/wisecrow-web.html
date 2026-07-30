@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0de4a196.js";
+            window.path_to_searchindex_js = "../searchindex-b1b67770.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -207,19 +207,21 @@ against the colocated server.</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Feature</th><th>Pulls in</th><th>Used for</th></tr>
+<tr><th>Feature</th><th>Default</th><th>Pulls in</th><th>Used for</th></tr>
 </thead>
 <tbody>
-<tr><td><code>server</code></td><td><code>wisecrow-core</code>, <code>tokio</code>, <code>sqlx</code>, <code>dotenvy</code>, <code>config</code>, <code>tempfile</code></td><td>Build the server binary.</td></tr>
-<tr><td><code>web</code></td><td><code>dioxus/web</code></td><td>Build the browser bundle.</td></tr>
-<tr><td><code>audio</code></td><td><code>server</code> + <code>wisecrow-core/audio</code> + <code>base64</code></td><td>Serve TTS audio over the wire.</td></tr>
-<tr><td><code>images</code></td><td><code>server</code> + <code>wisecrow-core/images</code> + <code>base64</code> + <code>reqwest</code></td><td>Serve Unsplash-fetched images.</td></tr>
+<tr><td><code>audio</code></td><td>yes</td><td><code>wisecrow-core/tts</code> + <code>base64</code></td><td>Serve Edge TTS pronunciation over the wire.</td></tr>
+<tr><td><code>images</code></td><td>yes</td><td><code>wisecrow-core/images</code> + <code>base64</code> + <code>reqwest</code></td><td>Serve Unsplash-fetched images.</td></tr>
+<tr><td><code>server</code></td><td>no</td><td><code>wisecrow-core</code>, <code>tokio</code>, <code>sqlx</code>, …</td><td>Build the server binary (<code>dx</code> enables this).</td></tr>
+<tr><td><code>web</code></td><td>no</td><td><code>dioxus/web</code></td><td>Build the browser bundle (<code>dx</code> enables this).</td></tr>
 </tbody>
 </table>
 </div>
+<p><code>audio</code> and <code>images</code> are on by default. Use <code>--no-default-features</code> for a
+minimal build. Images also need <code>WISECROW__UNSPLASH_API_KEY</code> at runtime.</p>
 <p>A typical fullstack dev loop:</p>
 <pre><code class="language-sh">cd wisecrow-web
-dx serve --features "server web"
+dx serve
 </code></pre>
 <h2 id="routes"><a class="header" href="#routes">Routes</a></h2>
 <pre><code class="language-rust ignore">#[derive(Clone, Routable, Debug, PartialEq)]

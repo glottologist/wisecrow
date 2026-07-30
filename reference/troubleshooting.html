@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0de4a196.js";
+            window.path_to_searchindex_js = "../searchindex-b1b67770.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -330,8 +330,10 @@ https://example.com/foo/ + /api/sync_languages → https://example.com/api/sync_
 <p>Pass the bare host (<code>https://example.com</code>) and let Wisecrow add the path.</p>
 <h2 id="web-ui"><a class="header" href="#web-ui">Web UI</a></h2>
 <p>The web UI is experimental and is not covered here. If you hit issues,
-build with <code>--features "server web"</code> and run <code>dx serve --features "server web"</code> from <code>wisecrow-web/</code>. Check the server log for SQL errors —
-they are the same as for the CLI.</p>
+run <code>dx serve</code> from <code>wisecrow-web/</code> (audio + images are default). Check
+the server log for SQL errors — they are the same as for the CLI. Card
+images need <code>WISECROW__UNSPLASH_API_KEY</code>; audio uses Edge TTS and needs
+outbound network access.</p>
 <h2 id="logs"><a class="header" href="#logs">Logs</a></h2>
 <p>For every issue above, the first thing to do is enable verbose logging:</p>
 <pre><code class="language-sh">RUST_LOG=wisecrow=debug,info wisecrow ...

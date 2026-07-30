@@ -38,7 +38,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-0de4a196.js";
+            window.path_to_searchindex_js = "searchindex-b1b67770.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d4c59dab.js"></script>
@@ -254,7 +254,7 @@ followed by the <a href="#wisecrow-core-1">API references</a>.</li>
 <tbody>
 <tr><td>Rust toolchain</td><td>stable (≥ 1.75)</td><td>Workspace targets <code>edition = "2021"</code> and uses recent <code>clap</code>/<code>tokio</code>/<code>sqlx</code> features.</td></tr>
 <tr><td>PostgreSQL</td><td>15+</td><td>Wisecrow uses <code>unnest</code> array bulk-inserts and <code>ON CONFLICT DO UPDATE</code>.</td></tr>
-<tr><td><code>pkg-config</code> and OpenSSL headers</td><td>system-provided</td><td>Required by transitive dependencies on Linux.</td></tr>
+<tr><td><code>pkg-config</code> and OpenSSL headers</td><td>system-provided</td><td>Required by transitive TTS deps (<code>msedge-tts</code> → <code>curl</code> / <code>native-tls</code>) on Linux.</td></tr>
 <tr><td>Optional: ALSA dev headers</td><td><code>libasound2-dev</code> (Debian)</td><td>Only when building with the <code>audio</code> feature.</td></tr>
 </tbody>
 </table>
@@ -262,7 +262,8 @@ followed by the <a href="#wisecrow-core-1">API references</a>.</li>
 <blockquote>
 <p><strong>Note:</strong> The repository ships a <code>flake.nix</code> and <code>devbox.json</code>. If you use
 Nix or <a href="https://www.jetify.com/devbox">Devbox</a>, <code>nix develop</code> or
-<code>devbox shell</code> gives you a ready toolchain.</p>
+<code>devbox shell</code> gives you a ready toolchain (including OpenSSL <code>out</code>/<code>dev</code>
+outputs and <code>PKG_CONFIG_PATH</code> for <code>openssl-sys</code>).</p>
 </blockquote>
 <h2 id="clone-the-repository"><a class="header" href="#clone-the-repository">Clone the repository</a></h2>
 <pre><code class="language-sh">git clone https://github.com/glottologist/wisecrow
@@ -283,22 +284,25 @@ contains the experimental web and mobile front-ends.</p>
 <tr><th>Feature</th><th>Adds</th><th>Cost</th></tr>
 </thead>
 <tbody>
-<tr><td><code>audio</code></td><td>Microsoft Edge TTS streaming via <code>msedge-tts</code>, playback via <code>rodio</code>.</td><td>Pulls ALSA on Linux.</td></tr>
-<tr><td><code>images</code></td><td>Unsplash image fetch and inline rendering via <code>ratatui-image</code>.</td><td>Pulls <code>image</code> decoders.</td></tr>
+<tr><td><code>tts</code> (default)</td><td>Microsoft Edge TTS generation via <code>msedge-tts</code>.</td><td>Needs outbound network at runtime.</td></tr>
+<tr><td><code>images</code> (default)</td><td>Unsplash image fetch and TUI rendering via <code>ratatui-image</code>.</td><td>Pulls <code>image</code> decoders; needs Unsplash API key for fetch.</td></tr>
+<tr><td><code>audio</code></td><td>Adds local playback via <code>rodio</code> (implies <code>tts</code>).</td><td>Pulls ALSA on Linux.</td></tr>
 </tbody>
 </table>
 </div>
-<p>Enable them at build time:</p>
-<pre><code class="language-sh">cargo build --release -p wisecrow-core --features "audio images"
+<p>Defaults cover generation + images. Opt into local speaker playback:</p>
+<pre><code class="language-sh">cargo build --release -p wisecrow-core --features audio
 </code></pre>
 <h2 id="build-the-web-ui-experimental"><a class="header" href="#build-the-web-ui-experimental">Build the web UI (experimental)</a></h2>
 <p>The web crate uses Dioxus fullstack and requires the <code>dioxus-cli</code>:</p>
 <pre><code class="language-sh">cargo install dioxus-cli
 cd wisecrow-web
-dx serve --features server
+dx serve
 </code></pre>
-<p>The <code>server</code> feature pulls in <code>wisecrow-core</code>, so you need a configured
-PostgreSQL connection (see <a href="#configuration">Configuration</a>).</p>
+<p>Default features enable TTS audio and Unsplash images on learn cards.
+<code>dx</code> enables the <code>server</code> / <code>web</code> halves itself. You need a configured
+PostgreSQL connection (see <a href="#configuration">Configuration</a>). For
+images, set <code>WISECROW__UNSPLASH_API_KEY</code>.</p>
 <h2 id="verify-the-install"><a class="header" href="#verify-the-install">Verify the install</a></h2>
 <pre><code class="language-sh">wisecrow --help
 wisecrow list-languages | head
@@ -340,8 +344,9 @@ committed <code>.env</code> files.</p>
 <tr><th>Variable</th><th>Purpose</th><th>Used by</th></tr>
 </thead>
 <tbody>
-<tr><td><code>WISECROW__LLM_PROVIDER</code></td><td><code>anthropic</code> or <code>openai</code>.</td><td><code>seed-grammar</code>, <code>generate-exercises</code></td></tr>
-<tr><td><code>WISECROW__LLM_API_KEY</code></td><td>API key for the chosen provider.</td><td><code>seed-grammar</code>, <code>generate-exercises</code></td></tr>
+<tr><td><code>WISECROW__LLM_PROVIDER</code></td><td><code>anthropic</code> or <code>openai</code>.</td><td><code>seed-grammar</code>, <code>generate-exercises</code>, gloss, graded-reader</td></tr>
+<tr><td><code>WISECROW__LLM_API_KEY</code></td><td>API key for the chosen provider.</td><td>same</td></tr>
+<tr><td><code>WISECROW__LLM_MODEL</code></td><td>Optional model id (e.g. <code>claude-sonnet-5</code>, <code>gpt-4o</code>). Blank = provider default.</td><td>same</td></tr>
 <tr><td><code>WISECROW__UNSPLASH_API_KEY</code></td><td>Unsplash access key for card imagery.</td><td><code>learn</code>, <code>prefetch-media</code> (when built with <code>images</code>)</td></tr>
 <tr><td><code>WISECROW__REMOTE_URL</code></td><td>Remote Wisecrow base URL.</td><td>reserved for future remote-fetch flows</td></tr>
 <tr><td><code>WISECROW__REMOTE_API_KEY</code></td><td>API key for the remote URL.</td><td>reserved</td></tr>
@@ -756,7 +761,7 @@ the next card draws.</p>
 <p><code>wisecrow learn</code> accepts no media flags — they are configured at build time
 and runtime:</p>
 <ul>
-<li>Build the binary with <code>--features "audio images"</code>.</li>
+<li>Default build enables TTS generation + images. Add <code>--features audio</code> for local speaker playback (rodio/ALSA).</li>
 <li>Set <code>WISECROW__UNSPLASH_API_KEY</code> for image fetch.</li>
 <li>Run <code>wisecrow prefetch-media</code> ahead of time to warm the cache.</li>
 </ul>
@@ -2033,8 +2038,9 @@ narrative version.</p>
 <tr><td><code>DB_NAME</code></td><td>string</td><td>one of B</td><td>All database commands</td></tr>
 <tr><td><code>DB_USER</code></td><td>string</td><td>one of B</td><td>All database commands</td></tr>
 <tr><td><code>DB_PASSWORD</code></td><td>secret</td><td>one of B</td><td>All database commands</td></tr>
-<tr><td><code>LLM_PROVIDER</code></td><td><code>anthropic</code> | <code>openai</code></td><td>optional</td><td><code>seed-grammar</code>, <code>generate-exercises</code></td></tr>
+<tr><td><code>LLM_PROVIDER</code></td><td><code>anthropic</code> | <code>openai</code></td><td>optional</td><td>gloss / graded-reader / seed-grammar / generate-exercises</td></tr>
 <tr><td><code>LLM_API_KEY</code></td><td>secret</td><td>with <code>LLM_PROVIDER</code></td><td>same</td></tr>
+<tr><td><code>LLM_MODEL</code></td><td>string</td><td>optional</td><td>Model id; defaults: <code>claude-sonnet-5</code> (anthropic), <code>gpt-4o</code> (openai)</td></tr>
 <tr><td><code>UNSPLASH_API_KEY</code></td><td>secret</td><td>optional</td><td><code>learn</code>, <code>prefetch-media</code> (with <code>images</code>)</td></tr>
 <tr><td><code>REMOTE_URL</code></td><td>URL</td><td>optional</td><td>reserved</td></tr>
 <tr><td><code>REMOTE_API_KEY</code></td><td>secret</td><td>optional</td><td>reserved</td></tr>
@@ -2495,8 +2501,10 @@ https://example.com/foo/ + /api/sync_languages → https://example.com/api/sync_
 <p>Pass the bare host (<code>https://example.com</code>) and let Wisecrow add the path.</p>
 <h2 id="web-ui"><a class="header" href="#web-ui">Web UI</a></h2>
 <p>The web UI is experimental and is not covered here. If you hit issues,
-build with <code>--features "server web"</code> and run <code>dx serve --features "server web"</code> from <code>wisecrow-web/</code>. Check the server log for SQL errors —
-they are the same as for the CLI.</p>
+run <code>dx serve</code> from <code>wisecrow-web/</code> (audio + images are default). Check
+the server log for SQL errors — they are the same as for the CLI. Card
+images need <code>WISECROW__UNSPLASH_API_KEY</code>; audio uses Edge TTS and needs
+outbound network access.</p>
 <h2 id="logs"><a class="header" href="#logs">Logs</a></h2>
 <p>For every issue above, the first thing to do is enable verbose logging:</p>
 <pre><code class="language-sh">RUST_LOG=wisecrow=debug,info wisecrow ...
@@ -2721,6 +2729,7 @@ pub struct Config {
     pub unsplash_api_key: Option&lt;SecureString&gt;,
     pub llm_provider: Option&lt;String&gt;,
     pub llm_api_key: Option&lt;SecureString&gt;,
+    pub llm_model: Option&lt;String&gt;,
     pub remote_url: Option&lt;String&gt;,
     pub remote_api_key: Option&lt;SecureString&gt;,
     pub sync_api_key: Option&lt;SecureString&gt;,
@@ -3202,19 +3211,21 @@ against the colocated server.</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Feature</th><th>Pulls in</th><th>Used for</th></tr>
+<tr><th>Feature</th><th>Default</th><th>Pulls in</th><th>Used for</th></tr>
 </thead>
 <tbody>
-<tr><td><code>server</code></td><td><code>wisecrow-core</code>, <code>tokio</code>, <code>sqlx</code>, <code>dotenvy</code>, <code>config</code>, <code>tempfile</code></td><td>Build the server binary.</td></tr>
-<tr><td><code>web</code></td><td><code>dioxus/web</code></td><td>Build the browser bundle.</td></tr>
-<tr><td><code>audio</code></td><td><code>server</code> + <code>wisecrow-core/audio</code> + <code>base64</code></td><td>Serve TTS audio over the wire.</td></tr>
-<tr><td><code>images</code></td><td><code>server</code> + <code>wisecrow-core/images</code> + <code>base64</code> + <code>reqwest</code></td><td>Serve Unsplash-fetched images.</td></tr>
+<tr><td><code>audio</code></td><td>yes</td><td><code>wisecrow-core/tts</code> + <code>base64</code></td><td>Serve Edge TTS pronunciation over the wire.</td></tr>
+<tr><td><code>images</code></td><td>yes</td><td><code>wisecrow-core/images</code> + <code>base64</code> + <code>reqwest</code></td><td>Serve Unsplash-fetched images.</td></tr>
+<tr><td><code>server</code></td><td>no</td><td><code>wisecrow-core</code>, <code>tokio</code>, <code>sqlx</code>, …</td><td>Build the server binary (<code>dx</code> enables this).</td></tr>
+<tr><td><code>web</code></td><td>no</td><td><code>dioxus/web</code></td><td>Build the browser bundle (<code>dx</code> enables this).</td></tr>
 </tbody>
 </table>
 </div>
+<p><code>audio</code> and <code>images</code> are on by default. Use <code>--no-default-features</code> for a
+minimal build. Images also need <code>WISECROW__UNSPLASH_API_KEY</code> at runtime.</p>
 <p>A typical fullstack dev loop:</p>
 <pre><code class="language-sh">cd wisecrow-web
-dx serve --features "server web"
+dx serve
 </code></pre>
 <h2 id="routes"><a class="header" href="#routes">Routes</a></h2>
 <pre><code class="language-rust ignore">#[derive(Clone, Routable, Debug, PartialEq)]

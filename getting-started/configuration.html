@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0de4a196.js";
+            window.path_to_searchindex_js = "../searchindex-b1b67770.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -210,8 +210,9 @@ committed <code>.env</code> files.</p>
 <tr><th>Variable</th><th>Purpose</th><th>Used by</th></tr>
 </thead>
 <tbody>
-<tr><td><code>WISECROW__LLM_PROVIDER</code></td><td><code>anthropic</code> or <code>openai</code>.</td><td><code>seed-grammar</code>, <code>generate-exercises</code></td></tr>
-<tr><td><code>WISECROW__LLM_API_KEY</code></td><td>API key for the chosen provider.</td><td><code>seed-grammar</code>, <code>generate-exercises</code></td></tr>
+<tr><td><code>WISECROW__LLM_PROVIDER</code></td><td><code>anthropic</code> or <code>openai</code>.</td><td><code>seed-grammar</code>, <code>generate-exercises</code>, gloss, graded-reader</td></tr>
+<tr><td><code>WISECROW__LLM_API_KEY</code></td><td>API key for the chosen provider.</td><td>same</td></tr>
+<tr><td><code>WISECROW__LLM_MODEL</code></td><td>Optional model id (e.g. <code>claude-sonnet-5</code>, <code>gpt-4o</code>). Blank = provider default.</td><td>same</td></tr>
 <tr><td><code>WISECROW__UNSPLASH_API_KEY</code></td><td>Unsplash access key for card imagery.</td><td><code>learn</code>, <code>prefetch-media</code> (when built with <code>images</code>)</td></tr>
 <tr><td><code>WISECROW__REMOTE_URL</code></td><td>Remote Wisecrow base URL.</td><td>reserved for future remote-fetch flows</td></tr>
 <tr><td><code>WISECROW__REMOTE_API_KEY</code></td><td>API key for the remote URL.</td><td>reserved</td></tr>
