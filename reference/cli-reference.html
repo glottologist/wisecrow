@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-b1b67770.js";
+            window.path_to_searchindex_js = "../searchindex-bb69ef0e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -457,8 +457,9 @@ trying the quiz UI.</p>
 <pre><code class="language-sh">wisecrow prefetch-media -n &lt;NATIVE&gt; -f &lt;FOREIGN&gt; [--audio BOOL] [--images BOOL]
 </code></pre>
 <p>Walks the deck and warms the on-disk cache for audio and/or image media.
-Audio uses Microsoft Edge TTS (no API key); images need
-<code>WISECROW__UNSPLASH_API_KEY</code>.</p>
+Audio uses Microsoft Edge TTS (no API key). Images need at least one
+stock-photo key (<code>WISECROW__UNSPLASH_API_KEY</code>, <code>WISECROW__PEXELS_API_KEY</code>,
+and/or <code>WISECROW__PIXABAY_API_KEY</code>; optional <code>WISECROW__IMAGE_PROVIDER</code>).</p>
 <p>This command is a no-op for media types whose feature is not compiled in.</p>
 <hr>
 <h2 id="sync"><a class="header" href="#sync"><code>sync</code></a></h2>

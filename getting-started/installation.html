@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-b1b67770.js";
+            window.path_to_searchindex_js = "../searchindex-bb69ef0e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -220,7 +220,7 @@ contains the experimental web and mobile front-ends.</p>
 </thead>
 <tbody>
 <tr><td><code>tts</code> (default)</td><td>Microsoft Edge TTS generation via <code>msedge-tts</code>.</td><td>Needs outbound network at runtime.</td></tr>
-<tr><td><code>images</code> (default)</td><td>Unsplash image fetch and TUI rendering via <code>ratatui-image</code>.</td><td>Pulls <code>image</code> decoders; needs Unsplash API key for fetch.</td></tr>
+<tr><td><code>images</code> (default)</td><td>Stock image fetch (Unsplash / Pexels / Pixabay) + TUI rendering via <code>ratatui-image</code>.</td><td>Needs at least one provider API key.</td></tr>
 <tr><td><code>audio</code></td><td>Adds local playback via <code>rodio</code> (implies <code>tts</code>).</td><td>Pulls ALSA on Linux.</td></tr>
 </tbody>
 </table>
@@ -237,7 +237,8 @@ dx serve
 <p>Default features enable TTS audio and Unsplash images on learn cards.
 <code>dx</code> enables the <code>server</code> / <code>web</code> halves itself. You need a configured
 PostgreSQL connection (see <a href="./configuration.html">Configuration</a>). For
-images, set <code>WISECROW__UNSPLASH_API_KEY</code>.</p>
+images, set one of <code>WISECROW__UNSPLASH_API_KEY</code>, <code>WISECROW__PEXELS_API_KEY</code>,
+or <code>WISECROW__PIXABAY_API_KEY</code> (or several with <code>WISECROW__IMAGE_PROVIDER=auto</code>).</p>
 <h2 id="verify-the-install"><a class="header" href="#verify-the-install">Verify the install</a></h2>
 <pre><code class="language-sh">wisecrow --help
 wisecrow list-languages | head

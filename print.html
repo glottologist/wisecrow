@@ -38,7 +38,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-b1b67770.js";
+            window.path_to_searchindex_js = "searchindex-bb69ef0e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d4c59dab.js"></script>
@@ -285,7 +285,7 @@ contains the experimental web and mobile front-ends.</p>
 </thead>
 <tbody>
 <tr><td><code>tts</code> (default)</td><td>Microsoft Edge TTS generation via <code>msedge-tts</code>.</td><td>Needs outbound network at runtime.</td></tr>
-<tr><td><code>images</code> (default)</td><td>Unsplash image fetch and TUI rendering via <code>ratatui-image</code>.</td><td>Pulls <code>image</code> decoders; needs Unsplash API key for fetch.</td></tr>
+<tr><td><code>images</code> (default)</td><td>Stock image fetch (Unsplash / Pexels / Pixabay) + TUI rendering via <code>ratatui-image</code>.</td><td>Needs at least one provider API key.</td></tr>
 <tr><td><code>audio</code></td><td>Adds local playback via <code>rodio</code> (implies <code>tts</code>).</td><td>Pulls ALSA on Linux.</td></tr>
 </tbody>
 </table>
@@ -302,7 +302,8 @@ dx serve
 <p>Default features enable TTS audio and Unsplash images on learn cards.
 <code>dx</code> enables the <code>server</code> / <code>web</code> halves itself. You need a configured
 PostgreSQL connection (see <a href="#configuration">Configuration</a>). For
-images, set <code>WISECROW__UNSPLASH_API_KEY</code>.</p>
+images, set one of <code>WISECROW__UNSPLASH_API_KEY</code>, <code>WISECROW__PEXELS_API_KEY</code>,
+or <code>WISECROW__PIXABAY_API_KEY</code> (or several with <code>WISECROW__IMAGE_PROVIDER=auto</code>).</p>
 <h2 id="verify-the-install"><a class="header" href="#verify-the-install">Verify the install</a></h2>
 <pre><code class="language-sh">wisecrow --help
 wisecrow list-languages | head
@@ -347,7 +348,10 @@ committed <code>.env</code> files.</p>
 <tr><td><code>WISECROW__LLM_PROVIDER</code></td><td><code>anthropic</code> or <code>openai</code>.</td><td><code>seed-grammar</code>, <code>generate-exercises</code>, gloss, graded-reader</td></tr>
 <tr><td><code>WISECROW__LLM_API_KEY</code></td><td>API key for the chosen provider.</td><td>same</td></tr>
 <tr><td><code>WISECROW__LLM_MODEL</code></td><td>Optional model id (e.g. <code>claude-sonnet-5</code>, <code>gpt-4o</code>). Blank = provider default.</td><td>same</td></tr>
-<tr><td><code>WISECROW__UNSPLASH_API_KEY</code></td><td>Unsplash access key for card imagery.</td><td><code>learn</code>, <code>prefetch-media</code> (when built with <code>images</code>)</td></tr>
+<tr><td><code>WISECROW__IMAGE_PROVIDER</code></td><td>Image backend: <code>auto</code> (default), <code>unsplash</code>, <code>pexels</code>, or <code>pixabay</code>.</td><td><code>learn</code>, <code>prefetch-media</code> (with <code>images</code>)</td></tr>
+<tr><td><code>WISECROW__UNSPLASH_API_KEY</code></td><td>Unsplash access key for card imagery.</td><td>same</td></tr>
+<tr><td><code>WISECROW__PEXELS_API_KEY</code></td><td>Pexels access key (alternative / fallback).</td><td>same</td></tr>
+<tr><td><code>WISECROW__PIXABAY_API_KEY</code></td><td>Pixabay access key (alternative / fallback).</td><td>same</td></tr>
 <tr><td><code>WISECROW__REMOTE_URL</code></td><td>Remote Wisecrow base URL.</td><td>reserved for future remote-fetch flows</td></tr>
 <tr><td><code>WISECROW__REMOTE_API_KEY</code></td><td>API key for the remote URL.</td><td>reserved</td></tr>
 <tr><td><code>WISECROW__SYNC_API_KEY</code></td><td>API key sent as <code>x-api-key</code> to a sync remote.</td><td><code>sync</code></td></tr>
@@ -1955,8 +1959,9 @@ trying the quiz UI.</p>
 <pre><code class="language-sh">wisecrow prefetch-media -n &lt;NATIVE&gt; -f &lt;FOREIGN&gt; [--audio BOOL] [--images BOOL]
 </code></pre>
 <p>Walks the deck and warms the on-disk cache for audio and/or image media.
-Audio uses Microsoft Edge TTS (no API key); images need
-<code>WISECROW__UNSPLASH_API_KEY</code>.</p>
+Audio uses Microsoft Edge TTS (no API key). Images need at least one
+stock-photo key (<code>WISECROW__UNSPLASH_API_KEY</code>, <code>WISECROW__PEXELS_API_KEY</code>,
+and/or <code>WISECROW__PIXABAY_API_KEY</code>; optional <code>WISECROW__IMAGE_PROVIDER</code>).</p>
 <p>This command is a no-op for media types whose feature is not compiled in.</p>
 <hr>
 <h2 id="sync-1"><a class="header" href="#sync-1"><code>sync</code></a></h2>
@@ -2041,7 +2046,10 @@ narrative version.</p>
 <tr><td><code>LLM_PROVIDER</code></td><td><code>anthropic</code> | <code>openai</code></td><td>optional</td><td>gloss / graded-reader / seed-grammar / generate-exercises</td></tr>
 <tr><td><code>LLM_API_KEY</code></td><td>secret</td><td>with <code>LLM_PROVIDER</code></td><td>same</td></tr>
 <tr><td><code>LLM_MODEL</code></td><td>string</td><td>optional</td><td>Model id; defaults: <code>claude-sonnet-5</code> (anthropic), <code>gpt-4o</code> (openai)</td></tr>
+<tr><td><code>IMAGE_PROVIDER</code></td><td>string</td><td>optional (<code>auto</code>)</td><td><code>auto</code> | <code>unsplash</code> | <code>pexels</code> | <code>pixabay</code></td></tr>
 <tr><td><code>UNSPLASH_API_KEY</code></td><td>secret</td><td>optional</td><td><code>learn</code>, <code>prefetch-media</code> (with <code>images</code>)</td></tr>
+<tr><td><code>PEXELS_API_KEY</code></td><td>secret</td><td>optional</td><td>same</td></tr>
+<tr><td><code>PIXABAY_API_KEY</code></td><td>secret</td><td>optional</td><td>same</td></tr>
 <tr><td><code>REMOTE_URL</code></td><td>URL</td><td>optional</td><td>reserved</td></tr>
 <tr><td><code>REMOTE_API_KEY</code></td><td>secret</td><td>optional</td><td>reserved</td></tr>
 <tr><td><code>SYNC_API_KEY</code></td><td>secret</td><td>optional</td><td><code>sync</code></td></tr>
@@ -2726,7 +2734,10 @@ pub struct Config {
     pub db_name: Option&lt;String&gt;,
     pub db_user: Option&lt;String&gt;,
     pub db_password: Option&lt;SecureString&gt;,
+    pub image_provider: Option&lt;String&gt;,
     pub unsplash_api_key: Option&lt;SecureString&gt;,
+    pub pexels_api_key: Option&lt;SecureString&gt;,
+    pub pixabay_api_key: Option&lt;SecureString&gt;,
     pub llm_provider: Option&lt;String&gt;,
     pub llm_api_key: Option&lt;SecureString&gt;,
     pub llm_model: Option&lt;String&gt;,
@@ -2955,7 +2966,7 @@ source if you need a different model.
 Source: <code>wisecrow-core/src/llm/</code>.</p>
 <h2 id="media"><a class="header" href="#media"><code>media</code></a></h2>
 <pre><code class="language-rust ignore">pub enum MediaType { Audio, Image }
-pub struct MediaContext { pub cache, pub http_client, pub foreign_lang, pub unsplash_api_key }
+pub struct MediaContext { pub cache, pub http_client, pub foreign_lang, pub image_fetcher }
 pub struct MediaCache { /* cache_dir + PgPool */ }
 
 impl MediaCache {
@@ -2965,7 +2976,7 @@ impl MediaCache {
               Fut: Future&lt;Output = Result&lt;Vec&lt;u8&gt;, WisecrowError&gt;&gt;;
 }</code></pre>
 <p>Audio (<code>audio</code> feature) goes through Microsoft Edge TTS via <code>msedge-tts</code>;
-images (<code>images</code> feature) hit Unsplash.
+images (<code>images</code> feature) hit Unsplash / Pexels / Pixabay via <code>ImageFetcher</code>.
 Source: <code>wisecrow-core/src/media/</code>.</p>
 <h2 id="sync-3"><a class="header" href="#sync-3"><code>sync</code></a></h2>
 <pre><code class="language-rust ignore">pub async fn run_sync(pool: &amp;PgPool, remote_url: &amp;str, api_key: Option&lt;&amp;str&gt;) -&gt; Result&lt;(), WisecrowError&gt;;

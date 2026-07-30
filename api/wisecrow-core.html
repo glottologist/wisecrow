@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-b1b67770.js";
+            window.path_to_searchindex_js = "../searchindex-bb69ef0e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -237,7 +237,10 @@ pub struct Config {
     pub db_name: Option&lt;String&gt;,
     pub db_user: Option&lt;String&gt;,
     pub db_password: Option&lt;SecureString&gt;,
+    pub image_provider: Option&lt;String&gt;,
     pub unsplash_api_key: Option&lt;SecureString&gt;,
+    pub pexels_api_key: Option&lt;SecureString&gt;,
+    pub pixabay_api_key: Option&lt;SecureString&gt;,
     pub llm_provider: Option&lt;String&gt;,
     pub llm_api_key: Option&lt;SecureString&gt;,
     pub llm_model: Option&lt;String&gt;,
@@ -466,7 +469,7 @@ source if you need a different model.
 Source: <code>wisecrow-core/src/llm/</code>.</p>
 <h2 id="media"><a class="header" href="#media"><code>media</code></a></h2>
 <pre><code class="language-rust ignore">pub enum MediaType { Audio, Image }
-pub struct MediaContext { pub cache, pub http_client, pub foreign_lang, pub unsplash_api_key }
+pub struct MediaContext { pub cache, pub http_client, pub foreign_lang, pub image_fetcher }
 pub struct MediaCache { /* cache_dir + PgPool */ }
 
 impl MediaCache {
@@ -476,7 +479,7 @@ impl MediaCache {
               Fut: Future&lt;Output = Result&lt;Vec&lt;u8&gt;, WisecrowError&gt;&gt;;
 }</code></pre>
 <p>Audio (<code>audio</code> feature) goes through Microsoft Edge TTS via <code>msedge-tts</code>;
-images (<code>images</code> feature) hit Unsplash.
+images (<code>images</code> feature) hit Unsplash / Pexels / Pixabay via <code>ImageFetcher</code>.
 Source: <code>wisecrow-core/src/media/</code>.</p>
 <h2 id="sync"><a class="header" href="#sync"><code>sync</code></a></h2>
 <pre><code class="language-rust ignore">pub async fn run_sync(pool: &amp;PgPool, remote_url: &amp;str, api_key: Option&lt;&amp;str&gt;) -&gt; Result&lt;(), WisecrowError&gt;;
