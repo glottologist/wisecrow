@@ -34,7 +34,10 @@
     "openssl": {
       "version": "latest",
       "outputs": ["out", "dev", "bin"]
-    }
+    },
+    "alejandra": "latest",
+    "nil": "latest",
+    "commitizen": "latest"
   },
   "shell": {
     "init_hook": [

@@ -1,6 +1,54 @@
 {
   "lockfile_version": "1",
   "packages": {
+    "alejandra@latest": {
+      "last_modified": "2026-07-23T05:10:05Z",
+      "resolved": "github:NixOS/nixpkgs/7525d999cd850b9a488817abc89c75dc733acf17#alejandra",
+      "source": "devbox-search",
+      "version": "4.0.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/n779fg97apy32j3jpxdm9ykxz4ffj8hx-alejandra-4.0.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/n779fg97apy32j3jpxdm9ykxz4ffj8hx-alejandra-4.0.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/q84h98cfscg7i5vv4l9r7yz7h73nrx7p-alejandra-4.0.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/q84h98cfscg7i5vv4l9r7yz7h73nrx7p-alejandra-4.0.0"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/ihr4imsx3v06243rl5z78l6c3dardy7f-alejandra-4.0.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/ihr4imsx3v06243rl5z78l6c3dardy7f-alejandra-4.0.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/wjkw9q9p3y4z21hg04l27a3iv5i1kvcx-alejandra-4.0.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/wjkw9q9p3y4z21hg04l27a3iv5i1kvcx-alejandra-4.0.0"
+        }
+      }
+    },
     "bacon@latest": {
       "last_modified": "2026-07-23T05:10:05Z",
       "resolved": "github:NixOS/nixpkgs/7525d999cd850b9a488817abc89c75dc733acf17#bacon",
@@ -452,6 +500,56 @@
             }
           ],
           "store_path": "/nix/store/bijimpgbih6bwc8sykr5fijcjim2qfgr-clippy-1.97.0"
+        }
+      }
+    },
+    "commitizen@latest": {
+      "last_modified": "2026-07-23T05:10:05Z",
+      "resolved": "github:NixOS/nixpkgs/7525d999cd850b9a488817abc89c75dc733acf17#commitizen",
+      "source": "devbox-search",
+      "version": "4.16.5",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/4pjm48h7mydd8ydw2ckfrf1bpd3jpb2m-python3.14-commitizen-4.16.5",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/rqv4v6g9vlhswbpcfmahwjjxrvcbi8qh-python3.14-commitizen-4.16.5-dist"
+            }
+          ],
+          "store_path": "/nix/store/4pjm48h7mydd8ydw2ckfrf1bpd3jpb2m-python3.14-commitizen-4.16.5"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/dnnpqd0wywa45lfpi0klp1pfqw8qv0ka-python3.14-commitizen-4.16.5",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/21h5zggcpyvq7z5qmzzwcz9gjdx2vnh3-python3.14-commitizen-4.16.5-dist"
+            }
+          ],
+          "store_path": "/nix/store/dnnpqd0wywa45lfpi0klp1pfqw8qv0ka-python3.14-commitizen-4.16.5"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/na4kvryd9lsn5mvzyf7rgr09ilgv3qr4-python3.14-commitizen-4.16.5",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/1xy0z1gx9px0ay5c837irivhs1sqli1x-python3.14-commitizen-4.16.5-dist"
+            }
+          ],
+          "store_path": "/nix/store/na4kvryd9lsn5mvzyf7rgr09ilgv3qr4-python3.14-commitizen-4.16.5"
         }
       }
     },
@@ -1029,6 +1127,44 @@
             }
           ],
           "store_path": "/nix/store/67knlvxpxhzcj2hzi37j8ngspz5f8l59-lldb-21.1.8"
+        }
+      }
+    },
+    "nil@latest": {
+      "last_modified": "2026-07-23T13:11:22Z",
+      "resolved": "github:NixOS/nixpkgs/6d12004108e0e4a5cfa4bd83b14477f040b15773#nil",
+      "source": "devbox-search",
+      "version": "2026-07-23",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/fgzcbsd31lpr2g2qhr8hqflsh7ip7095-nil-2026-07-23",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/fgzcbsd31lpr2g2qhr8hqflsh7ip7095-nil-2026-07-23"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/62b31y0gkay28lc1646pmqwg252k4d0n-nil-2026-07-23",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/62b31y0gkay28lc1646pmqwg252k4d0n-nil-2026-07-23"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/09kypsqhdcnmf9gg9gsi6zw4qnwfbkfq-nil-2026-07-23",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/09kypsqhdcnmf9gg9gsi6zw4qnwfbkfq-nil-2026-07-23"
         }
       }
     },
