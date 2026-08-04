@@ -7,6 +7,23 @@ use url::Url;
 
 const HERMIT_DAVE_BASE: &str =
     "https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/";
+/// A curated English word list, holding no counts and derived from no corpus.
+///
+/// The frequency lists come from OpenSubtitles, which is the same corpus family
+/// the translation pairs come from, so corruption frequent enough to be listed
+/// is judged genuine by the very rule meant to catch it. "ori" sits at rank
+/// 19,485 and so kept "Ori." against Irish "Nó" at the head of the deck, while
+/// being absent from all 370,105 words here.
+const ENGLISH_DICTIONARY_URL: &str =
+    "https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt";
+/// How far down a frequency list a word is believed without a dictionary saying so.
+///
+/// The dictionary holds no contractions and few names, both of them ordinary
+/// English and thick on the ground in subtitles: "don't" and "i'm" are absent
+/// from it and sit in the first hundred entries of the frequency list. Above
+/// this rank the list is trusted alone; below it, where the corruption lives, a
+/// word must also be a dictionary word.
+const TRUSTED_RANK: usize = 5_000;
 const BATCH_SIZE: usize = 1000;
 /// Rows read per page when deriving counts from the stored corpus.
 const PHRASE_PAGE_SIZE: usize = 5000;
@@ -72,10 +89,16 @@ impl FrequencyUpdater {
     /// ordering rule inside the deck query can tell, because the corruption ties
     /// with the correct answer on every statistic the query can see.
     ///
+    /// For English the tail of the list is corroborated against
+    /// [`ENGLISH_DICTIONARY_URL`], there being no equivalent word list published
+    /// for the other native languages. Those get the frequency list unfiltered,
+    /// which is what every language got before Irish showed why English needed
+    /// more.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the language code is malformed, or the list cannot be
-    /// fetched.
+    /// Returns an error if the language code is malformed, or either list cannot
+    /// be fetched.
     pub async fn fetch_vocabulary(lang_code: &str) -> Result<HashSet<String>, WisecrowError> {
         if !crate::lang::is_valid_code(lang_code) {
             return Err(WisecrowError::InvalidInput(format!(
@@ -95,11 +118,65 @@ impl FrequencyUpdater {
         }
 
         let body = response.text().await?;
-        Ok(Self::parse_frequency_text(&body)
-            .into_keys()
-            .map(|word| word.trim_matches(MATCH_TRIM_CHARS).to_lowercase())
+        let dictionary = if lang_code == "en" {
+            Some(Self::fetch_dictionary(&client).await?)
+        } else {
+            None
+        };
+
+        Ok(Self::clean_vocabulary(
+            Self::parse_frequency_text(&body),
+            dictionary.as_ref(),
+            TRUSTED_RANK,
+        ))
+    }
+
+    /// Fetches the curated English word list as a set of lowercased words.
+    async fn fetch_dictionary(client: &Client) -> Result<HashSet<String>, WisecrowError> {
+        let response = client
+            .get(Url::parse(ENGLISH_DICTIONARY_URL)?)
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            return Err(WisecrowError::InvalidInput(format!(
+                "Failed to fetch the English dictionary: HTTP {}",
+                response.status()
+            )));
+        }
+        Ok(response
+            .text()
+            .await?
+            .lines()
+            .map(|word| word.trim().to_lowercase())
             .filter(|word| !word.is_empty())
             .collect())
+    }
+
+    /// Normalises a parsed frequency list into a vocabulary, dropping the tail
+    /// entries `dictionary` does not corroborate.
+    ///
+    /// Rank comes from the counts rather than from the file's own order, so that
+    /// words colliding under normalisation are ranked on their summed count
+    /// rather than on whichever spelling was listed first. Ties break on the
+    /// word, so the boundary at `trusted_rank` does not move between runs.
+    fn clean_vocabulary(
+        listed: HashMap<String, i32>,
+        dictionary: Option<&HashSet<String>>,
+        trusted_rank: usize,
+    ) -> HashSet<String> {
+        let mut ranked: Vec<(String, i32)> = Self::normalise_keys(&listed).into_iter().collect();
+        ranked.sort_by(|(a_word, a_count), (b_word, b_count)| {
+            b_count.cmp(a_count).then_with(|| a_word.cmp(b_word))
+        });
+        ranked
+            .into_iter()
+            .enumerate()
+            .filter(|(rank, (word, _))| match dictionary {
+                Some(dictionary) => *rank < trusted_rank || dictionary.contains(word),
+                None => true,
+            })
+            .map(|(_, (word, _))| word)
+            .collect()
     }
 
     /// Derives a word-frequency list from the phrases already stored for
@@ -124,6 +201,35 @@ impl FrequencyUpdater {
                 "Invalid language code: {lang_code}"
             )));
         }
+        let counts = Self::derive_counts(pool, lang_code).await?;
+        Self::bulk_update(pool, lang_code, &counts).await
+    }
+
+    /// Counts every word form in the stored phrases for `lang_code`, keyed as
+    /// [`crate::lang::normalise_for_match`] leaves them.
+    ///
+    /// Separate from [`Self::update_from_corpus`] because the counts are worth
+    /// having without applying them: [`crate::sentences`] scores a sentence by
+    /// the words in it and needs the whole vocabulary, not the fraction that
+    /// ranking could write back. Reading `corpus_frequency` instead gave Gaelic
+    /// a 930-word vocabulary — ranking only ever matches single-word rows — and
+    /// a sentence needs every one of its tokens known, so 757 of 85,388 Gaelic
+    /// sentences scored. Derived this way the same corpus yields tens of
+    /// thousands of forms.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the language is unknown, has no tokeniser, a query
+    /// fails, or the language has no stored phrases.
+    pub async fn derive_counts(
+        pool: &PgPool,
+        lang_code: &str,
+    ) -> Result<HashMap<String, i32>, WisecrowError> {
+        if !crate::lang::is_valid_code(lang_code) {
+            return Err(WisecrowError::InvalidInput(format!(
+                "Invalid language code: {lang_code}"
+            )));
+        }
         let tokenizer = crate::preview::tokenize::for_language(lang_code)?;
 
         let mut counts: HashMap<String, i32> = HashMap::new();
@@ -137,11 +243,12 @@ impl FrequencyUpdater {
                  Ingest a corpus for it first."
             )));
         }
+        let normalised = Self::normalise_keys(&counts);
         tracing::info!(
             "Derived {} distinct {lang_code} word forms from the stored corpus",
-            counts.len()
+            normalised.len()
         );
-        Self::bulk_update(pool, lang_code, &counts).await
+        Ok(normalised)
     }
 
     /// Tokenises one side of the stored pairs, paging on the primary key so
@@ -374,6 +481,42 @@ mod tests {
         for (word, count) in expected {
             assert_eq!(map.get(*word), Some(count));
         }
+    }
+
+    /// The shape that let "Ori." head the Irish deck: a corruption frequent
+    /// enough for the subtitle-derived list to carry it, and absent from any
+    /// dictionary. "Don't" is the reason the top of the list is exempt.
+    #[test]
+    fn the_dictionary_corroborates_only_the_tail_of_a_frequency_list() {
+        let listed = HashMap::from([
+            ("don't".to_owned(), 900_000),
+            ("she".to_owned(), 800_000),
+            ("ori".to_owned(), 862),
+            ("hearth".to_owned(), 500),
+        ]);
+        let dictionary = HashSet::from(["she".to_owned(), "hearth".to_owned()]);
+
+        let vocabulary = FrequencyUpdater::clean_vocabulary(listed.clone(), Some(&dictionary), 2);
+
+        assert!(
+            vocabulary.contains("don't"),
+            "a contraction no dictionary lists is trusted on its rank"
+        );
+        assert!(vocabulary.contains("she"), "ranked and listed");
+        assert!(
+            vocabulary.contains("hearth"),
+            "an uncommon word the dictionary vouches for survives the tail"
+        );
+        assert!(
+            !vocabulary.contains("ori"),
+            "corpus corruption below the trusted rank and in no dictionary"
+        );
+
+        let unfiltered = FrequencyUpdater::clean_vocabulary(listed, None, 2);
+        assert!(
+            unfiltered.contains("ori"),
+            "languages with no published dictionary keep the list as it was"
+        );
     }
 
     #[test]

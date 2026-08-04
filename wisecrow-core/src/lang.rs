@@ -61,9 +61,18 @@ const INVISIBLE_CHARS: [char; 6] = [
 ///
 /// Such a phrase is not merely untidy: it defeats deduplication, because two
 /// strings a reader cannot tell apart compare as different.
+///
+/// Control characters count as well as the zero-width set. [`INVISIBLE_CHARS`]
+/// lists format characters only, all of them above U+00AD, so a bare C0 control
+/// passed both this guard and the prune: the Irish deck's seventh card read
+/// "She " against "Ní", its English side ending in U+0007. Whitespace controls
+/// are excluded, tab and newline being separators that `split_whitespace`
+/// already treats as such rather than corruption to delete a pair over.
 #[must_use]
 pub fn has_invisible_chars(phrase: &str) -> bool {
-    phrase.chars().any(|c| INVISIBLE_CHARS.contains(&c))
+    phrase
+        .chars()
+        .any(|c| INVISIBLE_CHARS.contains(&c) || (c.is_control() && !c.is_whitespace()))
 }
 
 /// Returns `true` if both sides of a pair are the same phrase once normalised.
@@ -372,8 +381,22 @@ mod tests {
     #[case("She\u{200B}", true, "zero-width space")]
     #[case("T\u{FEFF}\u{00E1}", true, "byte-order mark used mid-word")]
     #[case("soft\u{00AD}hyphen", true, "soft hyphen")]
+    #[case(
+        "She \u{0007}",
+        true,
+        "a bare C0 control, which reached the Irish deck"
+    )]
+    #[case("\u{007F}", true, "delete")]
+    #[case("caf\u{0090}e", true, "a C1 control")]
     #[case("She", false, "nothing invisible")]
     #[case("Dìreach", false, "accented Latin is visible")]
+    #[case("two\tcolumns", false, "tab separates rather than corrupts")]
+    #[case("two\nlines", false, "newline separates rather than corrupts")]
+    #[case(
+        "one\u{0085}two",
+        false,
+        "U+0085 is a control but Unicode calls it whitespace"
+    )]
     fn invisible_characters_are_detected(
         #[case] phrase: &str,
         #[case] expected: bool,

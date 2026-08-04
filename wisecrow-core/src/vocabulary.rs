@@ -58,9 +58,23 @@ impl VocabularyQuery {
         // this query can see — "What?" and "Dthat" both partnered "Dè" twice, and
         // the card fell to whichever held the lower id. Junk native phrases have
         // to be removed from the data, which is [`crate::pruning`]'s job.
+        //
+        // Where the corpus offers no corroboration at all — an `agreement` of 1,
+        // meaning the chosen pairing occurs exactly once — a stored translation
+        // is preferred if one exists. That is the 200-of-315 case above, and the
+        // only case: a pairing the corpus repeats is authentic evidence and beats
+        // anything generated. See [`crate::glossing`].
         let statement = format!(
-            "SELECT id, from_phrase, to_phrase, frequency FROM (
-               SELECT DISTINCT ON (norm_to) id, from_phrase, to_phrase, frequency
+            "SELECT best.id,
+                    CASE WHEN best.agreement = 1 AND g.translation IS NOT NULL
+                         THEN g.translation
+                         ELSE best.from_phrase
+                    END,
+                    best.to_phrase,
+                    best.frequency
+             FROM (
+               SELECT DISTINCT ON (norm_to)
+                      id, from_phrase, to_phrase, frequency, agreement, norm_to
                FROM (
                  SELECT t.id, t.from_phrase, t.to_phrase,
                         t.corpus_frequency AS frequency,
@@ -85,6 +99,8 @@ impl VocabularyQuery {
                         LENGTH(from_phrase),
                         id
              ) best
+             LEFT JOIN word_glosses g
+               ON g.lang_code = $2 AND g.native_lang = $1 AND g.word = best.norm_to
              ORDER BY best.frequency DESC
              LIMIT $3",
             trim = crate::frequency::MATCH_TRIM_SQL

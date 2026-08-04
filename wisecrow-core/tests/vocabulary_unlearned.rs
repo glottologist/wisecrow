@@ -34,6 +34,25 @@ async fn cleanup(pool: &PgPool) {
     .execute(pool)
     .await
     .expect("translations cleanup");
+    sqlx::query("DELETE FROM word_glosses WHERE lang_code = 'cy'")
+        .execute(pool)
+        .await
+        .expect("word_glosses cleanup");
+}
+
+/// Stores a translation for a word, as `wisecrow gloss-deck` would.
+async fn seed_gloss(pool: &PgPool, welsh_word: &str, english: &str) {
+    sqlx::query(
+        "INSERT INTO word_glosses (lang_code, word, native_lang, translation)
+         VALUES ('cy', $1, 'en', $2)
+         ON CONFLICT (lang_code, word, native_lang) DO UPDATE
+           SET translation = EXCLUDED.translation",
+    )
+    .bind(welsh_word)
+    .bind(english)
+    .execute(pool)
+    .await
+    .expect("gloss seed");
 }
 
 /// Seeds a pair as ranking would leave it: a corpus count in `corpus_frequency`.
@@ -144,6 +163,87 @@ async fn the_native_phrase_shown_is_the_one_the_corpus_agrees_on() {
         deck[0].from_phrase.starts_with("Yes"),
         "expected the agreed translation, got {:?}",
         deck[0].from_phrase
+    );
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn a_word_the_corpus_states_once_is_shown_its_gloss_instead() {
+    let pool = test_pool().await;
+    cleanup(&pool).await;
+
+    // The 200-of-315 case. "Marw" has exactly one English partner and it is an
+    // alignment failure — this is `Die! → An!` from the real Irish deck, which
+    // no rule over the Welsh side can see, because the Welsh side is fine.
+    seed(&pool, "Die!", "Marw", 500).await;
+    seed_gloss(&pool, "marw", "dead").await;
+
+    let deck = VocabularyQuery::unlearned(&pool, "en", "cy", 50)
+        .await
+        .expect("unlearned");
+
+    assert_eq!(deck.len(), 1, "still one card for the one word");
+    assert_eq!(
+        deck[0].from_phrase, "dead",
+        "an uncorroborated pairing loses to a stored translation"
+    );
+    assert_eq!(
+        deck[0].to_phrase, "Marw",
+        "only the prompt is substituted; the word being taught is untouched"
+    );
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn a_pairing_the_corpus_repeats_beats_a_gloss() {
+    let pool = test_pool().await;
+    cleanup(&pool).await;
+
+    // The corroborated case, and the reason the substitution is conditional. Two
+    // rows agree on "Yes", so the corpus is speaking from evidence rather than
+    // from a single accident, and authentic evidence has to win — otherwise
+    // every card in the deck would come from a model.
+    seed(&pool, "Yes.", "Ie.", 500).await;
+    seed(&pool, "Yes?", "Ie?", 500).await;
+    seed_gloss(&pool, "ie", "affirmative").await;
+
+    let deck = VocabularyQuery::unlearned(&pool, "en", "cy", 50)
+        .await
+        .expect("unlearned");
+
+    assert_eq!(deck.len(), 1, "still one card for the one word");
+    assert!(
+        deck[0].from_phrase.starts_with("Yes"),
+        "expected the corroborated corpus partner, got {:?}",
+        deck[0].from_phrase
+    );
+
+    cleanup(&pool).await;
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn a_word_with_no_gloss_keeps_whatever_the_corpus_gave_it() {
+    let pool = test_pool().await;
+    cleanup(&pool).await;
+
+    // Glossing is incremental — the command runs against a limit and a second
+    // run picks up where the first stopped — so an uncorroborated word with no
+    // gloss yet must still produce a card rather than vanish from the deck.
+    seed(&pool, "Die!", "Marw", 500).await;
+
+    let deck = VocabularyQuery::unlearned(&pool, "en", "cy", 50)
+        .await
+        .expect("unlearned");
+
+    assert_eq!(deck.len(), 1, "the word is still taught");
+    assert_eq!(
+        deck[0].from_phrase, "Die!",
+        "with the corpus partner it had"
     );
 
     cleanup(&pool).await;

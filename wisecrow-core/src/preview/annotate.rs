@@ -18,17 +18,6 @@ pub struct AnnotatedToken {
     pub llm_translation: Option<String>,
 }
 
-#[derive(Debug, serde::Deserialize)]
-struct LlmGlossEntry {
-    word: String,
-    translation: String,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct LlmGlossResponse {
-    glosses: Vec<LlmGlossEntry>,
-}
-
 /// Asks the LLM to translate the unknown tokens (status `Unknown`) into the
 /// native language and writes results back into the matching `AnnotatedToken`
 /// entries via `llm_translation`.
@@ -53,7 +42,8 @@ pub async fn enrich_unknowns_with_llm(
     let prompt =
         crate::llm::prompts::unknown_words_prompt(&unknowns, foreign_lang_name, native_lang_name);
     let response = provider.generate(&prompt, 2048).await?;
-    let parsed: LlmGlossResponse = crate::llm::parse_fenced_json(&response, "unknown-words JSON")?;
+    let parsed: crate::llm::GlossResponse =
+        crate::llm::parse_fenced_json(&response, "unknown-words JSON")?;
 
     let lookup: std::collections::HashMap<String, String> = parsed
         .glosses

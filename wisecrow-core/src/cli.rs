@@ -263,6 +263,52 @@ pub struct PruneArgs {
 }
 
 #[derive(Args)]
+pub struct GlossDeckArgs {
+    /// The language being learned.
+    #[arg(short, long)]
+    pub lang: String,
+    /// The language the learner reads the prompt in.
+    #[arg(short, long)]
+    pub native_lang: String,
+    /// How many words to gloss. Only words the deck would actually serve and
+    /// whose pairing the corpus states exactly once are eligible, so this is a
+    /// ceiling rather than a target and a second run picks up where this left
+    /// off.
+    #[arg(long, default_value_t = 200)]
+    pub limit: u32,
+    /// List the words that would be glossed without calling the model or
+    /// writing anything.
+    #[arg(long, default_value_t = false)]
+    pub dry_run: bool,
+}
+
+#[derive(Args)]
+pub struct SentenceCardArgs {
+    /// The language being learned.
+    #[arg(short, long)]
+    pub lang: String,
+    /// The language the learner reads.
+    #[arg(short, long)]
+    pub native_lang: String,
+    /// Whose known words decide what is within reach.
+    #[arg(short, long)]
+    pub user_id: i32,
+    /// Teach this word. Omitted, the next word the deck would serve is used,
+    /// which is the loop the two decks are meant to form.
+    #[arg(short, long)]
+    pub word: Option<String>,
+}
+
+#[derive(Args)]
+pub struct ScoreSentencesArgs {
+    /// The language being learned. Its words must already be ranked
+    /// (`frequency --from-corpus`), since a sentence is scored by the words in
+    /// it.
+    #[arg(short, long)]
+    pub lang: String,
+}
+
+#[derive(Args)]
 pub struct NbackArgs {
     #[arg(short, long)]
     pub native_lang: String,
@@ -425,10 +471,16 @@ pub enum Command {
     PrefetchMedia(PrefetchMediaArgs),
     #[command(aliases = ["pv"])]
     Preview(PreviewArgs),
+    #[command(aliases = ["gd"])]
+    GlossDeck(GlossDeckArgs),
     #[command(aliases = ["pr"])]
     Prune(PruneArgs),
     #[command(aliases = ["q"])]
     Quiz(QuizArgs),
+    #[command(aliases = ["sent"])]
+    SentenceCard(SentenceCardArgs),
+    #[command(aliases = ["ss"])]
+    ScoreSentences(ScoreSentencesArgs),
     #[command(aliases = ["sg"])]
     SeedGrammar(SeedGrammarArgs),
     #[command(aliases = ["s"])]

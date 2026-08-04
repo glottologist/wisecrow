@@ -13,9 +13,10 @@ use tracing::{error, info};
 use wisecrow::{
     cli::{
         is_supported_language, Cli, Command, DownloadAllArgs, FrequencyArgs, GenerateExercisesArgs,
-        GlossArgs, GradedReaderArgs, GradedReaderFormat, ImportGrammarArgs, ImportPdfArgs,
-        IngestArgs, LanguageArgs, LearnArgs, NbackArgs, PrefetchMediaArgs, PreviewArgs, PruneArgs,
-        QuizArgs, SeedGrammarArgs, SyncArgs, SyncClientCmd, UserCmd, SUPPORTED_LANGUAGE_INFO,
+        GlossArgs, GlossDeckArgs, GradedReaderArgs, GradedReaderFormat, ImportGrammarArgs,
+        ImportPdfArgs, IngestArgs, LanguageArgs, LearnArgs, NbackArgs, PrefetchMediaArgs,
+        PreviewArgs, PruneArgs, QuizArgs, ScoreSentencesArgs, SeedGrammarArgs, SentenceCardArgs,
+        SyncArgs, SyncClientCmd, UserCmd, SUPPORTED_LANGUAGE_INFO,
     },
     config::Config,
     downloader::DownloadConfig,
@@ -485,6 +486,107 @@ async fn handle_prune(args: PruneArgs) -> Result<(), Error> {
     Ok(())
 }
 
+async fn handle_sentence_card(args: SentenceCardArgs) -> Result<(), Error> {
+    let (_config, pool) = load_config_and_pool().await?;
+
+    // With no word given, take the one the deck would serve next. That is the
+    // loop the two decks form: the word deck decides what is learned, and the
+    // sentence supplies the context to learn it in.
+    let word = match args.word {
+        Some(word) => word,
+        None => {
+            let deck = wisecrow::vocabulary::VocabularyQuery::unlearned(
+                &pool,
+                &args.native_lang,
+                &args.lang,
+                1,
+            )
+            .await?;
+            let Some(next) = deck.first() else {
+                info!(
+                    "The {} deck is empty, so there is nothing to teach",
+                    args.lang
+                );
+                return Ok(());
+            };
+            next.to_phrase.clone()
+        }
+    };
+
+    match wisecrow::sentences::sentence_for_word(
+        &pool,
+        args.user_id,
+        &args.native_lang,
+        &args.lang,
+        &word,
+    )
+    .await?
+    {
+        Some(card) => info!(
+            "{} — {}  (teaching {word}, rarest word seen {} times)",
+            card.foreign_phrase, card.native_phrase, card.score
+        ),
+        None => info!(
+            "No sentence teaches {word} within reach yet: every one carries a second word \
+             this learner has not met. Learn more words, or score more sentences."
+        ),
+    }
+    Ok(())
+}
+
+async fn handle_score_sentences(args: ScoreSentencesArgs) -> Result<(), Error> {
+    let (_config, pool) = load_config_and_pool().await?;
+    let scored = wisecrow::sentences::score_sentences(&pool, &args.lang).await?;
+    info!("Scored {scored} {} sentences", args.lang);
+    Ok(())
+}
+
+async fn handle_gloss_deck(args: GlossDeckArgs) -> Result<(), Error> {
+    let (config, pool) = load_config_and_pool().await?;
+    let lang_name = resolve_language_name(&args.lang)?;
+    let native_name = resolve_language_name(&args.native_lang)?;
+
+    let words =
+        wisecrow::glossing::uncorroborated_words(&pool, &args.native_lang, &args.lang, args.limit)
+            .await?;
+
+    if words.is_empty() {
+        info!(
+            "No {} deck words need a gloss: every word the deck would serve has a pairing the corpus repeats",
+            args.lang
+        );
+        return Ok(());
+    }
+
+    if args.dry_run {
+        info!(
+            "Would gloss {} {} words whose corpus pairing occurs once: {}",
+            words.len(),
+            args.lang,
+            words.join(", ")
+        );
+        return Ok(());
+    }
+
+    let provider = wisecrow::llm::create_provider(&config)?;
+    let written = wisecrow::glossing::gloss_words(
+        &pool,
+        provider.as_ref(),
+        &words,
+        &args.native_lang,
+        &args.lang,
+        native_name,
+        lang_name,
+    )
+    .await?;
+    info!(
+        "Glossed {written} of {} uncorroborated {} deck words",
+        words.len(),
+        args.lang
+    );
+    Ok(())
+}
+
 async fn handle_gloss(args: GlossArgs) -> Result<(), Error> {
     let (config, pool) = load_config_and_pool().await?;
     let provider = wisecrow::llm::create_provider(&config)?;
@@ -670,6 +772,9 @@ async fn main() -> Result<(), Error> {
             }
         }
         Command::PrefetchMedia(args) => handle_prefetch_media(args).await?,
+        Command::GlossDeck(args) => handle_gloss_deck(args).await?,
+        Command::ScoreSentences(args) => handle_score_sentences(args).await?,
+        Command::SentenceCard(args) => handle_sentence_card(args).await?,
         Command::Prune(args) => handle_prune(args).await?,
         Command::Preview(args) => handle_preview(args).await?,
         Command::Quiz(args) => handle_quiz(args)?,

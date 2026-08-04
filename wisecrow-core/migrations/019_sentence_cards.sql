@@ -1,0 +1,53 @@
+-- Ranking matches whole phrases, so only a row that *is* one word ever gets a
+-- `corpus_frequency` and only such a row can reach a deck. Measured on
+-- 2026-08-04, that leaves most of every corpus unreachable:
+--
+--   ga  4,328,254 rows, 1,629 of them single words.   800 deck-eligible.
+--   cy  1,565,983 rows,  65,502 single words.      37,167 deck-eligible.
+--   gd    111,918 rows,    ~979 genuine single words.  611 deck-eligible.
+--
+-- Irish can teach from eight hundred of four and a third million pairs. The rest
+-- are sentences, and a sentence is what lets a learner see a word used rather
+-- than merely translated.
+--
+-- These columns are deliberately NOT `corpus_frequency`. That column decides the
+-- word deck, which deduplicates on the phrase being learned; admitting sentences
+-- to it would make every row its own deck entry and turn the deck into a
+-- sentence firehose. That is the shape migration 017 was written to abolish, and
+-- keeping the two scores apart is the same discipline that separated `frequency`
+-- from `corpus_frequency` there.
+--
+-- Both columns are nullable with no default, so on PostgreSQL 11 and later this
+-- migration rewrites no rows and takes no meaningful lock. That matters: it runs
+-- at application startup, against a six-million-row table on a rotational disk,
+-- while an ingest is writing to it.
+ALTER TABLE translations ADD COLUMN IF NOT EXISTS sentence_tokens TEXT[];
+
+-- The corpus count of the sentence's *rarest* token. A sentence is as hard as
+-- its hardest word, so ordering by this descending puts the most approachable
+-- sentences first. NULL means the sentence has not been scored, or holds a token
+-- the corpus counts have never seen — itself a reason not to serve it.
+ALTER TABLE translations ADD COLUMN IF NOT EXISTS sentence_score INTEGER;
+
+-- NO INDEXES ARE CREATED HERE, DELIBERATELY.
+--
+-- Selection asks two questions of the token array, and GIN answers both:
+--   sentence_tokens @> ARRAY['dìreach']            -- sentences holding the word
+--   sentence_tokens <@ (known_words || 'dìreach')  -- every other token known
+-- which together are the i+1 condition. Without that index those are sequential
+-- scans over millions of rows.
+--
+-- But `CREATE INDEX` takes an ACCESS EXCLUSIVE lock, and sqlx runs migrations
+-- inside a transaction at startup, so `CONCURRENTLY` is not available here. A
+-- GIN build over six million rows on this disk would hold the table against the
+-- running ingest for as long as it took. The runbook already defers two dropped
+-- phrase indexes until seeding ends for exactly this reason; these join them:
+--
+--   SET maintenance_work_mem = '1GB';
+--   CREATE INDEX CONCURRENTLY idx_translations_sentence_tokens
+--       ON translations USING GIN (sentence_tokens);
+--   CREATE INDEX CONCURRENTLY idx_translations_sentence_score
+--       ON translations (to_language_id, sentence_score DESC);
+--
+-- Until they exist, sentence selection is correct but slow, and should be run
+-- against Gaelic only — 112k rows, where a sequential scan costs little.
