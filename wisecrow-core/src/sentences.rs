@@ -26,6 +26,31 @@ const SCORE_PAGE_SIZE: i64 = 5000;
 /// runs rather than sentences.
 const MAX_SENTENCE_TOKENS: usize = 12;
 
+/// The shortest sentence worth serving as a card.
+///
+/// The score is the *minimum* count over a row's tokens, so a further token can
+/// only lower it, and ordering by score descending is therefore ordering by
+/// shortness. Measured on the scored Gaelic rows, the highest score at each
+/// length falls monotonically — 20,134 at two tokens, 8,308 at three, 6,283 at
+/// four, 509 at twelve — so whatever the corpus holds, the head of the ordering
+/// is whatever is shortest.
+///
+/// Below four tokens a subtitle corpus offers fragments rather than sentences.
+/// The Gaelic head was `Tha a?`, `Tha an` and `Tha e ...`, which carry no
+/// context the word deck does not already teach, and whose native partners were
+/// `Have You Say?` and `Die!`. Four is where the same corpus begins giving whole
+/// clauses — `An e sin e?`, `Tha mi an seo.` — and reaching them costs 19,085 of
+/// 64,741 scored Gaelic rows.
+const MIN_SENTENCE_TOKENS: usize = 4;
+
+/// The least share of a sentence's tokens that must be distinct.
+///
+/// Requiring merely two distinct tokens admits `Chan eil, chan eil, chan eil.`,
+/// which is six tokens of two words. Repetition is not context however long the
+/// row runs. A half admits `An e sin e?`, where one word of four recurs once,
+/// and declines 258 further Gaelic rows.
+const MIN_DISTINCT_SHARE: (usize, usize) = (1, 2);
+
 /// A sentence card: the pair, and how approachable the sentence is.
 #[derive(Debug, PartialEq, Eq)]
 pub struct SentenceCard {
@@ -121,24 +146,31 @@ pub async fn score_sentences(pool: &PgPool, lang_code: &str) -> Result<usize, Wi
 
 /// The score for a tokenised phrase, or `None` if it is not a servable sentence.
 ///
-/// Declines a phrase that is one token — the word deck already teaches those and
-/// a one-word "sentence" carries no context — one that runs past
-/// [`MAX_SENTENCE_TOKENS`], and one holding a token the corpus has never
-/// counted.
+/// Declines a phrase shorter than [`MIN_SENTENCE_TOKENS`] or longer than
+/// [`MAX_SENTENCE_TOKENS`], one repeating too few distinct words to meet
+/// [`MIN_DISTINCT_SHARE`], and one holding a token the corpus has never counted.
+///
+/// Every one of those is a bound on what is *scored* rather than on how the
+/// scored rows are ordered, and that is deliberate. Because the score falls with
+/// length, no ordering key available to the selection query can prefer a whole
+/// clause over a fragment that outscores it; the fragment has to leave the
+/// scored set instead. Declining a row here leaves it unscored, which the
+/// selection query already excludes.
 fn score_for(tokens: &[String], counts: &std::collections::HashMap<String, i32>) -> Option<i32> {
-    if tokens.len() < 2 || tokens.len() > MAX_SENTENCE_TOKENS {
+    if tokens.len() < MIN_SENTENCE_TOKENS || tokens.len() > MAX_SENTENCE_TOKENS {
         return None;
     }
-    // A sentence scores as its rarest word, so one made entirely of the
-    // commonest word scores highest of all: "Tha, tha." and "Tha Tha." took the
-    // first four places of the Gaelic ordering, which is the least useful thing
-    // a learner could be shown first. Thirty-three such rows exist and they were
-    // all at the top. Repetition is not context.
+    // A sentence scores as its rarest word, so one made largely of the commonest
+    // word scores highest of all: "Tha, tha." and "Tha Tha." took the first four
+    // places of the Gaelic ordering, and requiring two distinct tokens only
+    // moved the problem to "Chan eil, chan eil, chan eil." Repetition is not
+    // context.
     let distinct: std::collections::HashSet<String> = tokens
         .iter()
         .map(|t| crate::lang::normalise_for_match(t))
         .collect();
-    if distinct.len() < 2 {
+    let (numerator, denominator) = MIN_DISTINCT_SHARE;
+    if distinct.len() * denominator < tokens.len() * numerator {
         return None;
     }
     tokens
@@ -226,68 +258,95 @@ mod tests {
         words.iter().map(|w| (*w).to_owned()).collect()
     }
 
+    /// The four commonest Gaelic words and their measured corpus counts, which
+    /// is the shortest servable sentence and so the basis of most cases here.
+    fn gaelic() -> HashMap<String, i32> {
+        counts(&[("tha", 37048), ("an", 20134), ("sin", 6284), ("seo", 5730)])
+    }
+
     #[rstest]
     #[case(
-        &["tha", "sin"],
-        &[("tha", 37048), ("sin", 6284)],
-        Some(6284),
+        &["tha", "an", "sin", "seo"],
+        Some(5730),
         "the rarest word governs, because a sentence is as hard as its hardest word"
     )]
     #[case(
-        &["tha"],
-        &[("tha", 37048)],
-        None,
-        "one token is not a sentence; the word deck already teaches it"
+        &["Tha.", "An", "Sin?", "Seo!"],
+        Some(5730),
+        "tokens are normalised before lookup, as ranking normalised them"
     )]
     #[case(
-        &["tha", "bthey"],
-        &[("tha", 37048)],
+        &["tha", "an", "sin", "bthey"],
         None,
         "a token the corpus never counted is usually corruption, and declines the row"
     )]
-    #[case(
-        &["Tha.", "Sin?"],
-        &[("tha", 37048), ("sin", 6284)],
-        Some(6284),
-        "tokens are normalised before lookup, as ranking normalised them"
-    )]
     fn a_sentence_scores_as_its_rarest_word(
         #[case] words: &[&str],
-        #[case] known: &[(&str, i32)],
         #[case] expected: Option<i32>,
         #[case] why: &str,
     ) {
-        assert_eq!(score_for(&tokens(words), &counts(known)), expected, "{why}");
+        assert_eq!(score_for(&tokens(words), &gaelic()), expected, "{why}");
     }
 
     #[rstest]
-    #[case(&["tha", "tha"], "one word twice is not context")]
-    #[case(&["Tha,", "tha."], "nor is it once punctuation is normalised away")]
-    #[case(&["tha", "tha", "tha"], "however many times it is repeated")]
-    fn a_sentence_of_one_repeated_word_is_declined(#[case] words: &[&str], #[case] why: &str) {
-        let vocabulary = counts(&[("tha", 37048)]);
-        assert_eq!(score_for(&tokens(words), &vocabulary), None, "{why}");
+    #[case(&["tha"], "one token is not a sentence; the word deck already teaches it")]
+    #[case(&["tha", "an"], "two is the fragment `Tha a?`, whose partner was `Have You Say?`")]
+    #[case(&["tha", "an", "sin"], "three is `Tha e ...`, a fragment still")]
+    fn a_phrase_too_short_to_carry_context_is_declined(#[case] words: &[&str], #[case] why: &str) {
+        assert_eq!(score_for(&tokens(words), &gaelic()), None, "{why}");
     }
 
-    /// Alternating two words rather than repeating one, so the length bound is
-    /// what decides these cases and not the distinct-token guard above.
-    fn alternating(len: usize) -> Vec<String> {
+    #[rstest]
+    #[case(
+        &["chan", "eil", "chan", "eil", "chan", "eil"],
+        None,
+        "two words in six is repetition, which a bare two-distinct test admitted"
+    )]
+    #[case(
+        &["chan", "eil", "chan", "eil"],
+        Some(1672),
+        "half distinct is the bound itself, and servable"
+    )]
+    #[case(
+        &["chan", "eil", "chan", "tha"],
+        Some(1672),
+        "as is a sentence that merely repeats one of its words once"
+    )]
+    fn a_sentence_repeating_too_few_words_is_declined(
+        #[case] words: &[&str],
+        #[case] expected: Option<i32>,
+        #[case] why: &str,
+    ) {
+        let vocabulary = counts(&[("chan", 8801), ("eil", 1672), ("tha", 37048)]);
+        assert_eq!(score_for(&tokens(words), &vocabulary), expected, "{why}");
+    }
+
+    /// Wholly distinct words, so the length bound is what decides these cases
+    /// and neither the fragment floor nor the repetition guard above it.
+    fn distinct_words(len: usize) -> Vec<String> {
+        (0..len).map(|i| format!("w{i}")).collect()
+    }
+
+    fn distinct_counts(len: usize) -> HashMap<String, i32> {
         (0..len)
-            .map(|i| if i % 2 == 0 { "tha" } else { "sin" }.to_owned())
+            .map(|i| (format!("w{i}"), 100 + i32::try_from(i).unwrap_or(0)))
             .collect()
     }
 
     #[test]
     fn a_sentence_past_the_length_bound_is_declined() {
-        let vocabulary = counts(&[("tha", 37048), ("sin", 6284)]);
+        let over = MAX_SENTENCE_TOKENS + 1;
         assert_eq!(
-            score_for(&alternating(MAX_SENTENCE_TOKENS + 1), &vocabulary),
+            score_for(&distinct_words(over), &distinct_counts(over)),
             None,
             "a learner meeting one new word must be able to hold the rest at once"
         );
         assert_eq!(
-            score_for(&alternating(MAX_SENTENCE_TOKENS), &vocabulary),
-            Some(6284),
+            score_for(
+                &distinct_words(MAX_SENTENCE_TOKENS),
+                &distinct_counts(MAX_SENTENCE_TOKENS)
+            ),
+            Some(100),
             "the bound itself is servable"
         );
     }
