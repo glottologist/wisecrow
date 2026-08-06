@@ -35,7 +35,17 @@ pub fn Home() -> Element {
                     select {
                         class: "w-full bg-gray-700 rounded px-3 py-2 text-white",
                         value: "{native}",
-                        onchange: move |evt| native.set(evt.value()),
+                        // Choosing the language already set as foreign would
+                        // otherwise leave both equal and offer `/learn/x/x`,
+                        // the same invalid session the filter below prevents
+                        // from the other direction.
+                        onchange: move |evt| {
+                            let chosen = evt.value();
+                            if foreign() == chosen {
+                                foreign.set(String::new());
+                            }
+                            native.set(chosen);
+                        },
                         for lang in langs.iter() {
                             option {
                                 value: "{lang.code}",
@@ -53,19 +63,37 @@ pub fn Home() -> Element {
                         value: "{foreign}",
                         onchange: move |evt| foreign.set(evt.value()),
                         option { value: "", "Select..." }
-                        for lang in langs.iter() {
-                            option { value: "{lang.code}", "{lang.name} ({lang.code})" }
+                        // A session translating a language into itself teaches
+                        // nothing; `wisecrow-mobile` filters the same way.
+                        for lang in langs.iter().filter(|l| l.code != native()) {
+                            option {
+                                value: "{lang.code}",
+                                selected: foreign() == lang.code,
+                                "{lang.name} ({lang.code})"
+                            }
                         }
                     }
                 }
 
-                Link {
-                    to: Route::LearnPage {
-                        native: native(),
-                        foreign: foreign(),
-                    },
-                    class: "block w-full text-center bg-emerald-600 hover:bg-emerald-500 rounded px-4 py-3 font-semibold transition",
-                    "Start Session"
+                // `foreign` starts empty and the "Select..." option sets it back,
+                // so an always-live link offers `/learn/en/` — a URL the router
+                // reads as `/learn/en` and matches against nothing, dropping the
+                // learner on the route-parse error page.
+                if foreign().is_empty() {
+                    button {
+                        class: "block w-full text-center bg-gray-700 text-gray-500 rounded px-4 py-3 font-semibold cursor-not-allowed",
+                        disabled: true,
+                        "Select a foreign language"
+                    }
+                } else {
+                    Link {
+                        to: Route::LearnPage {
+                            native: native(),
+                            foreign: foreign(),
+                        },
+                        class: "block w-full text-center bg-emerald-600 hover:bg-emerald-500 rounded px-4 py-3 font-semibold transition",
+                        "Start Session"
+                    }
                 }
             }
         }

@@ -5,6 +5,7 @@ use crate::components::layout::Layout;
 use crate::components::learn::LearnPage;
 use crate::components::login::LoginPage;
 use crate::components::nback::NbackPage;
+use crate::components::not_found::NotFound;
 use crate::components::quiz::QuizPage;
 
 #[derive(Clone, Routable, Debug, PartialEq, Eq)]
@@ -21,4 +22,9 @@ pub enum Route {
         NbackPage { native: String, foreign: String },
         #[route("/quiz")]
         QuizPage {},
+        // Must stay last: the router tries variants in order and this matches
+        // anything. Inside the layout so a wrong URL keeps the site's chrome
+        // rather than dropping the reader onto a bare page.
+        #[route("/:..segments")]
+        NotFound { segments: Vec<String> },
 }
