@@ -1,4 +1,5 @@
 mod card;
+pub mod preload;
 mod stats;
 mod timer;
 
@@ -14,6 +15,7 @@ use crate::api::media::{get_audio_data, get_image_data};
 const DEFAULT_DECK_SIZE: u32 = 50;
 const DEFAULT_SPEED_MS: u32 = 3000;
 const TICK_INTERVAL_MS: u64 = 100;
+const PRELOAD_WINDOW: usize = 5;
 
 #[cfg(target_arch = "wasm32")]
 async fn async_sleep(ms: u64) {
@@ -39,8 +41,8 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
     let mut speed = use_signal(|| SpeedController::new(DEFAULT_SPEED_MS));
     let mut loading = use_signal(|| true);
     let mut error_msg: Signal<Option<String>> = use_signal(|| None);
-    let mut audio_url: Signal<Option<String>> = use_signal(|| None);
-    let mut image_url: Signal<Option<String>> = use_signal(|| None);
+    let mut media: Signal<std::collections::HashMap<usize, preload::MediaEntry>> =
+        use_signal(std::collections::HashMap::new);
 
     let native_clone = native.clone(); // clone: need owned copies for async closure
     let foreign_clone = foreign.clone(); // clone: need owned copies for async closure
@@ -74,27 +76,42 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
     });
 
     {
-        let foreign_lang = foreign.clone(); // clone: need owned for effect closure
+        use preload::{CardMedia, MediaEntry};
         use_effect(move || {
             let sess = session();
             let idx = current_index();
-            if let Some(ref s) = sess {
-                if let Some(card) = s.cards.get(idx) {
-                    let tid = card.translation_id;
-                    let phrase = card.to_phrase.clone(); // clone: moving into spawned async
-                    let lang = foreign_lang.clone(); // clone: moving into spawned async
-                    let word = card.from_phrase.clone(); // clone: moving into spawned async
-                    audio_url.set(None);
-                    image_url.set(None);
-                    spawn(async move {
-                        if let Ok(url) = get_audio_data(tid, phrase, lang).await {
-                            audio_url.set(Some(url));
-                        }
-                        if let Ok(url) = get_image_data(tid, word).await {
-                            image_url.set(Some(url));
-                        }
-                    });
-                }
+            let Some(ref s) = sess else { return };
+            let tracked: std::collections::HashSet<usize> = media.read().keys().copied().collect();
+            for stale in preload::indices_to_evict(&tracked, idx, PRELOAD_WINDOW) {
+                media.write().remove(&stale);
+            }
+            for fetch_index in
+                preload::indices_to_fetch(idx, s.cards.len(), PRELOAD_WINDOW, &tracked)
+            {
+                let Some(card) = s.cards.get(fetch_index) else {
+                    continue;
+                };
+                let tid = card.translation_id;
+                media.write().insert(fetch_index, MediaEntry::Pending);
+                spawn(async move {
+                    let mut entry = CardMedia::default();
+                    let mut any = false;
+                    if let Ok(url) = get_audio_data(tid).await {
+                        entry.audio_url = Some(url);
+                        any = true;
+                    }
+                    if let Ok(image) = get_image_data(tid).await {
+                        entry.image_url = Some(image.data_url);
+                        entry.image_credit = image.attribution;
+                        any = true;
+                    }
+                    let state = if any {
+                        MediaEntry::Ready(entry)
+                    } else {
+                        MediaEntry::Failed
+                    };
+                    media.write().insert(fetch_index, state);
+                });
             }
         });
     }
@@ -165,6 +182,10 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
     let session_id = sess.id;
     let timer_fraction = speed().remaining_fraction();
     let is_flipped = flipped();
+    let current_media = match media.read().get(&current_index()) {
+        Some(preload::MediaEntry::Ready(m)) => m.clone(),
+        _ => preload::CardMedia::default(),
+    };
 
     rsx! {
         div { class: "grid grid-cols-1 lg:grid-cols-4 gap-6",
@@ -175,8 +196,9 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
                     flipped: is_flipped,
                     index: idx,
                     total: total,
-                    audio_url: audio_url(),
-                    image_url: image_url(),
+                    audio_url: current_media.audio_url,
+                    image_url: current_media.image_url,
+                    image_credit: current_media.image_credit,
                     on_flip: move |_| {
                         flipped.set(true);
                         speed.write().reset();

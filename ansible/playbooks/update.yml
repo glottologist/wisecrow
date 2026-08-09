@@ -11,6 +11,11 @@
         src: "{{ playbook_dir }}/../../"
         dest: "{{ deploy_dir }}/"
         delete: false
+        # Without this the module builds its own `ssh -S none`, which bypasses
+        # the open control master and demands a fresh signature from the
+        # hardware key. The key refuses intermittently, so the deploy failed
+        # here at rsync while every other task on the same host succeeded.
+        use_ssh_args: true
         rsync_opts:
           - "--exclude=target"
           # The container test runner writes here (CARGO_TARGET_DIR=target-docker,
@@ -36,6 +41,18 @@
         dest: "{{ deploy_dir }}/.env"
         mode: "0600"
       no_log: true
+
+    # Docker creates a missing bind-mount source as root, which the container's
+    # unprivileged user then cannot write to — the exact failure this mount
+    # exists to fix. Create it with the container's uid/gid instead.
+    - name: Ensure the media cache directory is writable by the container user
+      ansible.builtin.file:
+        path: "{{ wisecrow_media_dir | default('/mnt/DATA2/wisecrow-media') }}"
+        state: directory
+        owner: "10001"
+        group: "999"
+        mode: "0755"
+      become: true
 
     - name: Rebuild and restart
       ansible.builtin.command:

@@ -43,6 +43,15 @@ pub struct Config {
     pub unsplash_api_key: Option<SecureString>,
     pub pexels_api_key: Option<SecureString>,
     pub pixabay_api_key: Option<SecureString>,
+    /// CereVoice Cloud account: the email and password used on the CereProc
+    /// website, which its `/auth` endpoint takes as basic credentials. Both
+    /// must be present before Celtic-language speech is attempted.
+    pub cereproc_email: Option<String>,
+    pub cereproc_password: Option<SecureString>,
+    /// Overrides the default CereProc Welsh voice. The eight Welsh voices
+    /// split north (`-NW-`) and south (`-SW-`) dialects, a choice no other
+    /// provider offers and one only the learner can make.
+    pub cereproc_welsh_voice: Option<String>,
     pub llm_provider: Option<String>,
     pub llm_api_key: Option<SecureString>,
     /// Optional model id (e.g. `claude-sonnet-5`, `gpt-4o`). When unset or
@@ -120,6 +129,9 @@ mod tests {
             unsplash_api_key: None,
             pexels_api_key: None,
             pixabay_api_key: None,
+            cereproc_email: None,
+            cereproc_password: None,
+            cereproc_welsh_voice: None,
             llm_provider: None,
             llm_api_key: None,
             llm_model: None,
@@ -140,6 +152,9 @@ mod tests {
             unsplash_api_key: None,
             pexels_api_key: None,
             pixabay_api_key: None,
+            cereproc_email: None,
+            cereproc_password: None,
+            cereproc_welsh_voice: None,
             llm_provider: None,
             llm_api_key: None,
             llm_model: None,
@@ -178,6 +193,9 @@ mod tests {
             unsplash_api_key: None,
             pexels_api_key: None,
             pixabay_api_key: None,
+            cereproc_email: None,
+            cereproc_password: None,
+            cereproc_welsh_voice: None,
             llm_provider: None,
             llm_api_key: None,
             llm_model: None,
@@ -200,6 +218,9 @@ mod tests {
             unsplash_api_key: None,
             pexels_api_key: None,
             pixabay_api_key: None,
+            cereproc_email: None,
+            cereproc_password: None,
+            cereproc_welsh_voice: None,
             llm_provider: None,
             llm_api_key: None,
             llm_model: None,

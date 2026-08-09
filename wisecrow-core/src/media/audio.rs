@@ -2,7 +2,10 @@
 use std::path::Path;
 
 use crate::errors::WisecrowError;
+use crate::media::cereproc::CereprocClient;
 
+/// MS Edge voices. Scottish Gaelic is absent because Edge does not offer one —
+/// see [`crate::media::cereproc`].
 const TTS_VOICES: &[(&str, &str)] = &[
     ("af", "af-ZA-AdriNeural"),
     ("am", "am-ET-AmehaNeural"),
@@ -87,13 +90,27 @@ pub fn voice_for_language(lang_code: &str) -> Option<&'static str> {
         .find_map(|(code, voice)| (*code == lang_code).then_some(*voice))
 }
 
-/// Generates MP3 audio for the given text using MS Edge TTS.
+/// Generates MP3 audio for the given text.
+///
+/// Celtic languages go to CereProc when an account is configured — Edge has no
+/// Scottish Gaelic voice at all, and CereProc's Welsh voices carry a dialect
+/// the Edge pair does not. Everything else uses Edge.
 ///
 /// # Errors
 ///
 /// Returns an error if the TTS service is unavailable or the language
-/// is not supported.
-pub async fn generate_tts(text: &str, lang_code: &str) -> Result<Vec<u8>, WisecrowError> {
+/// is not supported by whichever provider handles it.
+pub async fn generate_tts(
+    text: &str,
+    lang_code: &str,
+    cereproc: Option<&CereprocClient>,
+) -> Result<Vec<u8>, WisecrowError> {
+    if let Some(client) = cereproc {
+        if let Some(voice) = client.voice_for_language(lang_code) {
+            return client.synthesise(text, voice).await;
+        }
+    }
+
     let voice = voice_for_language(lang_code).ok_or_else(|| {
         WisecrowError::MediaError(format!("No TTS voice available for language: {lang_code}"))
     })?;

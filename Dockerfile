@@ -51,6 +51,14 @@ COPY --from=builder /build/wisecrow-web/dist                    /app/web
 
 RUN chown -R wisecrow:wisecrow /app
 
+# `--no-create-home` leaves $HOME at a path that does not exist, and /home is
+# root-owned, so `dirs::data_local_dir()` resolved to a directory the app could
+# not create: every media cache initialisation failed with permission denied
+# before any provider was reached, and no card ever played audio or showed an
+# image. XDG_DATA_HOME points the cache somewhere the app owns.
+ENV XDG_DATA_HOME=/var/lib/wisecrow
+RUN mkdir -p /var/lib/wisecrow && chown -R wisecrow:wisecrow /var/lib/wisecrow
+
 # App-terminated TLS: the server serves HTTPS on 8443 when
 # WISECROW__TLS_CERT_PATH / WISECROW__TLS_KEY_PATH are set (see
 # docker-compose.deploy.yml); otherwise it serves plain HTTP on this port.

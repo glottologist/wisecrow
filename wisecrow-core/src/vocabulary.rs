@@ -9,6 +9,24 @@ pub struct VocabularyEntry {
     pub frequency: i32,
 }
 
+/// Whether rows that already have an SRS card stay in the result. SRS
+/// seeding excludes them; the passive fast mode, which owns no cards,
+/// includes them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IncludeCarded {
+    Yes,
+    No,
+}
+
+/// Membership test against `phrase_translations.translation_id`, separating
+/// promoted phrases from ordinary word rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhraseFilter {
+    All,
+    Only,
+    Exclude,
+}
+
 pub struct VocabularyQuery;
 
 impl VocabularyQuery {
@@ -24,6 +42,32 @@ impl VocabularyQuery {
         native_lang: &str,
         foreign_lang: &str,
         limit: u32,
+    ) -> Result<Vec<VocabularyEntry>, WisecrowError> {
+        Self::ranked_candidates(
+            pool,
+            native_lang,
+            foreign_lang,
+            limit,
+            IncludeCarded::No,
+            PhraseFilter::All,
+        )
+        .await
+    }
+
+    /// The deck-selection query behind both session types: normalised
+    /// dedup on the learned side, agreement-based partner choice, and gloss
+    /// fallback, parameterised on card exclusion and phrase membership.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    pub async fn ranked_candidates(
+        pool: &PgPool,
+        native_lang: &str,
+        foreign_lang: &str,
+        limit: u32,
+        carded: IncludeCarded,
+        phrase_filter: PhraseFilter,
     ) -> Result<Vec<VocabularyEntry>, WisecrowError> {
         // Translations that no user has yet started a card on are universally
         // unlearned. Per-user "what should I learn next" should additionally
@@ -64,6 +108,19 @@ impl VocabularyQuery {
         // is preferred if one exists. That is the 200-of-315 case above, and the
         // only case: a pairing the corpus repeats is authentic evidence and beats
         // anything generated. See [`crate::glossing`].
+        let carded_clause = match carded {
+            IncludeCarded::Yes => "",
+            IncludeCarded::No => "AND c.id IS NULL",
+        };
+        let phrase_clause = match phrase_filter {
+            PhraseFilter::All => "",
+            PhraseFilter::Only => {
+                "AND EXISTS (SELECT 1 FROM phrase_translations pt WHERE pt.translation_id = t.id)"
+            }
+            PhraseFilter::Exclude => {
+                "AND NOT EXISTS (SELECT 1 FROM phrase_translations pt WHERE pt.translation_id = t.id)"
+            }
+        };
         let statement = format!(
             "SELECT best.id,
                     CASE WHEN best.agreement = 1 AND g.translation IS NOT NULL
@@ -87,10 +144,11 @@ impl VocabularyQuery {
                  JOIN languages fl ON t.from_language_id = fl.id
                  JOIN languages tl ON t.to_language_id = tl.id
                  LEFT JOIN cards c ON c.translation_id = t.id
-                 WHERE fl.code = $1 AND tl.code = $2 AND c.id IS NULL
+                 WHERE fl.code = $1 AND tl.code = $2 {carded_clause}
                    AND t.corpus_frequency > 1
                    AND LENGTH(t.from_phrase) BETWEEN 2 AND 200
                    AND LENGTH(t.to_phrase) BETWEEN 2 AND 200
+                   {phrase_clause}
                ) scored
                ORDER BY norm_to,
                         frequency DESC,
@@ -174,5 +232,85 @@ impl VocabularyQuery {
                 frequency: freq,
             })
             .collect())
+    }
+}
+
+/// Interleaves ranked words and phrases into one deck of at most `size`:
+/// every 5th slot (positions 4, 9, 14, …) takes the next phrase while any
+/// remain, all other slots take the next word; when either list runs dry the
+/// other fills the remainder, so the deck reaches
+/// `min(size, words.len() + phrases.len())`. Callers cap the phrase pool at
+/// `size / 5` when fetching, which is what holds the 80/20 shape.
+#[must_use]
+pub fn interleave_deck<T>(words: Vec<T>, phrases: Vec<T>, size: usize) -> Vec<T> {
+    let mut words = words.into_iter();
+    let mut phrases = phrases.into_iter();
+    let mut deck = Vec::with_capacity(size);
+    while deck.len() < size {
+        let phrase_slot = deck.len() % 5 == 4;
+        let next = if phrase_slot {
+            phrases.next().or_else(|| words.next())
+        } else {
+            words.next().or_else(|| phrases.next())
+        };
+        match next {
+            Some(item) => deck.push(item),
+            None => break,
+        }
+    }
+    deck
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interleave_ten_items_two_phrases() {
+        let words: Vec<&str> = vec!["w0", "w1", "w2", "w3", "w4", "w5", "w6", "w7"];
+        let phrases = vec!["p0", "p1"];
+        assert_eq!(
+            interleave_deck(words, phrases, 10),
+            vec!["w0", "w1", "w2", "w3", "p0", "w4", "w5", "w6", "w7", "p1"]
+        );
+    }
+
+    #[test]
+    fn interleave_no_phrases_fills_with_words() {
+        let words: Vec<usize> = (0..100).collect();
+        let deck = interleave_deck(words, Vec::new(), 100);
+        assert_eq!(deck, (0..100).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn interleave_no_words_fills_with_phrases() {
+        let phrases: Vec<usize> = (0..10).collect();
+        // With no words, phrases fill every slot: the deck reaches
+        // min(size, words + phrases), and the 1-in-5 shape only holds while
+        // both pools last.
+        assert_eq!(
+            interleave_deck(Vec::new(), phrases, 10),
+            (0..10).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn interleave_size_not_multiple_of_five() {
+        let words: Vec<&str> = vec!["w0", "w1", "w2", "w3", "w4", "w5"];
+        let phrases = vec!["p0", "p1"];
+        let deck = interleave_deck(words, phrases, 7);
+        assert_eq!(deck.len(), 7);
+        assert_eq!(deck.iter().filter(|i| i.starts_with('p')).count(), 1);
+    }
+
+    #[test]
+    fn interleave_size_zero_is_empty() {
+        assert!(interleave_deck::<u8>(vec![1, 2], vec![3], 0).is_empty());
+    }
+
+    #[test]
+    fn interleave_short_both_pools() {
+        let deck = interleave_deck(vec!["w0", "w1", "w2"], vec!["p0"], 100);
+        assert_eq!(deck.len(), 4);
     }
 }

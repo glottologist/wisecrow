@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 
+use crate::components::fast::FastPage;
 use crate::components::home::Home;
 use crate::components::layout::Layout;
 use crate::components::learn::LearnPage;
@@ -20,6 +21,8 @@ pub enum Route {
         LearnPage { native: String, foreign: String },
         #[route("/nback/:native/:foreign")]
         NbackPage { native: String, foreign: String },
+        #[route("/fast/:native/:foreign")]
+        FastPage { native: String, foreign: String },
         #[route("/quiz")]
         QuizPage {},
         // Must stay last: the router tries variants in order and this matches

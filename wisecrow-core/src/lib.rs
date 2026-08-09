@@ -13,6 +13,7 @@ pub mod ingesting;
 pub mod lang;
 pub mod llm;
 pub mod media;
+pub mod phrases;
 pub mod preview;
 pub mod pruning;
 pub mod sentences;

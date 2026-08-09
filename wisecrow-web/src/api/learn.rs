@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use wisecrow_dto::{CardDto, LanguageInfo, ReviewRatingDto, SessionDto};
+use wisecrow_dto::{CardDto, FastDeckDto, LanguageInfo, ReviewRatingDto, SessionDto};
 
 /// Lists supported learning languages for an authenticated user.
 ///
@@ -121,4 +121,72 @@ pub async fn complete_session(session_id: i32) -> Result<(), ServerFnError> {
         .await
         .map_err(|error| crate::server::internal_error("learning session completion", &error))?;
     Ok(())
+}
+
+/// Returns the top-ranked translations for a passive fast-mode run.
+///
+/// Writes nothing: fast mode has no session row and no SRS state. The deck
+/// is an 80/20 word/phrase interleave; with no phrases promoted yet it is
+/// simply the top words at full size.
+///
+/// # Errors
+///
+/// Returns validation, authentication, or sanitized storage errors.
+#[post("/api/learn/fast-deck")]
+pub async fn create_fast_deck(
+    native: String,
+    foreign: String,
+    size: u32,
+) -> Result<FastDeckDto, ServerFnError> {
+    use wisecrow::vocabulary::{interleave_deck, IncludeCarded, PhraseFilter, VocabularyQuery};
+    use wisecrow_dto::FastCardDto;
+
+    crate::server::auth::current_user().await?;
+    crate::server::validate_lang(&native)?;
+    crate::server::validate_lang(&foreign)?;
+    if size == 0 {
+        return Err(crate::server::client_error(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Deck size must be positive",
+        ));
+    }
+    let size = size.min(500);
+    let pool = crate::server::pool()?;
+
+    let words = VocabularyQuery::ranked_candidates(
+        pool,
+        &native,
+        &foreign,
+        size,
+        IncludeCarded::Yes,
+        PhraseFilter::Exclude,
+    )
+    .await
+    .map_err(|error| crate::server::internal_error("fast deck words", &error))?;
+    let phrases = VocabularyQuery::ranked_candidates(
+        pool,
+        &native,
+        &foreign,
+        size / 5,
+        IncludeCarded::Yes,
+        PhraseFilter::Only,
+    )
+    .await
+    .map_err(|error| crate::server::internal_error("fast deck phrases", &error))?;
+
+    let to_dto = |image_allowed: bool| {
+        move |entry: wisecrow::vocabulary::VocabularyEntry| FastCardDto {
+            translation_id: entry.translation_id,
+            from_phrase: entry.from_phrase,
+            to_phrase: entry.to_phrase,
+            frequency: entry.frequency,
+            image_allowed,
+        }
+    };
+    let words: Vec<FastCardDto> = words.into_iter().map(to_dto(true)).collect();
+    let phrases: Vec<FastCardDto> = phrases.into_iter().map(to_dto(false)).collect();
+    let deck_size = usize::try_from(size).unwrap_or(usize::MAX);
+    Ok(FastDeckDto {
+        cards: interleave_deck(words, phrases, deck_size),
+    })
 }

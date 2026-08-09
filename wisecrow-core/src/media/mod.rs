@@ -3,6 +3,8 @@ pub mod prefetch;
 
 #[cfg(feature = "tts")]
 pub mod audio;
+#[cfg(feature = "tts")]
+pub mod cereproc;
 
 #[cfg(feature = "images")]
 pub mod image_provider;
@@ -16,6 +18,8 @@ use sqlx::PgPool;
 use crate::config::Config;
 use crate::errors::WisecrowError;
 
+#[cfg(feature = "tts")]
+use crate::media::cereproc::CereprocClient;
 #[cfg(feature = "images")]
 use crate::media::images::ImageFetcher;
 
@@ -23,6 +27,42 @@ use crate::media::images::ImageFetcher;
 pub enum MediaType {
     Audio,
     Image,
+}
+
+/// The authoritative text and language for a translation's media, loaded
+/// server-side so no client-supplied text can reach the cache.
+#[derive(Debug, PartialEq)]
+pub struct MediaSubject {
+    pub to_phrase: String,
+    pub from_phrase: String,
+    pub foreign_lang: String,
+}
+
+/// Loads the media subject for a translation.
+///
+/// # Errors
+///
+/// Returns an error on query failure; `Ok(None)` for an unknown id.
+pub async fn load_media_subject(
+    pool: &PgPool,
+    translation_id: i32,
+) -> Result<Option<MediaSubject>, WisecrowError> {
+    let row = sqlx::query_as::<_, (String, String, String)>(
+        "SELECT t.to_phrase, t.from_phrase, tl.code
+         FROM translations t
+         JOIN languages tl ON tl.id = t.to_language_id
+         WHERE t.id = $1",
+    )
+    .bind(translation_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(
+        row.map(|(to_phrase, from_phrase, foreign_lang)| MediaSubject {
+            to_phrase,
+            from_phrase,
+            foreign_lang,
+        }),
+    )
 }
 
 /// Holds shared resources for media fetching (audio + images).
@@ -35,6 +75,8 @@ pub struct MediaContext {
     pub foreign_lang: String,
     #[cfg(feature = "images")]
     pub image_fetcher: Option<ImageFetcher>,
+    #[cfg(feature = "tts")]
+    pub cereproc: Option<CereprocClient>,
 }
 
 impl MediaContext {
@@ -56,6 +98,8 @@ impl MediaContext {
             foreign_lang: foreign_lang.into(),
             #[cfg(feature = "images")]
             image_fetcher: ImageFetcher::from_config(config),
+            #[cfg(feature = "tts")]
+            cereproc: CereprocClient::from_config(config),
         })
     }
 
@@ -68,6 +112,7 @@ impl MediaContext {
         pool: PgPool,
         foreign_lang: impl Into<String>,
         #[cfg(feature = "images")] image_fetcher: Option<ImageFetcher>,
+        #[cfg(feature = "tts")] cereproc: Option<CereprocClient>,
     ) -> Result<Self, WisecrowError> {
         let cache = cache::MediaCache::new(pool)?;
         let http_client = reqwest::Client::new();
@@ -77,11 +122,22 @@ impl MediaContext {
             foreign_lang: foreign_lang.into(),
             #[cfg(feature = "images")]
             image_fetcher,
+            #[cfg(feature = "tts")]
+            cereproc,
         })
     }
 }
 
 impl MediaType {
+    /// Stable low-byte discriminant for the cache's advisory-lock key.
+    #[must_use]
+    pub const fn lock_discriminant(self) -> u8 {
+        match self {
+            Self::Audio => 0,
+            Self::Image => 1,
+        }
+    }
+
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {

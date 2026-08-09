@@ -46,6 +46,11 @@ services:
       # ingest command so downloads and decompression land on the 3.5 TB disk
       # instead.
       - ${WISECROW_INGEST_TMP:-/mnt/DATA2/ingest-tmp}:/ingest-tmp
+      # Media cache (XDG_DATA_HOME, see Dockerfile). Persisted outside the
+      # container because a rebuild would otherwise discard every clip and
+      # re-fetch it, spending CereProc credits and image API quota to recover
+      # files the deploy just deleted.
+      - ${WISECROW_MEDIA_DIR:-/mnt/DATA2/wisecrow-media}:/var/lib/wisecrow
     ports:
       - "${WISECROW_WEB_BIND:-0.0.0.0}:${WISECROW_WEB_PORT:-8443}:8443"
     # Liveness, not authorization: an unauthenticated GET / is answered with the

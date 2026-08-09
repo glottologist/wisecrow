@@ -31,6 +31,10 @@ const LEARN_ROUTES: &[(&str, &str)] = &[
         r#"{"session_id":1,"card_id":1,"rating":"Good"}"#,
     ),
     ("/api/learn/session/pause", r#"{"session_id":1}"#),
+    (
+        "/api/learn/fast-deck",
+        r#"{"native":"en","foreign":"de","size":100}"#,
+    ),
     ("/api/learn/session/complete", r#"{"session_id":1}"#),
 ];
 const NBACK_ROUTES: &[(&str, &str)] = &[
@@ -55,11 +59,8 @@ const QUIZ_ROUTES: &[(&str, &str)] = &[
     ),
 ];
 const MEDIA_ROUTES: &[(&str, &str)] = &[
-    (
-        "/api/media/audio",
-        r#"{"translation_id":1,"foreign_phrase":"Hallo","foreign_lang":"de"}"#,
-    ),
-    ("/api/media/image", r#"{"translation_id":1,"word":"Hallo"}"#),
+    ("/api/media/audio", r#"{"translation_id":1}"#),
+    ("/api/media/image", r#"{"translation_id":1}"#),
 ];
 
 async fn post_status(path: &str, body: &str) -> StatusCode {

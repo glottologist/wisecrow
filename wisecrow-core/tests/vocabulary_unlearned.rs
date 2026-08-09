@@ -276,3 +276,178 @@ async fn a_pair_ranking_never_scored_stays_out_of_the_deck() {
 
     cleanup(&pool).await;
 }
+
+/// Returns the seeded translation's id so phrase/card fixtures can reference it.
+async fn seed_returning_id(
+    pool: &PgPool,
+    english: &str,
+    welsh: &str,
+    corpus_frequency: i32,
+) -> i32 {
+    seed(pool, english, welsh, corpus_frequency).await;
+    let (id,): (i32,) = sqlx::query_as(
+        "SELECT id FROM translations
+          WHERE from_phrase = $1 AND to_phrase = $2
+            AND to_language_id = (SELECT id FROM languages WHERE code='cy')",
+    )
+    .bind(english)
+    .bind(welsh)
+    .fetch_one(pool)
+    .await
+    .expect("seeded id");
+    id
+}
+
+async fn seed_card(pool: &PgPool, translation_id: i32) {
+    sqlx::query("INSERT INTO cards (translation_id, user_id, state) VALUES ($1, 1, 1)")
+        .bind(translation_id)
+        .execute(pool)
+        .await
+        .expect("card seed");
+}
+
+/// Marks a translation as a promoted phrase: a `phrases` row plus the
+/// `phrase_translations` link the deck queries test membership against.
+async fn seed_phrase_link(pool: &PgPool, translation_id: i32, phrase: &str) {
+    let (phrase_id,): (i32,) = sqlx::query_as(
+        "INSERT INTO phrases (language_id, phrase, token_count, sentence_count)
+         VALUES ((SELECT id FROM languages WHERE code='cy'), $1, 2, 10)
+         ON CONFLICT (language_id, phrase)
+           DO UPDATE SET sentence_count = EXCLUDED.sentence_count
+         RETURNING id",
+    )
+    .bind(phrase)
+    .fetch_one(pool)
+    .await
+    .expect("phrase seed");
+    sqlx::query(
+        "INSERT INTO phrase_translations (phrase_id, native_language_id, translation, translation_id)
+         VALUES ($1, (SELECT id FROM languages WHERE code='en'), 'seeded', $2)
+         ON CONFLICT (phrase_id, native_language_id)
+           DO UPDATE SET translation_id = EXCLUDED.translation_id",
+    )
+    .bind(phrase_id)
+    .bind(translation_id)
+    .execute(pool)
+    .await
+    .expect("phrase link seed");
+}
+
+async fn cleanup_phrases(pool: &PgPool) {
+    sqlx::query(
+        "DELETE FROM phrases WHERE language_id = (SELECT id FROM languages WHERE code='cy')",
+    )
+    .execute(pool)
+    .await
+    .expect("phrases cleanup"); // phrase_translations rows cascade
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn ranked_candidates_carded_switch_controls_card_exclusion() {
+    use wisecrow::vocabulary::{IncludeCarded, PhraseFilter};
+    let pool = test_pool().await;
+    cleanup(&pool).await;
+    cleanup_phrases(&pool).await;
+
+    let carded = seed_returning_id(&pool, "water", "dŵr", 900).await;
+    seed_card(&pool, carded).await;
+    seed_returning_id(&pool, "fire", "tân", 800).await;
+
+    let all = VocabularyQuery::ranked_candidates(
+        &pool,
+        "en",
+        "cy",
+        50,
+        IncludeCarded::Yes,
+        PhraseFilter::All,
+    )
+    .await
+    .expect("include carded");
+    let welsh: Vec<&str> = all.iter().map(|e| e.to_phrase.as_str()).collect();
+    assert_eq!(welsh, vec!["dŵr", "tân"]);
+
+    let uncarded = VocabularyQuery::ranked_candidates(
+        &pool,
+        "en",
+        "cy",
+        50,
+        IncludeCarded::No,
+        PhraseFilter::All,
+    )
+    .await
+    .expect("exclude carded");
+    let welsh: Vec<&str> = uncarded.iter().map(|e| e.to_phrase.as_str()).collect();
+    assert_eq!(welsh, vec!["tân"]);
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn ranked_candidates_phrase_filter_separates_and_orders() {
+    use wisecrow::vocabulary::{IncludeCarded, PhraseFilter};
+    let pool = test_pool().await;
+    cleanup(&pool).await;
+    cleanup_phrases(&pool).await;
+
+    seed_returning_id(&pool, "house", "tŷ mawr un", 700).await;
+    seed_returning_id(&pool, "dog", "ci bach un", 600).await;
+    seed_returning_id(&pool, "cat", "cath fach un", 500).await;
+    let p1 = seed_returning_id(&pool, "how are you", "sut wyt ti", 90).await;
+    let p2 = seed_returning_id(&pool, "thank you very much", "diolch yn fawr", 80).await;
+    seed_phrase_link(&pool, p1, "sut wyt ti").await;
+    seed_phrase_link(&pool, p2, "diolch yn fawr").await;
+
+    let words = VocabularyQuery::ranked_candidates(
+        &pool,
+        "en",
+        "cy",
+        50,
+        IncludeCarded::Yes,
+        PhraseFilter::Exclude,
+    )
+    .await
+    .expect("words");
+    let got: Vec<&str> = words.iter().map(|e| e.to_phrase.as_str()).collect();
+    assert_eq!(got, vec!["tŷ mawr un", "ci bach un", "cath fach un"]);
+
+    let phrases = VocabularyQuery::ranked_candidates(
+        &pool,
+        "en",
+        "cy",
+        50,
+        IncludeCarded::Yes,
+        PhraseFilter::Only,
+    )
+    .await
+    .expect("phrases");
+    let got: Vec<&str> = phrases.iter().map(|e| e.to_phrase.as_str()).collect();
+    assert_eq!(got, vec!["sut wyt ti", "diolch yn fawr"]);
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn ranked_candidates_deduplicates_spellings_when_carded_included() {
+    use wisecrow::vocabulary::{IncludeCarded, PhraseFilter};
+    let pool = test_pool().await;
+    cleanup(&pool).await;
+    cleanup_phrases(&pool).await;
+
+    // Same normalised Welsh surface, two English partners; the corroborated
+    // partner (two agreeing rows) must win and the surface appear once.
+    seed(&pool, "bread", "bara", 400).await;
+    seed(&pool, "bread", "bara.", 400).await;
+    seed(&pool, "brxad", "bara!", 400).await;
+
+    let all = VocabularyQuery::ranked_candidates(
+        &pool,
+        "en",
+        "cy",
+        50,
+        IncludeCarded::Yes,
+        PhraseFilter::All,
+    )
+    .await
+    .expect("dedup");
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].from_phrase, "bread");
+}

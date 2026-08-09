@@ -94,6 +94,14 @@ pub fn Home() -> Element {
                         class: "block w-full text-center bg-emerald-600 hover:bg-emerald-500 rounded px-4 py-3 font-semibold transition",
                         "Start Session"
                     }
+                    Link {
+                        to: Route::FastPage {
+                            native: native(),
+                            foreign: foreign(),
+                        },
+                        class: "block w-full text-center bg-cyan-700 hover:bg-cyan-600 rounded px-4 py-3 font-semibold transition mt-2",
+                        "Fast Download"
+                    }
                 }
             }
         }

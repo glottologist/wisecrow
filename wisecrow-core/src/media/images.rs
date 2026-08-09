@@ -9,6 +9,17 @@ use crate::media::providers::{PexelsProvider, PixabayProvider, UnsplashProvider}
 const MAX_IMAGE_WIDTH: u32 = 200;
 const MAX_IMAGE_HEIGHT: u32 = 200;
 
+/// A downloaded card image and the credit its licence requires.
+///
+/// Pixabay and Unsplash both ask that the source be shown wherever the image
+/// is displayed, so the credit travels with the bytes rather than being logged
+/// and forgotten.
+#[derive(Debug)]
+pub struct FetchedImage {
+    pub bytes: Vec<u8>,
+    pub attribution: Option<String>,
+}
+
 /// Which stock APIs to consult when building an [`ImageFetcher`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ImageProviderMode {
@@ -141,7 +152,7 @@ impl ImageFetcher {
         &self,
         client: &reqwest::Client,
         query: &ImageQuery<'_>,
-    ) -> Result<Vec<u8>, WisecrowError> {
+    ) -> Result<FetchedImage, WisecrowError> {
         if self.providers.is_empty() {
             return Err(WisecrowError::MediaError(
                 "No image provider is configured".to_owned(),
@@ -153,14 +164,10 @@ impl ImageFetcher {
             match provider.search(client, query).await {
                 Ok(Some(hit)) => match download_and_resize(client, &hit.download_url).await {
                     Ok(bytes) => {
-                        if let Some(ref attribution) = hit.attribution {
-                            tracing::debug!(
-                                provider = hit.provider_id,
-                                %attribution,
-                                "Fetched card image"
-                            );
-                        }
-                        return Ok(bytes);
+                        return Ok(FetchedImage {
+                            bytes,
+                            attribution: hit.attribution,
+                        });
                     }
                     Err(error) => {
                         tracing::warn!(
@@ -216,7 +223,7 @@ pub async fn fetch_image(
     client: &reqwest::Client,
     word: &str,
     fetcher: &ImageFetcher,
-) -> Result<Vec<u8>, WisecrowError> {
+) -> Result<FetchedImage, WisecrowError> {
     fetcher.fetch_bytes(client, &ImageQuery::new(word)).await
 }
 

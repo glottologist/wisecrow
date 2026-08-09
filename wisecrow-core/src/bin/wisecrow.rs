@@ -12,11 +12,12 @@ use tokio::{
 use tracing::{error, info};
 use wisecrow::{
     cli::{
-        is_supported_language, Cli, Command, DownloadAllArgs, FrequencyArgs, GenerateExercisesArgs,
-        GlossArgs, GlossDeckArgs, GradedReaderArgs, GradedReaderFormat, ImportGrammarArgs,
-        ImportPdfArgs, IngestArgs, LanguageArgs, LearnArgs, NbackArgs, PrefetchMediaArgs,
-        PreviewArgs, PruneArgs, QuizArgs, ScoreSentencesArgs, SeedGrammarArgs, SentenceCardArgs,
-        SyncArgs, SyncClientCmd, UserCmd, SUPPORTED_LANGUAGE_INFO,
+        is_supported_language, Cli, Command, DownloadAllArgs, ExtractPhrasesArgs, FrequencyArgs,
+        GenerateExercisesArgs, GlossArgs, GlossDeckArgs, GradedReaderArgs, GradedReaderFormat,
+        ImportGrammarArgs, ImportPdfArgs, IngestArgs, LanguageArgs, LearnArgs, NbackArgs,
+        PrefetchMediaArgs, PreviewArgs, PruneArgs, QuizArgs, ScoreSentencesArgs, SeedGrammarArgs,
+        SentenceCardArgs, SyncArgs, SyncClientCmd, TranslatePhrasesArgs, UserCmd,
+        SUPPORTED_LANGUAGE_INFO,
     },
     config::Config,
     downloader::DownloadConfig,
@@ -723,12 +724,44 @@ async fn handle_preview(args: PreviewArgs) -> Result<(), Error> {
     Ok(())
 }
 
+async fn handle_extract_phrases(args: ExtractPhrasesArgs) -> Result<(), Error> {
+    let lang_name = resolve_language_name(&args.lang)?;
+    let (_config, pool) = load_config_and_pool().await?;
+    let count = wisecrow::phrases::extract_phrases(&pool, &args.lang, 5000).await?;
+    info!("Extracted {count} frequent {lang_name} phrases into staging");
+    Ok(())
+}
+
+async fn handle_translate_phrases(args: TranslatePhrasesArgs) -> Result<(), Error> {
+    validate_languages(&args.native_lang, &args.lang)?;
+    let (config, pool) = load_config_and_pool().await?;
+    let provider = wisecrow::llm::create_provider(&config)?;
+    let refresh = if args.refresh {
+        wisecrow::phrases::Refresh::Yes
+    } else {
+        wisecrow::phrases::Refresh::No
+    };
+    let written = wisecrow::phrases::translate_phrases(
+        &pool,
+        provider.as_ref(),
+        &args.lang,
+        &args.native_lang,
+        args.limit,
+        refresh,
+    )
+    .await?;
+    info!("Translated and promoted {written} {} phrases", args.lang);
+    Ok(())
+}
+
 async fn handle_prefetch_media(args: PrefetchMediaArgs) -> Result<(), Error> {
     validate_languages(&args.native_lang, &args.foreign_lang)?;
     let (config, pool) = load_config_and_pool().await?;
 
     #[cfg(feature = "images")]
     let image_fetcher = wisecrow::media::images::ImageFetcher::from_config(&config);
+    #[cfg(feature = "tts")]
+    let cereproc = wisecrow::media::cereproc::CereprocClient::from_config(&config);
     let count = wisecrow::media::prefetch::prefetch_media(
         &pool,
         &args.native_lang,
@@ -737,6 +770,8 @@ async fn handle_prefetch_media(args: PrefetchMediaArgs) -> Result<(), Error> {
         args.images,
         #[cfg(feature = "images")]
         image_fetcher.as_ref(),
+        #[cfg(feature = "tts")]
+        cereproc.as_ref(),
     )
     .await?;
 
@@ -772,6 +807,8 @@ async fn main() -> Result<(), Error> {
             }
         }
         Command::PrefetchMedia(args) => handle_prefetch_media(args).await?,
+        Command::ExtractPhrases(args) => handle_extract_phrases(args).await?,
+        Command::TranslatePhrases(args) => handle_translate_phrases(args).await?,
         Command::GlossDeck(args) => handle_gloss_deck(args).await?,
         Command::ScoreSentences(args) => handle_score_sentences(args).await?,
         Command::SentenceCard(args) => handle_sentence_card(args).await?,

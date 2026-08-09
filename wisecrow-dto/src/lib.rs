@@ -16,6 +16,31 @@ pub fn channel_ratio(correct: u32, total: u32) -> f32 {
     correct / total
 }
 
+/// One item in a passive fast-mode deck.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FastCardDto {
+    pub translation_id: i32,
+    pub from_phrase: String,
+    pub to_phrase: String,
+    pub frequency: i32,
+    /// Phrases get audio only; image queries are word-shaped.
+    pub image_allowed: bool,
+}
+
+/// A passive fast-mode deck: no session row, no SRS state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FastDeckDto {
+    pub cards: Vec<FastCardDto>,
+}
+
+/// A card image and the credit its licence requires on display.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CardImageDto {
+    /// `data:image/jpeg;base64,…`
+    pub data_url: String,
+    pub attribution: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CardDto {
     pub card_id: i32,
@@ -29,6 +54,10 @@ pub struct CardDto {
     pub due: DateTime<Utc>,
     pub reps: i32,
     pub lapses: i32,
+    /// A promoted phrase; phrase cards get audio but no image.
+    /// `default` keeps payloads from older servers deserialising.
+    #[serde(default)]
+    pub is_phrase: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

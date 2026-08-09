@@ -6,7 +6,8 @@ use crate::errors::WisecrowError;
 
 pub(crate) const CARD_SELECT_COLUMNS: &str =
     "c.id, c.translation_id, t.from_phrase, t.to_phrase, t.frequency, \
-     c.stability, c.difficulty, c.state, c.due, c.reps, c.lapses";
+     c.stability, c.difficulty, c.state, c.due, c.reps, c.lapses, \
+     EXISTS (SELECT 1 FROM phrase_translations pt WHERE pt.translation_id = t.id)";
 
 pub(crate) type CardRow = (
     i32,
@@ -20,6 +21,7 @@ pub(crate) type CardRow = (
     DateTime<Utc>,
     i32,
     i32,
+    bool,
 );
 
 #[derive(Debug, Clone)]
@@ -35,6 +37,9 @@ pub struct CardState {
     pub due: DateTime<Utc>,
     pub reps: i32,
     pub lapses: i32,
+    /// A promoted phrase rather than a word; phrase cards skip image
+    /// fetches because image queries are word-shaped.
+    pub is_phrase: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,6 +154,7 @@ impl CardState {
             due,
             reps,
             lapses,
+            is_phrase,
         ): CardRow,
     ) -> Self {
         Self {
@@ -163,6 +169,7 @@ impl CardState {
             due,
             reps,
             lapses,
+            is_phrase,
         }
     }
 }
@@ -334,6 +341,7 @@ impl CardManager {
             due: new_card.due,
             reps: new_card.reps,
             lapses: new_card.lapses,
+            is_phrase: card.is_phrase,
         })
     }
 

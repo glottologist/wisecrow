@@ -10,6 +10,10 @@ pub fn CardDisplay(
     total: usize,
     audio_url: Option<String>,
     image_url: Option<String>,
+    /// Photographer and source, shown under the image because Pixabay and
+    /// Unsplash both require the origin to be visible wherever it is displayed.
+    #[props(default = None)]
+    image_credit: Option<String>,
     on_flip: EventHandler<()>,
     on_rate: EventHandler<ReviewRatingDto>,
     #[props(default = ScriptDirection::Ltr)] script_direction: ScriptDirection,
@@ -34,6 +38,9 @@ pub fn CardDisplay(
                                 class: "mx-auto mb-4 rounded max-w-[200px] max-h-[200px]",
                                 src: "{img_src}",
                                 alt: "{card.from_phrase}",
+                            }
+                            if let Some(ref credit) = image_credit {
+                                p { class: "text-xs text-gray-600 -mt-3 mb-3", "{credit}" }
                             }
                         }
                         p { class: "text-2xl font-bold text-cyan-400",
@@ -64,6 +71,9 @@ pub fn CardDisplay(
                                 class: "mx-auto mb-4 rounded max-w-[200px] max-h-[200px]",
                                 src: "{img_src}",
                                 alt: "{card.to_phrase}",
+                            }
+                            if let Some(ref credit) = image_credit {
+                                p { class: "text-xs text-gray-600 -mt-3 mb-3", "{credit}" }
                             }
                         }
                         p { class: "text-3xl font-bold text-cyan-400 mb-4",

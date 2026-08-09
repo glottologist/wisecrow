@@ -115,6 +115,38 @@ Return only those four lines, no surrounding prose."#
     )
 }
 
+/// Prompt for translating frequent foreign phrases into the native language.
+#[must_use]
+pub fn phrase_translation_prompt(
+    phrases: &[String],
+    foreign_lang_name: &str,
+    native_lang_name: &str,
+) -> String {
+    let phrase_list = phrases
+        .iter()
+        .enumerate()
+        .map(|(i, p)| format!("{}. {p}", i.saturating_add(1)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        r#"Provide natural {native_lang_name} translations for these common {foreign_lang_name} phrases.
+
+Phrases:
+{phrase_list}
+
+Return a JSON object with this exact shape:
+{{
+  "translations": [
+    {{"phrase": "<foreign phrase>", "translation": "<{native_lang_name}>"}}
+  ]
+}}
+
+- One entry per input phrase, in the same order, repeating the phrase exactly as given.
+- Translate the phrase as a unit, the way a speaker would actually say it.
+- No commentary outside the JSON."#
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

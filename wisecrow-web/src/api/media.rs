@@ -2,21 +2,19 @@ use dioxus::prelude::*;
 
 /// Returns cached or generated audio for a learning phrase.
 ///
+/// Takes only the translation id: the phrase and language are loaded
+/// server-side, so no client-supplied text can reach the cache.
+///
 /// # Errors
 ///
 /// Returns validation, authentication, capability, or sanitized media errors.
 #[post("/api/media/audio")]
-pub async fn get_audio_data(
-    translation_id: i32,
-    foreign_phrase: String,
-    foreign_lang: String,
-) -> Result<String, ServerFnError> {
+pub async fn get_audio_data(translation_id: i32) -> Result<String, ServerFnError> {
     crate::server::auth::current_user().await?;
-    validate_media_request(translation_id, &foreign_phrase)?;
-    crate::server::validate_lang(&foreign_lang)?;
+    validate_media_request(translation_id)?;
     #[cfg(feature = "audio")]
     {
-        return implementation::audio(translation_id, &foreign_phrase, &foreign_lang).await;
+        implementation::audio(translation_id).await
     }
     #[cfg(not(feature = "audio"))]
     Err(crate::server::client_error(
@@ -27,16 +25,20 @@ pub async fn get_audio_data(
 
 /// Returns a cached or fetched image for a learning word.
 ///
+/// Takes only the translation id — see [`get_audio_data`].
+///
 /// # Errors
 ///
 /// Returns validation, authentication, capability, or sanitized media errors.
 #[post("/api/media/image")]
-pub async fn get_image_data(translation_id: i32, word: String) -> Result<String, ServerFnError> {
+pub async fn get_image_data(
+    translation_id: i32,
+) -> Result<wisecrow_dto::CardImageDto, ServerFnError> {
     crate::server::auth::current_user().await?;
-    validate_media_request(translation_id, &word)?;
+    validate_media_request(translation_id)?;
     #[cfg(feature = "images")]
     {
-        return implementation::image(translation_id, &word).await;
+        implementation::image(translation_id).await
     }
     #[cfg(not(feature = "images"))]
     Err(crate::server::client_error(
@@ -46,9 +48,8 @@ pub async fn get_image_data(translation_id: i32, word: String) -> Result<String,
 }
 
 #[cfg(feature = "server")]
-fn validate_media_request(translation_id: i32, text: &str) -> Result<(), ServerFnError> {
-    const MAX_MEDIA_TEXT_BYTES: usize = 1024;
-    if translation_id <= 0 || text.is_empty() || text.len() > MAX_MEDIA_TEXT_BYTES {
+fn validate_media_request(translation_id: i32) -> Result<(), ServerFnError> {
+    if translation_id <= 0 {
         return Err(crate::server::client_error(
             axum::http::StatusCode::BAD_REQUEST,
             "Invalid media request",
@@ -71,20 +72,24 @@ mod implementation {
     const MAX_AUDIO_BYTES: u64 = 10 * 1024 * 1024;
 
     #[cfg(feature = "audio")]
-    pub(super) async fn audio(
-        translation_id: i32,
-        foreign_phrase: &str,
-        foreign_lang: &str,
-    ) -> Result<String, ServerFnError> {
+    pub(super) async fn audio(translation_id: i32) -> Result<String, ServerFnError> {
         let db = crate::server::pool()?;
+        let subject = load_subject(db, translation_id).await?;
         let cache =
             MediaCache::new(db.clone()) // clone: MediaCache owns an Arc-backed pool handle
                 .map_err(|error| {
                     crate::server::internal_error("audio cache initialization", &error)
                 })?;
+        // Absent an account this is `None` and Edge handles the language, so a
+        // deployment without CereProc credentials keeps its existing speech.
+        let cereproc = wisecrow::media::cereproc::CereprocClient::from_config(&app_config()?);
         let path = cache
             .get_or_fetch(translation_id, MediaType::Audio, || {
-                wisecrow::media::audio::generate_tts(foreign_phrase, foreign_lang)
+                wisecrow::media::audio::generate_tts(
+                    &subject.to_phrase,
+                    &subject.foreign_lang,
+                    cereproc.as_ref(),
+                )
             })
             .await
             .map_err(|error| crate::server::internal_error("audio generation", &error))?;
@@ -94,35 +99,62 @@ mod implementation {
     }
 
     #[cfg(feature = "images")]
-    pub(super) async fn image(translation_id: i32, word: &str) -> Result<String, ServerFnError> {
+    pub(super) async fn image(
+        translation_id: i32,
+    ) -> Result<wisecrow_dto::CardImageDto, ServerFnError> {
         let fetcher = image_fetcher()?;
         let db = crate::server::pool()?;
+        let subject = load_subject(db, translation_id).await?;
         let client = reqwest::Client::new();
         let cache =
             MediaCache::new(db.clone()) // clone: MediaCache owns an Arc-backed pool handle
                 .map_err(|error| {
                     crate::server::internal_error("image cache initialization", &error)
                 })?;
-        let path = cache
-            .get_or_fetch(translation_id, MediaType::Image, || {
-                wisecrow::media::images::fetch_image(&client, word, &fetcher)
+        let (path, attribution) = cache
+            .get_or_fetch_attributed(translation_id, MediaType::Image, || async {
+                wisecrow::media::images::fetch_image(&client, &subject.from_phrase, &fetcher)
+                    .await
+                    .map(|image| (image.bytes, image.attribution))
             })
             .await
             .map_err(|error| crate::server::internal_error("image fetch", &error))?;
         let bytes = read_bounded_file(&path, MAX_IMAGE_BYTES, "Image").await?;
         let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
-        Ok(["data:image/jpeg;base64,", encoded.as_str()].concat())
+        Ok(wisecrow_dto::CardImageDto {
+            data_url: ["data:image/jpeg;base64,", encoded.as_str()].concat(),
+            attribution,
+        })
+    }
+
+    async fn load_subject(
+        pool: &sqlx::PgPool,
+        translation_id: i32,
+    ) -> Result<wisecrow::media::MediaSubject, ServerFnError> {
+        wisecrow::media::load_media_subject(pool, translation_id)
+            .await
+            .map_err(|error| crate::server::internal_error("media subject load", &error))?
+            .ok_or_else(|| {
+                crate::server::client_error(
+                    axum::http::StatusCode::NOT_FOUND,
+                    "Unknown translation",
+                )
+            })
+    }
+
+    fn app_config() -> Result<wisecrow::config::Config, ServerFnError> {
+        let settings = config::Config::builder()
+            .add_source(config::Environment::with_prefix("WISECROW").separator("__"))
+            .build()
+            .map_err(|error| crate::server::internal_error("media configuration", &error))?;
+        settings
+            .try_deserialize()
+            .map_err(|error| crate::server::internal_error("media configuration", &error))
     }
 
     #[cfg(feature = "images")]
     fn image_fetcher() -> Result<wisecrow::media::images::ImageFetcher, ServerFnError> {
-        let settings = config::Config::builder()
-            .add_source(config::Environment::with_prefix("WISECROW").separator("__"))
-            .build()
-            .map_err(|error| crate::server::internal_error("image configuration", &error))?;
-        let cfg: wisecrow::config::Config = settings
-            .try_deserialize()
-            .map_err(|error| crate::server::internal_error("image configuration", &error))?;
+        let cfg = app_config()?;
         wisecrow::media::images::ImageFetcher::from_config(&cfg).ok_or_else(|| {
             crate::server::client_error(
                 axum::http::StatusCode::SERVICE_UNAVAILABLE,

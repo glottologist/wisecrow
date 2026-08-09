@@ -335,6 +335,29 @@ pub struct PrefetchMediaArgs {
 }
 
 #[derive(Args)]
+pub struct ExtractPhrasesArgs {
+    /// The language whose corpus is mined for frequent phrases.
+    #[arg(short, long)]
+    pub lang: String,
+}
+
+#[derive(Args)]
+pub struct TranslatePhrasesArgs {
+    /// The language the phrases belong to.
+    #[arg(short, long)]
+    pub lang: String,
+    /// The language the learner reads the translation in.
+    #[arg(short, long)]
+    pub native_lang: String,
+    /// Ceiling on phrases sent to the model in one run.
+    #[arg(long, default_value_t = 100)]
+    pub limit: u32,
+    /// Re-gloss already-translated phrases, updating linked rows in place.
+    #[arg(long, default_value_t = false)]
+    pub refresh: bool,
+}
+
+#[derive(Args)]
 pub struct GlossArgs {
     #[arg(short, long)]
     pub sentence: String,
@@ -469,6 +492,10 @@ pub enum Command {
     ListLanguages,
     #[command(aliases = ["pm"])]
     PrefetchMedia(PrefetchMediaArgs),
+    /// Extract frequent multi-word phrases from the corpus into staging.
+    ExtractPhrases(ExtractPhrasesArgs),
+    /// Translate staged phrases with the LLM and promote them into decks.
+    TranslatePhrases(TranslatePhrasesArgs),
     #[command(aliases = ["pv"])]
     Preview(PreviewArgs),
     #[command(aliases = ["gd"])]
@@ -520,6 +547,8 @@ mod tests {
                 | (Command::ListLanguages, "ListLanguages")
                 | (Command::Nback(_), "Nback")
                 | (Command::PrefetchMedia(_), "PrefetchMedia")
+                | (Command::ExtractPhrases(_), "ExtractPhrases")
+                | (Command::TranslatePhrases(_), "TranslatePhrases")
                 | (Command::Preview(_), "Preview")
                 | (Command::Quiz(_), "Quiz")
                 | (Command::SeedGrammar(_), "SeedGrammar")
@@ -549,6 +578,11 @@ mod tests {
     #[case(&["wisecrow", "nback", "-n", "en", "-f", "es"], "Nback")]
     #[case(&["wisecrow", "nb", "-n", "en", "-f", "de", "--mode", "word_translation"], "Nback")]
     #[case(&["wisecrow", "prefetch-media", "-n", "en", "-f", "es"], "PrefetchMedia")]
+    #[case(&["wisecrow", "extract-phrases", "-l", "gd"], "ExtractPhrases")]
+    #[case(
+        &["wisecrow", "translate-phrases", "-l", "gd", "-n", "en", "--limit", "50", "--refresh"],
+        "TranslatePhrases"
+    )]
     #[case(&["wisecrow", "pm", "-n", "en", "-f", "de"], "PrefetchMedia")]
     #[case(&["wisecrow", "gloss", "--sentence", "Меня зовут Иван", "--lang", "ru"], "Gloss")]
     #[case(&["wisecrow", "gl", "--sentence", "casa", "--lang", "es"], "Gloss")]

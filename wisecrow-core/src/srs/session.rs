@@ -41,8 +41,34 @@ impl SessionManager {
 
         if due_count < deck_size {
             let remaining = deck_size.saturating_sub(due_count);
-            let unlearned =
-                VocabularyQuery::unlearned(pool, native_lang, foreign_lang, remaining).await?;
+            // New-card fill follows the 80/20 word/phrase split: each pool is
+            // ranked on its own scale (a phrase seen in 40 sentences can never
+            // outrank a word seen 40,000 times), fetched at full size so the
+            // deck fills when either pool runs short, and interleaved with a
+            // phrase in every 5th slot.
+            let words = VocabularyQuery::ranked_candidates(
+                pool,
+                native_lang,
+                foreign_lang,
+                remaining,
+                crate::vocabulary::IncludeCarded::No,
+                crate::vocabulary::PhraseFilter::Exclude,
+            )
+            .await?;
+            let phrases = VocabularyQuery::ranked_candidates(
+                pool,
+                native_lang,
+                foreign_lang,
+                remaining / 5,
+                crate::vocabulary::IncludeCarded::No,
+                crate::vocabulary::PhraseFilter::Only,
+            )
+            .await?;
+            let unlearned = crate::vocabulary::interleave_deck(
+                words,
+                phrases,
+                usize::try_from(remaining).unwrap_or(usize::MAX),
+            );
 
             if !unlearned.is_empty() {
                 let translation_ids: Vec<i32> =

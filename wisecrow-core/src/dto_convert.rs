@@ -28,6 +28,7 @@ impl From<&CardState> for CardDto {
             due: card.due,
             reps: card.reps,
             lapses: card.lapses,
+            is_phrase: card.is_phrase,
         }
     }
 }

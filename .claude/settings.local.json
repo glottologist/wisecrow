@@ -102,7 +102,11 @@
       "Bash(PKG_CONFIG_PATH=/nix/store/23wj46rlzy1vda0mkh4n33a1bbs294sm-openssl-3.0.13-dev/lib/pkgconfig timeout 290 cargo check -p wisecrow-core --lib --tests)",
       "Bash(PKG_CONFIG_PATH=/nix/store/23wj46rlzy1vda0mkh4n33a1bbs294sm-openssl-3.0.13-dev/lib/pkgconfig timeout 290 cargo clippy -p wisecrow-core --lib --tests --message-format=short)",
       "Bash(scp -o \"ControlPath=/home/glottologist/.ssh/cm-calypso.sock\" /tmp/claude-1000/-home-glottologist-development-glottologist-wisecrow/8850ffe5-d188-4021-b727-c84b3e0f79d5/scratchpad/deckstate.sql jason@calypso:/tmp/deckstate.sql)",
-      "Bash(scp -o \"ControlPath=/home/glottologist/.ssh/cm-calypso.sock\" /tmp/claude-1000/-home-glottologist-development-glottologist-wisecrow/8850ffe5-d188-4021-b727-c84b3e0f79d5/scratchpad/inflation.sql jason@calypso:/tmp/inflation.sql)"
+      "Bash(scp -o \"ControlPath=/home/glottologist/.ssh/cm-calypso.sock\" /tmp/claude-1000/-home-glottologist-development-glottologist-wisecrow/8850ffe5-d188-4021-b727-c84b3e0f79d5/scratchpad/inflation.sql jason@calypso:/tmp/inflation.sql)",
+      "Bash(ANSIBLE_SSH_ARGS='-o ControlMaster=no -o ControlPath=/home/glottologist/.ssh/cm-calypso -o ServerAliveInterval=30' ansible-playbook playbooks/update.yml)",
+      "Bash(espeak-ng --voices)",
+      "WebFetch(domain:www.callscotland.org.uk)",
+      "WebFetch(domain:dl.fbaipublicfiles.com)"
     ]
   }
 }

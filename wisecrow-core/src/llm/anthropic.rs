@@ -19,8 +19,17 @@ pub struct AnthropicProvider {
 impl AnthropicProvider {
     #[must_use]
     pub fn new(api_key: impl Into<String>, model: impl Into<String>) -> Self {
+        // Bound to IPv4: the production host's IPv6 path to api.anthropic.com
+        // drops large transfers (measured 2026-08-09: an identical long
+        // generation returned 0 bytes over v6 and completed over v4), so
+        // responses longer than a few seconds died with "error decoding
+        // response body" whenever the connection came up over v6.
+        let client = Client::builder()
+            .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+            .build()
+            .unwrap_or_default();
         Self {
-            client: Client::new(),
+            client,
             api_key: api_key.into(),
             model: model.into(),
         }
@@ -86,8 +95,11 @@ impl LlmProvider for AnthropicProvider {
             )));
         }
 
+        // `{e:?}` rather than `{e}`: reqwest's Display for a decode failure is
+        // the bare "error decoding response body", with the serde detail that
+        // names the offending field only in the source chain.
         let parsed: AnthropicResponse = response.json().await.map_err(|e| {
-            WisecrowError::LlmError(format!("Failed to parse Anthropic response: {e}"))
+            WisecrowError::LlmError(format!("Failed to parse Anthropic response: {e:?}"))
         })?;
 
         parsed

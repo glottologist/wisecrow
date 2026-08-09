@@ -217,7 +217,7 @@ mod media_support {
                     let result = ctx
                         .cache
                         .get_or_fetch(translation_id, crate::media::MediaType::Audio, || {
-                            crate::media::audio::generate_tts(&word, &lang)
+                            crate::media::audio::generate_tts(&word, &lang, ctx.cereproc.as_ref())
                         })
                         .await;
                     match result {
@@ -239,19 +239,27 @@ mod media_support {
                     let word = to_phrase;
                     let result = ctx
                         .cache
-                        .get_or_fetch(translation_id, crate::media::MediaType::Image, || async {
-                            crate::media::images::fetch_image(&client, &word, fetcher).await
-                        })
+                        .get_or_fetch_attributed(
+                            translation_id,
+                            crate::media::MediaType::Image,
+                            || async {
+                                crate::media::images::fetch_image(&client, &word, fetcher)
+                                    .await
+                                    .map(|image| (image.bytes, image.attribution))
+                            },
+                        )
                         .await;
                     match result {
-                        Ok(path) => match crate::media::images::load_image_for_display(&path) {
-                            Ok(protocol) => {
-                                if let Err(e) = tx.send(MediaResult::Image(protocol)) {
-                                    tracing::warn!("Failed to send image result: {e}");
+                        Ok((path, _)) => {
+                            match crate::media::images::load_image_for_display(&path) {
+                                Ok(protocol) => {
+                                    if let Err(e) = tx.send(MediaResult::Image(protocol)) {
+                                        tracing::warn!("Failed to send image result: {e}");
+                                    }
                                 }
+                                Err(e) => tracing::debug!("Image display load failed: {e}"),
                             }
-                            Err(e) => tracing::debug!("Image display load failed: {e}"),
-                        },
+                        }
                         Err(e) => tracing::debug!("Image fetch failed: {e}"),
                     }
                 }
@@ -660,6 +668,7 @@ mod gloss_state_tests {
                 due: Utc::now(),
                 reps: 0,
                 lapses: 0,
+                is_phrase: false,
             }],
         }
     }
