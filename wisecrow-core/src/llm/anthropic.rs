@@ -59,9 +59,13 @@ struct AnthropicResponse {
     content: Vec<ContentBlock>,
 }
 
+/// One block of the response's `content` array. Newer models prepend
+/// blocks without a `text` field (thinking output), so the field is
+/// optional and callers take the text-bearing blocks only.
 #[derive(Deserialize)]
 struct ContentBlock {
-    text: String,
+    #[serde(default)]
+    text: Option<String>,
 }
 
 #[async_trait]
@@ -102,12 +106,17 @@ impl LlmProvider for AnthropicProvider {
             WisecrowError::LlmError(format!("Failed to parse Anthropic response: {e:?}"))
         })?;
 
-        parsed
+        let text: String = parsed
             .content
             .into_iter()
-            .next()
-            .map(|block| block.text)
-            .ok_or_else(|| WisecrowError::LlmError("Empty response from Anthropic".to_owned()))
+            .filter_map(|block| block.text)
+            .collect();
+        if text.is_empty() {
+            return Err(WisecrowError::LlmError(
+                "Empty response from Anthropic".to_owned(),
+            ));
+        }
+        Ok(text)
     }
 
     fn name(&self) -> &str {
