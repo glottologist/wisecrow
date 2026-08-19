@@ -105,3 +105,7 @@ ansible/vars/secrets.yml
 # Local agent notes / session handoffs (not project source)
 agents/
 
+
+# Gradle build artefacts (Android platform module)
+wisecrow-mobile/android/platform/.gradle/
+wisecrow-mobile/android/platform/build/
