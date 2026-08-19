@@ -1,15 +1,8 @@
-mod session_store;
+use crate::storage::models::ProfileIdentity;
 
-use std::sync::Arc;
-
-pub use session_store::{SessionStore, SessionStoreError};
-use wisecrow_dto::UserDto;
-
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthState {
     Restoring,
     Anonymous,
-    Authenticated(UserDto),
+    Authenticated(ProfileIdentity),
 }
-
-pub type SharedSessionStore = Arc<dyn SessionStore>;

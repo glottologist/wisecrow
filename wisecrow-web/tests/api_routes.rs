@@ -105,3 +105,49 @@ async fn stable_public_auth_routes_are_registered() {
         );
     }
 }
+
+#[tokio::test]
+async fn mobile_capabilities_route_is_public() {
+    let status = post_status("/api/mobile/capabilities", "{}").await;
+    assert!(
+        !matches!(
+            status,
+            StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED
+        ),
+        "/api/mobile/capabilities"
+    );
+}
+
+#[rstest::rstest]
+#[case(
+    "/api/mobile/devices/register",
+    r#"{"request":{"protocol_version":1,"device_id":"019131c0-7f68-7b31-a775-2d6f91aa3196","display_name":"Test phone"}}"#
+)]
+#[case(
+    "/api/mobile/corpus/snapshot",
+    r#"{"request":{"protocol_version":1,"pair":{"native_lang":"en","foreign_lang":"de"},"after_translation_id":0,"snapshot_watermark":null,"limit":100}}"#
+)]
+#[case(
+    "/api/mobile/corpus/changes",
+    r#"{"request":{"protocol_version":1,"pair":{"native_lang":"en","foreign_lang":"de"},"cursor":0,"limit":100}}"#
+)]
+#[case(
+    "/api/mobile/cards/changes",
+    r#"{"request":{"protocol_version":1,"cursor":0,"limit":100}}"#
+)]
+#[case(
+    "/api/mobile/reviews/upload",
+    r#"{"request":{"protocol_version":1,"device_id":"019131c0-7f68-7b31-a775-2d6f91aa3196","events":[]}}"#
+)]
+#[case(
+    "/api/mobile/nback/upload",
+    r#"{"request":{"protocol_version":1,"device_id":"019131c0-7f68-7b31-a775-2d6f91aa3196","sessions":[]}}"#
+)]
+#[tokio::test]
+async fn mobile_sync_route_requires_authentication(#[case] path: &str, #[case] body: &str) {
+    assert_eq!(
+        post_status(path, body).await,
+        StatusCode::UNAUTHORIZED,
+        "{path}"
+    );
+}

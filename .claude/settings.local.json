@@ -106,7 +106,10 @@
       "Bash(ANSIBLE_SSH_ARGS='-o ControlMaster=no -o ControlPath=/home/glottologist/.ssh/cm-calypso -o ServerAliveInterval=30' ansible-playbook playbooks/update.yml)",
       "Bash(espeak-ng --voices)",
       "WebFetch(domain:www.callscotland.org.uk)",
-      "WebFetch(domain:dl.fbaipublicfiles.com)"
+      "WebFetch(domain:dl.fbaipublicfiles.com)",
+      "Bash(ssh-add -l)",
+      "Bash(env)",
+      "Skill(claude-api)"
     ]
   }
 }

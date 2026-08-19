@@ -26,6 +26,8 @@ pub enum WisecrowError {
     ConfigurationError(String),
     #[error("Invalid input: {0}")]
     InvalidInput(String),
+    #[error("Conflict: {0}")]
+    Conflict(String),
     #[error("Unauthorized")]
     Unauthorized,
     #[error("Media error: {0}")]

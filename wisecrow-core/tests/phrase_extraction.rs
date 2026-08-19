@@ -268,15 +268,16 @@ async fn response_hygiene_drops_bad_entries_and_keeps_omissions_pending() {
     assert!(linked_translation(&pool, "ciamar a tha").await.is_none());
     assert!(linked_translation(&pool, "an taigh mòr").await.is_none());
 
-    // Malformed JSON: error out, nothing written.
+    // Malformed JSON: the batch is skipped rather than failing the run, so
+    // nothing is written and its phrases stay pending for the next run.
     let broken = StubProvider {
         response: "not json at all".to_owned(),
     };
-    assert!(
-        translate_phrases(&pool, &broken, "gd", "en", 10, Refresh::No)
-            .await
-            .is_err()
-    );
+    let written = translate_phrases(&pool, &broken, "gd", "en", 10, Refresh::No)
+        .await
+        .expect("a malformed response skips its batch");
+    assert_eq!(written, 0);
+    assert!(linked_translation(&pool, "ciamar a tha").await.is_none());
 }
 
 #[tokio::test]
@@ -413,4 +414,62 @@ async fn srs_seeding_interleaves_words_and_phrases() {
         .collect();
     assert!(phrases.contains(&"tha mi"));
     assert!(phrases.contains(&"ciamar a tha"));
+}
+
+/// A response that ran out of `max_tokens` mid-JSON: the string is cut off, so
+/// the batch cannot be parsed at all.
+struct TruncatedFirstBatchProvider {
+    calls: std::sync::atomic::AtomicUsize,
+    later_response: String,
+}
+
+#[async_trait]
+impl LlmProvider for TruncatedFirstBatchProvider {
+    async fn generate(&self, _prompt: &str, _max_tokens: u32) -> Result<String, WisecrowError> {
+        if self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+            return Ok(r#"{"translations":[{"phrase":"p00","translation":"tr"#.to_owned());
+        }
+        Ok(self.later_response.clone())
+    }
+    fn name(&self) -> &str {
+        "truncated-first-batch"
+    }
+}
+
+/// Production hit this: one 25-phrase batch came back truncated and took the
+/// whole 2,000-phrase run down with it, leaving Gaelic stuck at 302 translated.
+/// A bad batch must cost only its own phrases.
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn a_failed_batch_does_not_abandon_the_batches_behind_it() {
+    let pool = test_pool().await;
+    cleanup(&pool).await;
+    // 30 phrases over a batch size of 25, seeded with descending sentence
+    // counts so the selection order — and therefore the batch split — is fixed.
+    for i in 0..30 {
+        seed_phrase(&pool, &format!("p{i:02}"), 130 - i).await;
+    }
+
+    let second_batch: String = (25..30)
+        .map(|i| format!(r#"{{"phrase":"p{i:02}","translation":"t{i:02}"}}"#))
+        .collect::<Vec<_>>()
+        .join(",");
+    let provider = TruncatedFirstBatchProvider {
+        calls: std::sync::atomic::AtomicUsize::new(0),
+        later_response: format!(r#"{{"translations":[{second_batch}]}}"#),
+    };
+
+    let written = translate_phrases(&pool, &provider, "gd", "en", 30, Refresh::No)
+        .await
+        .expect("a truncated batch must not fail the run");
+
+    assert_eq!(written, 5, "the second batch's phrases are still written");
+    assert!(
+        linked_translation(&pool, "p00").await.is_none(),
+        "the truncated batch writes nothing"
+    );
+    assert!(
+        linked_translation(&pool, "p29").await.is_some(),
+        "the batch queued behind it still runs"
+    );
 }

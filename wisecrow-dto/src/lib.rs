@@ -2,6 +2,10 @@ use chrono::{DateTime, Utc};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
+pub mod mobile;
+
+pub use mobile::*;
+
 /// Fraction `correct / total` in `[0.0, 1.0]`, returning `0.0` when `total` is
 /// zero. Shared by the web and mobile n-back views so the guarded division and
 /// its cast live in one place.
@@ -66,14 +70,6 @@ pub enum CardStatusDto {
     Learning,
     Review,
     Relearning,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ReviewRatingDto {
-    Again,
-    Hard,
-    Good,
-    Easy,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

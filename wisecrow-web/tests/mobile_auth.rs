@@ -75,6 +75,29 @@ async fn assert_browser_cookie_issued() {
     assert!(cookie.contains("; HttpOnly; Secure; SameSite=Strict; Path=/;"));
 }
 
+async fn mobile_login() -> MobileSessionDto {
+    let response = post(
+        "/api/mobile/login",
+        json!({ "email": EMAIL, "password": PASSWORD }),
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    response_json(response, "login response").await
+}
+
+async fn assert_identity(token: &str, expected_user_id: i32) {
+    let response = post("/api/mobile/me", json!({}), Some(token)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let user: UserDto = response_json(response, "identity response").await;
+    assert_eq!(user.id, expected_user_id);
+}
+
+async fn assert_unauthorized(token: &str) {
+    let response = post("/api/mobile/me", json!({}), Some(token)).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
 #[tokio::test]
 #[ignore = "requires PostgreSQL"]
 async fn native_session_lifecycle() {
@@ -86,26 +109,17 @@ async fn native_session_lifecycle() {
     init_pool().await.expect("pool");
     create_user().await;
 
-    let response = post(
-        "/api/mobile/login",
-        json!({ "email": EMAIL, "password": PASSWORD }),
-        None,
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let session: MobileSessionDto = response_json(response, "login response").await;
-    assert_eq!(session.user.display_name, "Mobile");
-    assert!(!session.token.is_empty());
+    let first = mobile_login().await;
+    let second = mobile_login().await;
+    assert_eq!(first.user.display_name, "Mobile");
+    assert_ne!(first.token, second.token);
+    assert_identity(&first.token, first.user.id).await;
+    assert_identity(&second.token, second.user.id).await;
 
-    let response = post("/api/mobile/me", json!({}), Some(&session.token)).await;
+    let response = post("/api/mobile/logout", json!({}), Some(&first.token)).await;
     assert_eq!(response.status(), StatusCode::OK);
-    let user: UserDto = response_json(response, "identity response").await;
-    assert_eq!(user.id, session.user.id);
-
-    let response = post("/api/mobile/logout", json!({}), Some(&session.token)).await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let response = post("/api/mobile/me", json!({}), Some(&session.token)).await;
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_unauthorized(&first.token).await;
+    assert_identity(&second.token, second.user.id).await;
 
     assert_browser_cookie_issued().await;
     delete_user().await;

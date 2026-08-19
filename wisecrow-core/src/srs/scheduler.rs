@@ -1,12 +1,17 @@
 use chrono::{DateTime, Utc};
-use rs_fsrs::{Card, Rating, State, FSRS};
+use num_traits::ToPrimitive;
 use sqlx::PgPool;
+use wisecrow_learning::srs::{
+    CardState as LearningCardState, CardStatus as LearningCardStatus, FsrsScheduler,
+    ReviewRating as LearningReviewRating, Scheduler,
+};
 
 use crate::errors::WisecrowError;
 
 pub(crate) const CARD_SELECT_COLUMNS: &str =
     "c.id, c.translation_id, t.from_phrase, t.to_phrase, t.frequency, \
-     c.stability, c.difficulty, c.state, c.due, c.reps, c.lapses, \
+     c.stability, c.difficulty, c.elapsed_days, c.scheduled_days, c.state, \
+     c.last_review, c.due, c.reps, c.lapses, \
      EXISTS (SELECT 1 FROM phrase_translations pt WHERE pt.translation_id = t.id)";
 
 pub(crate) type CardRow = (
@@ -17,7 +22,10 @@ pub(crate) type CardRow = (
     i32,
     f32,
     f32,
+    i32,
+    i32,
     i16,
+    Option<DateTime<Utc>>,
     DateTime<Utc>,
     i32,
     i32,
@@ -33,7 +41,10 @@ pub struct CardState {
     pub frequency: i32,
     pub stability: f64,
     pub difficulty: f64,
+    pub elapsed_days: i32,
+    pub scheduled_days: i32,
     pub state: CardStatus,
+    pub last_review: Option<DateTime<Utc>>,
     pub due: DateTime<Utc>,
     pub reps: i32,
     pub lapses: i32,
@@ -61,7 +72,7 @@ impl CardStatus {
         }
     }
 
-    const fn to_db(self) -> i16 {
+    pub(crate) const fn to_db(self) -> i16 {
         match self {
             Self::New => 0,
             Self::Learning => 1,
@@ -71,13 +82,24 @@ impl CardStatus {
     }
 }
 
-impl From<State> for CardStatus {
-    fn from(s: State) -> Self {
-        match s {
-            State::New => Self::New,
-            State::Learning => Self::Learning,
-            State::Review => Self::Review,
-            State::Relearning => Self::Relearning,
+impl From<LearningCardStatus> for CardStatus {
+    fn from(status: LearningCardStatus) -> Self {
+        match status {
+            LearningCardStatus::New => Self::New,
+            LearningCardStatus::Learning => Self::Learning,
+            LearningCardStatus::Review => Self::Review,
+            LearningCardStatus::Relearning => Self::Relearning,
+        }
+    }
+}
+
+impl From<CardStatus> for LearningCardStatus {
+    fn from(status: CardStatus) -> Self {
+        match status {
+            CardStatus::New => Self::New,
+            CardStatus::Learning => Self::Learning,
+            CardStatus::Review => Self::Review,
+            CardStatus::Relearning => Self::Relearning,
         }
     }
 }
@@ -90,9 +112,9 @@ pub enum ReviewRating {
     Easy,
 }
 
-impl From<ReviewRating> for Rating {
-    fn from(r: ReviewRating) -> Self {
-        match r {
+impl From<ReviewRating> for LearningReviewRating {
+    fn from(rating: ReviewRating) -> Self {
+        match rating {
             ReviewRating::Again => Self::Again,
             ReviewRating::Hard => Self::Hard,
             ReviewRating::Good => Self::Good,
@@ -123,21 +145,15 @@ impl ReviewRating {
     }
 }
 
-/// Narrows `f64` to `f32`, clamping to `f32` bounds instead of producing infinity.
-/// FSRS uses `f64` internally but PostgreSQL stores as `f32`.
-fn f64_to_f32_clamped(v: f64) -> f32 {
-    if v.is_nan() {
-        0.0
-    } else if v > f64::from(f32::MAX) {
-        f32::MAX
-    } else if v < f64::from(f32::MIN) {
-        f32::MIN
-    } else {
-        // Intentional precision narrowing: FSRS f64 -> PostgreSQL REAL (f32)
-        #[expect(clippy::cast_possible_truncation)]
-        let result = v as f32;
-        result
+pub(crate) fn f64_to_f32(value: f64, field: &str) -> Result<f32, WisecrowError> {
+    if !value.is_finite() {
+        return Err(WisecrowError::InvalidInput(format!(
+            "FSRS {field} must be finite"
+        )));
     }
+    value.to_f32().ok_or_else(|| {
+        WisecrowError::InvalidInput(format!("FSRS {field} exceeds PostgreSQL REAL bounds"))
+    })
 }
 
 impl CardState {
@@ -150,7 +166,10 @@ impl CardState {
             frequency,
             stability,
             difficulty,
+            elapsed_days,
+            scheduled_days,
             state,
+            last_review,
             due,
             reps,
             lapses,
@@ -165,12 +184,55 @@ impl CardState {
             frequency,
             stability: f64::from(stability),
             difficulty: f64::from(difficulty),
+            elapsed_days,
+            scheduled_days,
             state: CardStatus::from_db(state),
+            last_review,
             due,
             reps,
             lapses,
             is_phrase,
         }
+    }
+
+    fn learning_state(&self) -> LearningCardState {
+        LearningCardState {
+            translation_id: self.translation_id,
+            baseline_at: self.last_review.unwrap_or(self.due),
+            stability: self.stability,
+            difficulty: self.difficulty,
+            elapsed_days: i64::from(self.elapsed_days),
+            scheduled_days: i64::from(self.scheduled_days),
+            reps: self.reps,
+            lapses: self.lapses,
+            status: self.state.into(),
+            last_review: self.last_review,
+            due: self.due,
+        }
+    }
+
+    fn with_learning_state(&self, state: LearningCardState) -> Result<Self, WisecrowError> {
+        Ok(Self {
+            card_id: self.card_id,
+            translation_id: self.translation_id,
+            from_phrase: self.from_phrase.clone(), // clone: returned card must own borrowed phrase
+            to_phrase: self.to_phrase.clone(),     // clone: returned card must own borrowed phrase
+            frequency: self.frequency,
+            stability: state.stability,
+            difficulty: state.difficulty,
+            elapsed_days: i32::try_from(state.elapsed_days).map_err(|_| {
+                WisecrowError::InvalidInput("FSRS elapsed days exceed database bounds".into())
+            })?,
+            scheduled_days: i32::try_from(state.scheduled_days).map_err(|_| {
+                WisecrowError::InvalidInput("FSRS scheduled days exceed database bounds".into())
+            })?,
+            state: state.status.into(),
+            last_review: state.last_review,
+            due: state.due,
+            reps: state.reps,
+            lapses: state.lapses,
+            is_phrase: self.is_phrase,
+        })
     }
 }
 
@@ -284,29 +346,11 @@ impl CardManager {
         card: &CardState,
         rating: ReviewRating,
     ) -> Result<CardState, WisecrowError> {
-        let fsrs = FSRS::default();
         let now = Utc::now();
-
-        let fsrs_card = Card {
-            due: card.due,
-            stability: card.stability,
-            difficulty: card.difficulty,
-            elapsed_days: now.signed_duration_since(card.due).num_days().max(0),
-            scheduled_days: 0,
-            reps: card.reps,
-            lapses: card.lapses,
-            state: match card.state {
-                CardStatus::New => State::New,
-                CardStatus::Learning => State::Learning,
-                CardStatus::Review => State::Review,
-                CardStatus::Relearning => State::Relearning,
-            },
-            last_review: now,
-        };
-
-        let info = fsrs.next(fsrs_card, now, rating.into());
-        let new_card = &info.card;
-        let new_state = CardStatus::from(new_card.state);
+        let scheduled = FsrsScheduler
+            .schedule(&card.learning_state(), rating.into(), now)
+            .map_err(|error| WisecrowError::InvalidInput(error.to_string()))?;
+        let updated = card.with_learning_state(scheduled)?;
 
         sqlx::query(
             "UPDATE cards SET
@@ -316,33 +360,20 @@ impl CardManager {
                 last_review = $8, due = $9
              WHERE id = $10",
         )
-        .bind(f64_to_f32_clamped(new_card.stability))
-        .bind(f64_to_f32_clamped(new_card.difficulty))
-        .bind(i32::try_from(new_card.elapsed_days).unwrap_or(i32::MAX))
-        .bind(i32::try_from(new_card.scheduled_days).unwrap_or(i32::MAX))
-        .bind(new_card.reps)
-        .bind(new_card.lapses)
-        .bind(new_state.to_db())
-        .bind(now)
-        .bind(new_card.due)
+        .bind(f64_to_f32(updated.stability, "stability")?)
+        .bind(f64_to_f32(updated.difficulty, "difficulty")?)
+        .bind(updated.elapsed_days)
+        .bind(updated.scheduled_days)
+        .bind(updated.reps)
+        .bind(updated.lapses)
+        .bind(updated.state.to_db())
+        .bind(updated.last_review)
+        .bind(updated.due)
         .bind(card.card_id)
         .execute(pool)
         .await?;
 
-        Ok(CardState {
-            card_id: card.card_id,
-            translation_id: card.translation_id,
-            from_phrase: card.from_phrase.clone(), // clone: building new owned struct from borrowed
-            to_phrase: card.to_phrase.clone(),     // clone: building new owned struct from borrowed
-            frequency: card.frequency,
-            stability: new_card.stability,
-            difficulty: new_card.difficulty,
-            state: new_state,
-            due: new_card.due,
-            reps: new_card.reps,
-            lapses: new_card.lapses,
-            is_phrase: card.is_phrase,
-        })
+        Ok(updated)
     }
 
     /// Fetches a card by its translation ID, returning `None` if no card exists.
@@ -375,7 +406,6 @@ impl CardManager {
 mod tests {
     use super::*;
     use proptest::prelude::*;
-    use rstest::rstest;
 
     proptest! {
         #[test]
@@ -391,16 +421,15 @@ mod tests {
         }
 
         #[test]
-        fn f64_to_f32_clamped_never_produces_nan_or_infinity(v in proptest::num::f64::ANY) {
-            let result = f64_to_f32_clamped(v);
-            prop_assert!(!result.is_nan(), "NaN produced from input {v}");
-            prop_assert!(!result.is_infinite(), "Infinity produced from input {v}");
+        fn f64_to_f32_accepts_only_representable_finite_values(v in proptest::num::f64::ANY) {
+            let expected = v.is_finite() && v.to_f32().is_some();
+            prop_assert_eq!(f64_to_f32(v, "test").is_ok(), expected);
         }
 
         #[test]
-        fn f64_to_f32_clamped_roundtrips_finite_f32(v in proptest::num::f32::NORMAL) {
+        fn f64_to_f32_roundtrips_finite_f32(v in proptest::num::f32::NORMAL) {
             let widened = f64::from(v);
-            let result = f64_to_f32_clamped(widened);
+            let result = f64_to_f32(widened, "test").expect("finite f32 is representable");
             prop_assert_eq!(result, v);
         }
 
@@ -416,66 +445,6 @@ mod tests {
             if !(1..=4).contains(&v) {
                 prop_assert!(ReviewRating::from_db(v).is_none());
             }
-        }
-    }
-
-    #[rstest]
-    #[case(ReviewRating::Again, Rating::Again)]
-    #[case(ReviewRating::Hard, Rating::Hard)]
-    #[case(ReviewRating::Good, Rating::Good)]
-    #[case(ReviewRating::Easy, Rating::Easy)]
-    fn fsrs_rating_conversion(#[case] input: ReviewRating, #[case] expected: Rating) {
-        assert_eq!(Rating::from(input), expected);
-    }
-
-    #[rstest]
-    #[case(State::New, CardStatus::New)]
-    #[case(State::Learning, CardStatus::Learning)]
-    #[case(State::Review, CardStatus::Review)]
-    #[case(State::Relearning, CardStatus::Relearning)]
-    fn fsrs_state_conversion(#[case] input: State, #[case] expected: CardStatus) {
-        assert_eq!(CardStatus::from(input), expected);
-    }
-
-    #[test]
-    fn fsrs_good_rating_produces_future_due() {
-        let fsrs = FSRS::default();
-        let card = Card::new();
-        let now = Utc::now();
-
-        let info = fsrs.next(card, now, Rating::Good);
-        assert!(info.card.due >= now);
-        assert!(info.card.stability > 0.0);
-    }
-
-    #[test]
-    fn fsrs_again_rating_keeps_short_interval() {
-        let fsrs = FSRS::default();
-        let card = Card::new();
-        let now = Utc::now();
-
-        let good_info = fsrs.next(card.clone(), now, Rating::Good); // clone: Card is small, need both outcomes
-        let again_info = fsrs.next(card, now, Rating::Again);
-
-        assert!(again_info.card.due <= good_info.card.due);
-    }
-
-    #[test]
-    fn fsrs_repeated_good_increases_stability() {
-        let fsrs = FSRS::default();
-        let mut card = Card::new();
-
-        let mut last_stability = 0.0f64;
-        for _ in 0..5 {
-            let info = fsrs.next(card, Utc::now(), Rating::Good);
-            assert!(
-                info.card.stability >= last_stability,
-                "stability should not decrease on Good: {} < {}",
-                info.card.stability,
-                last_stability
-            );
-            last_stability = info.card.stability;
-            card = info.card;
         }
     }
 }

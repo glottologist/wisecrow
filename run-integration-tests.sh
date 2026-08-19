@@ -5,12 +5,23 @@ CONTAINER="wisecrow-test-db"
 DB_NAME="wisecrow_test"
 DB_USER="wisecrow"
 DB_PASS="wisecrow"
-DB_PORT="5433"
+DB_PORT="${WISECROW_TEST_DB_PORT:-5433}"
 TEST_URL="postgres://${DB_USER}:${DB_PASS}@localhost:${DB_PORT}/${DB_NAME}"
 
 cleanup() {
+    local exit_status=$?
     echo "Cleaning up..."
-    docker rm -f "${CONTAINER}" 2>/dev/null || true
+    if docker container inspect "${CONTAINER}" >/dev/null 2>&1; then
+        if docker rm -f "${CONTAINER}"; then
+            echo "Removed test PostgreSQL container."
+        else
+            echo "Failed to remove test PostgreSQL container." >&2
+            exit_status=1
+        fi
+    else
+        echo "Test PostgreSQL container was already absent."
+    fi
+    return "${exit_status}"
 }
 trap cleanup EXIT
 
@@ -39,6 +50,14 @@ done
 echo "Running integration tests..."
 TEST_DATABASE_URL="${TEST_URL}" CC=cc cargo nextest run \
     -p wisecrow-core \
+    --run-ignored ignored-only \
+    --test-threads=1 \
+    "$@"
+
+echo "Running web server integration tests..."
+TEST_DATABASE_URL="${TEST_URL}" CC=cc cargo nextest run \
+    -p wisecrow-web \
+    --features server \
     --run-ignored ignored-only \
     --test-threads=1 \
     "$@"

@@ -1,6 +1,10 @@
-use sqlx::PgPool;
+use chrono::{DateTime, Utc};
+use sqlx::{PgPool, Postgres, Transaction};
+use uuid::Uuid;
+use wisecrow_dto::{ReviewEventDto, ReviewRatingDto};
 
 use crate::errors::WisecrowError;
+use crate::srs::reviews::{ReviewLedger, ReviewSource};
 use crate::srs::scheduler::{CardManager, CardState, ReviewRating};
 use crate::vocabulary::VocabularyQuery;
 
@@ -236,25 +240,59 @@ impl SessionManager {
         card: &CardState,
         rating: ReviewRating,
     ) -> Result<CardState, WisecrowError> {
-        // Fail closed: the row updates only when the session belongs to the
-        // caller and the card is part of that session. Zero affected rows means
-        // the caller does not own the session (or the card is not in it).
-        let result = sqlx::query(
-            "UPDATE session_cards SET answered = TRUE, rating = $1, answered_at = NOW()
-             WHERE session_id = $2 AND card_id = $3
-               AND EXISTS (SELECT 1 FROM sessions WHERE id = $2 AND user_id = $4)",
+        let occurred_at = Utc::now();
+        let mut transaction = pool.begin().await?;
+        let translation_id = Self::mark_answered(
+            &mut transaction,
+            session_id,
+            user_id,
+            card.card_id,
+            rating,
+            occurred_at,
+        )
+        .await?;
+        let event = ReviewEventDto {
+            event_id: Uuid::new_v4(),
+            translation_id,
+            rating: review_rating_dto(rating),
+            occurred_at,
+        };
+        let result = ReviewLedger::new(pool)
+            .apply_in_transaction(&mut transaction, user_id, None, ReviewSource::Web, &[event])
+            .await?;
+        let updated =
+            result.cards.into_iter().next().ok_or_else(|| {
+                WisecrowError::InvalidInput("review did not reconcile a card".into())
+            })?;
+        transaction.commit().await?;
+        Ok(updated)
+    }
+
+    async fn mark_answered(
+        transaction: &mut Transaction<'_, Postgres>,
+        session_id: i32,
+        user_id: i32,
+        card_id: i32,
+        rating: ReviewRating,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<i32, WisecrowError> {
+        let translation_id = sqlx::query_scalar(
+            "UPDATE session_cards sc
+             SET answered = TRUE, rating = $1, answered_at = $2
+             FROM sessions s, cards c
+             WHERE sc.session_id = $3 AND sc.card_id = $4
+               AND s.id = sc.session_id AND s.user_id = $5
+               AND c.id = sc.card_id AND c.user_id = $5
+             RETURNING c.translation_id",
         )
         .bind(rating.to_db())
+        .bind(occurred_at)
         .bind(session_id)
-        .bind(card.card_id)
+        .bind(card_id)
         .bind(user_id)
-        .execute(pool)
+        .fetch_optional(&mut **transaction)
         .await?;
-        if result.rows_affected() == 0 {
-            return Err(WisecrowError::Unauthorized);
-        }
-
-        CardManager::review(pool, card, rating).await
+        translation_id.ok_or(WisecrowError::Unauthorized)
     }
 
     async fn load_session_cards(
@@ -276,5 +314,14 @@ impl SessionManager {
             .await?;
 
         Ok(rows.into_iter().map(CardState::from_row).collect())
+    }
+}
+
+const fn review_rating_dto(rating: ReviewRating) -> ReviewRatingDto {
+    match rating {
+        ReviewRating::Again => ReviewRatingDto::Again,
+        ReviewRating::Hard => ReviewRatingDto::Hard,
+        ReviewRating::Good => ReviewRatingDto::Good,
+        ReviewRating::Easy => ReviewRatingDto::Easy,
     }
 }

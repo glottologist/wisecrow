@@ -6,12 +6,26 @@ description = "Wisecrow mobile language learning app"
 
 [dependencies]
 wisecrow-dto = { path = "../wisecrow-dto" }
-wisecrow-web = { path = "../wisecrow-web", default-features = false }
-dioxus = { version = "0.7", features = ["router", "fullstack"] }
+wisecrow-learning = { path = "../wisecrow-learning" }
+async-trait = "0.1"
+base64 = "0.22"
+chrono = { version = ">=0.4,<0.4.44", features = ["serde"] }
+dioxus = { version = "=0.7.9", features = ["router", "fullstack"] }
+manganis = "=0.7.9"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sqlx = { version = "0.7.4", default-features = false, features = ["sqlite", "runtime-tokio-rustls", "migrate", "macros", "chrono", "uuid"] }
 thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1"
 url = "2"
+uuid = { version = "1", features = ["serde", "v4"] }
+
+[dev-dependencies]
+proptest = "1.5"
+tempfile = "3"
 
 [features]
 default = []

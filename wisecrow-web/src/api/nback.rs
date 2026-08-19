@@ -46,9 +46,9 @@ mod implementation {
     use wisecrow::dnb::scoring::{apply_adaptation, should_terminate, AdaptationState, Channel};
     use wisecrow::dnb::session::DnbSessionRepository;
     use wisecrow::dnb::{CompletedTrial, DnbConfig, DnbEngine, DnbMode, DnbVocab, TrialResponse};
+    use wisecrow::dto_convert::{dnb_mode_from_dto, dnb_mode_to_dto, dnb_trial_to_dto};
     use wisecrow_dto::{
-        DnbAdaptationDto, DnbConfigDto, DnbModeDto, DnbSessionResultsDto, DnbTrialDto,
-        DnbTrialResultDto,
+        DnbAdaptationDto, DnbConfigDto, DnbSessionResultsDto, DnbTrialDto, DnbTrialResultDto,
     };
 
     use super::ServerFnError;
@@ -68,7 +68,8 @@ mod implementation {
             .map_err(|error| crate::server::internal_error("n-back engine creation", &error))?;
         let trials: Vec<_> = std::iter::repeat_with(|| engine.next_trial())
             .take(GENERATED_TRIALS)
-            .collect();
+            .collect::<Result<_, _>>()
+            .map_err(|error| crate::server::internal_error("n-back trial generation", &error))?;
         DnbSessionRepository::insert_generated_trials(
             crate::server::pool()?,
             session_id,
@@ -77,7 +78,7 @@ mod implementation {
         )
         .await
         .map_err(|error| crate::server::internal_error("n-back trial persistence", &error))?;
-        Ok((session_id, trials.iter().map(DnbTrialDto::from).collect()))
+        Ok((session_id, trials.iter().map(dnb_trial_to_dto).collect()))
     }
 
     async fn prepare_session(
@@ -85,7 +86,7 @@ mod implementation {
         config: &DnbConfigDto,
     ) -> Result<(i32, Vec<DnbVocab>, DnbConfig), ServerFnError> {
         let db = crate::server::pool()?;
-        let mode = DnbMode::from(config.mode);
+        let mode = dnb_mode_from_dto(config.mode);
         let state = AdaptationState::new(config.n_level, config.interval_ms);
         let vocab = DnbSessionRepository::load_vocab(
             db,
@@ -238,7 +239,7 @@ mod implementation {
     ) -> DnbSessionResultsDto {
         DnbSessionResultsDto {
             session_id,
-            mode: DnbModeDto::from(mode),
+            mode: dnb_mode_to_dto(mode),
             n_level_start: state.n_level_start,
             n_level_peak: state.n_level_peak,
             n_level_end: state.n_level,

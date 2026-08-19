@@ -186,9 +186,23 @@ pub async fn translate_phrases(
         let requested: Vec<String> = batch.iter().map(|(_, phrase, _)| phrase.clone()).collect();
         let prompt =
             crate::llm::prompts::phrase_translation_prompt(&requested, lang_name, native_name);
-        let response = provider.generate(&prompt, 2048).await?;
+        // A provider or parse failure costs this batch alone. Selection keys on
+        // the absence of a `phrase_translations` row, so the next run picks the
+        // skipped phrases up; aborting instead would discard the batches still
+        // queued behind a single malformed response.
         let parsed: PhraseTranslationResponse =
-            crate::llm::parse_fenced_json(&response, "phrase-translation JSON")?;
+            match provider.generate(&prompt, 2048).await.and_then(|response| {
+                crate::llm::parse_fenced_json(&response, "phrase-translation JSON")
+            }) {
+                Ok(parsed) => parsed,
+                Err(e) => {
+                    tracing::warn!(
+                        "Skipping batch of {} {lang_code} phrases: {e}",
+                        requested.len()
+                    );
+                    continue;
+                }
+            };
 
         for (phrase, translation) in pair_with_requested(&requested, parsed) {
             let Some((phrase_id, _, sentence_count)) = batch.iter().find(|(_, p, _)| *p == phrase)

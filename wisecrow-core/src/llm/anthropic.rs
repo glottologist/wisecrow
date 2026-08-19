@@ -45,7 +45,19 @@ impl AnthropicProvider {
 struct AnthropicRequest<'a> {
     model: &'a str,
     max_tokens: u32,
+    thinking: Thinking,
     messages: Vec<Message<'a>>,
+}
+
+/// Every prompt here asks for a fixed JSON shape, so thinking buys nothing —
+/// and on `claude-sonnet-5` it is on by default and draws from the same
+/// `max_tokens` budget as the answer. Measured on one 25-phrase prompt:
+/// 517–2048 thinking tokens across six identical calls, truncating the JSON
+/// mid-entry in two of them. Disabling it holds output at ~670 tokens.
+#[derive(Serialize)]
+struct Thinking {
+    #[serde(rename = "type")]
+    kind: &'static str,
 }
 
 #[derive(Serialize)]
@@ -74,6 +86,7 @@ impl LlmProvider for AnthropicProvider {
         let request = AnthropicRequest {
             model: &self.model,
             max_tokens,
+            thinking: Thinking { kind: "disabled" },
             messages: vec![Message {
                 role: "user",
                 content: prompt,

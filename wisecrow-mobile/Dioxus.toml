@@ -1,0 +1,24 @@
+[application]
+name = "Wisecrow"
+public_dir = "public"
+android_manifest = "android/AndroidManifest.xml"
+
+[android]
+min_sdk = 26
+compile_sdk = 35
+target_sdk = 35
+identifier = "org.wisecrow.mobile"
+manifest = "android/AndroidManifest.xml"
+resources = ["android/res"]
+gradle_dependencies = [
+    "androidx.work:work-runtime:2.11.2",
+    "com.squareup.okhttp3:okhttp:5.3.0",
+]
+
+[android.application]
+uses_cleartext_traffic = false
+supports_rtl = true
+
+[background]
+fetch = true
+processing = true

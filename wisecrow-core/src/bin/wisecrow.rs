@@ -264,7 +264,7 @@ async fn download_language_pair(
     let mut handles = Vec::new();
     for file in files.files {
         let cfg = download_config;
-        let dir = pair_dir.clone();
+        let dir = pair_dir.clone(); // clone: each spawned download owns its destination path
         handles.push(tokio::spawn(async move {
             if let Err(e) = Ingester::download_to_dir(&cfg, &file, &dir).await {
                 error!("Download failed for {}: {e:?}", file.file_name);
@@ -503,14 +503,14 @@ async fn handle_sentence_card(args: SentenceCardArgs) -> Result<(), Error> {
                 1,
             )
             .await?;
-            let Some(next) = deck.first() else {
+            let Some(next) = deck.into_iter().next() else {
                 info!(
                     "The {} deck is empty, so there is nothing to teach",
                     args.lang
                 );
                 return Ok(());
             };
-            next.to_phrase.clone()
+            next.to_phrase
         }
     };
 
@@ -998,12 +998,19 @@ async fn finalize_nback_session(
     user_id: i32,
     trial_count: u32,
 ) -> Result<(), Error> {
+    use num_traits::ToPrimitive;
     use wisecrow::dnb::scoring::{channel_accuracy, Channel};
 
     let state = engine.state();
     let completed = engine.completed_trials();
     let audio_acc = channel_accuracy(completed, Channel::Audio, completed.len());
     let visual_acc = channel_accuracy(completed, Channel::Visual, completed.len());
+    let audio_acc_f32 = audio_acc
+        .to_f32()
+        .ok_or_else(|| WisecrowError::InvalidInput("invalid audio accuracy".into()))?;
+    let visual_acc_f32 = visual_acc
+        .to_f32()
+        .ok_or_else(|| WisecrowError::InvalidInput("invalid visual accuracy".into()))?;
 
     wisecrow::dnb::session::DnbSessionRepository::complete_session(
         pool,
@@ -1011,10 +1018,8 @@ async fn finalize_nback_session(
         user_id,
         state,
         trial_count,
-        #[expect(clippy::cast_possible_truncation)]
-        Some(audio_acc as f32),
-        #[expect(clippy::cast_possible_truncation)]
-        Some(visual_acc as f32),
+        Some(audio_acc_f32),
+        Some(visual_acc_f32),
     )
     .await?;
 
@@ -1064,112 +1069,163 @@ async fn nback_game_loop(
     stdout: &mut std::io::Stdout,
     trial_count: &mut u32,
 ) -> Result<(), Error> {
-    use std::time::{Duration, Instant};
-
     const MAX_TRIALS: u32 = 50;
 
     loop {
-        let trial = engine.next_trial();
+        let control = run_nback_trial(engine, pool, session_id, user_id, stdout).await?;
         *trial_count = trial_count.saturating_add(1);
-
-        print_line(
-            stdout,
-            &format!(
-                "\r\n--- Trial {} (N={}) ---\r\n",
-                trial.trial_number, trial.n_level
-            ),
-        )?;
-        print_line(
-            stdout,
-            &format!("  Audio:  {}\r\n", trial.audio_vocab.to_phrase),
-        )?;
-        print_line(
-            stdout,
-            &format!("  Visual: {}\r\n", trial.visual_vocab.from_phrase),
-        )?;
-        print_line(
-            stdout,
-            "  [A] audio match  [L] visual match  [Enter] submit\r\n",
-        )?;
-
-        let mut audio_pressed = false;
-        let mut visual_pressed = false;
-        let start = Instant::now();
-        let deadline = Duration::from_millis(u64::from(trial.interval_ms));
-
-        loop {
-            let remaining = deadline.saturating_sub(start.elapsed());
-            if remaining.is_zero() {
-                print_line(stdout, "  Time up!\r\n")?;
-                break;
-            }
-
-            if crossterm::event::poll(remaining.min(Duration::from_millis(50)))? {
-                if let crossterm::event::Event::Key(key) = crossterm::event::read()? {
-                    if key.kind != crossterm::event::KeyEventKind::Press {
-                        continue;
-                    }
-                    match key.code {
-                        crossterm::event::KeyCode::Char('a')
-                        | crossterm::event::KeyCode::Char('A') => {
-                            audio_pressed = !audio_pressed;
-                            let marker = if audio_pressed { "ON" } else { "off" };
-                            print_line(stdout, &format!("  Audio match: {marker}\r\n"))?;
-                        }
-                        crossterm::event::KeyCode::Char('l')
-                        | crossterm::event::KeyCode::Char('L') => {
-                            visual_pressed = !visual_pressed;
-                            let marker = if visual_pressed { "ON" } else { "off" };
-                            print_line(stdout, &format!("  Visual match: {marker}\r\n"))?;
-                        }
-                        crossterm::event::KeyCode::Enter => break,
-                        crossterm::event::KeyCode::Char('q')
-                        | crossterm::event::KeyCode::Char('Q') => {
-                            return Ok(());
-                        }
-                        _ => {}
-                    }
-                }
-            }
+        if control == NbackTrialControl::Quit {
+            return Ok(());
         }
-
-        let elapsed_ms = u32::try_from(start.elapsed().as_millis()).unwrap_or(u32::MAX);
-        let response = wisecrow::dnb::TrialResponse {
-            audio_response: Some(audio_pressed),
-            visual_response: Some(visual_pressed),
-            response_time_ms: Some(elapsed_ms),
-        };
-
-        engine.record_response(response);
-
-        if let Some(last) = engine.completed_trials().last() {
-            let a_ok = if last.audio_correct() {
-                "correct"
-            } else {
-                "wrong"
-            };
-            let v_ok = if last.visual_correct() {
-                "correct"
-            } else {
-                "wrong"
-            };
-            print_line(
-                stdout,
-                &format!("  Result: audio={a_ok}, visual={v_ok}\r\n"),
-            )?;
-
-            wisecrow::dnb::session::DnbSessionRepository::save_trial(
-                pool, session_id, user_id, last,
-            )
-            .await?;
-        }
-
         if engine.should_terminate() || *trial_count >= MAX_TRIALS {
+            return Ok(());
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NbackTrialControl {
+    Continue,
+    Submit,
+    Quit,
+}
+
+async fn run_nback_trial(
+    engine: &mut wisecrow::dnb::DnbEngine,
+    pool: &PgPool,
+    session_id: i32,
+    user_id: i32,
+    stdout: &mut std::io::Stdout,
+) -> Result<NbackTrialControl, Error> {
+    let trial = engine.next_trial()?;
+    present_nback_trial(stdout, &trial)?;
+    let Some(response) = read_nback_response(stdout, trial.interval_ms)? else {
+        return Ok(NbackTrialControl::Quit);
+    };
+    engine.record_response(&trial, response)?;
+    persist_nback_trial(engine, pool, session_id, user_id, stdout).await?;
+    Ok(NbackTrialControl::Continue)
+}
+
+fn present_nback_trial(
+    stdout: &mut std::io::Stdout,
+    trial: &wisecrow::dnb::Trial,
+) -> Result<(), Error> {
+    print_line(
+        stdout,
+        &format!(
+            "\r\n--- Trial {} (N={}) ---\r\n",
+            trial.trial_number, trial.n_level
+        ),
+    )?;
+    print_line(
+        stdout,
+        &format!("  Audio:  {}\r\n", trial.audio_vocab.to_phrase),
+    )?;
+    print_line(
+        stdout,
+        &format!("  Visual: {}\r\n", trial.visual_vocab.from_phrase),
+    )?;
+    print_line(
+        stdout,
+        "  [A] audio match  [L] visual match  [Enter] submit\r\n",
+    )?;
+    Ok(())
+}
+
+fn read_nback_response(
+    stdout: &mut std::io::Stdout,
+    interval_ms: u32,
+) -> Result<Option<wisecrow::dnb::TrialResponse>, Error> {
+    use std::time::{Duration, Instant};
+
+    let mut audio_pressed = false;
+    let mut visual_pressed = false;
+    let started_at = Instant::now();
+    let deadline = Duration::from_millis(u64::from(interval_ms));
+    loop {
+        let remaining = deadline.saturating_sub(started_at.elapsed());
+        if remaining.is_zero() {
+            print_line(stdout, "  Time up!\r\n")?;
             break;
+        }
+        if !crossterm::event::poll(remaining.min(Duration::from_millis(50)))? {
+            continue;
+        }
+        let crossterm::event::Event::Key(key) = crossterm::event::read()? else {
+            continue;
+        };
+        match handle_nback_key(stdout, key, &mut audio_pressed, &mut visual_pressed)? {
+            NbackTrialControl::Continue => {}
+            NbackTrialControl::Submit => break,
+            NbackTrialControl::Quit => return Ok(None),
         }
     }
 
-    Ok(())
+    Ok(Some(wisecrow::dnb::TrialResponse {
+        audio_response: Some(audio_pressed),
+        visual_response: Some(visual_pressed),
+        response_time_ms: Some(u32::try_from(started_at.elapsed().as_millis()).unwrap_or(u32::MAX)),
+    }))
+}
+
+fn handle_nback_key(
+    stdout: &mut std::io::Stdout,
+    key: crossterm::event::KeyEvent,
+    audio_pressed: &mut bool,
+    visual_pressed: &mut bool,
+) -> Result<NbackTrialControl, Error> {
+    if key.kind != crossterm::event::KeyEventKind::Press {
+        return Ok(NbackTrialControl::Continue);
+    }
+    match key.code {
+        crossterm::event::KeyCode::Char('a') | crossterm::event::KeyCode::Char('A') => {
+            *audio_pressed = !*audio_pressed;
+            let marker = if *audio_pressed { "ON" } else { "off" };
+            print_line(stdout, &format!("  Audio match: {marker}\r\n"))?;
+            Ok(NbackTrialControl::Continue)
+        }
+        crossterm::event::KeyCode::Char('l') | crossterm::event::KeyCode::Char('L') => {
+            *visual_pressed = !*visual_pressed;
+            let marker = if *visual_pressed { "ON" } else { "off" };
+            print_line(stdout, &format!("  Visual match: {marker}\r\n"))?;
+            Ok(NbackTrialControl::Continue)
+        }
+        crossterm::event::KeyCode::Enter => Ok(NbackTrialControl::Submit),
+        crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Char('Q') => {
+            Ok(NbackTrialControl::Quit)
+        }
+        _ => Ok(NbackTrialControl::Continue),
+    }
+}
+
+async fn persist_nback_trial(
+    engine: &wisecrow::dnb::DnbEngine,
+    pool: &PgPool,
+    session_id: i32,
+    user_id: i32,
+    stdout: &mut std::io::Stdout,
+) -> Result<(), Error> {
+    let Some(last) = engine.completed_trials().last() else {
+        return Err(WisecrowError::InvalidInput("missing completed trial".into()).into());
+    };
+    let audio_result = if last.audio_correct() {
+        "correct"
+    } else {
+        "wrong"
+    };
+    let visual_result = if last.visual_correct() {
+        "correct"
+    } else {
+        "wrong"
+    };
+    print_line(
+        stdout,
+        &format!("  Result: audio={audio_result}, visual={visual_result}\r\n"),
+    )?;
+    wisecrow::dnb::session::DnbSessionRepository::save_trial(pool, session_id, user_id, last)
+        .await
+        .map_err(Into::into)
 }
 
 async fn resolve_learn_session(
@@ -1217,7 +1273,11 @@ async fn handle_learn(args: LearnArgs) -> Result<(), Error> {
     let foreign_lang_name = resolve_language_name(&args.foreign_lang)?.to_owned();
 
     let gloss_ctx = build_gloss_context(&config, &pool);
-    let media_ctx = build_media_context(pool.clone(), args.foreign_lang, &config);
+    let media_ctx = build_media_context(
+        pool.clone(), // clone: media context and TUI share the pool handle
+        args.foreign_lang,
+        &config,
+    );
 
     app::run_tui(pool, session, media_ctx, gloss_ctx, foreign_lang_name).await?;
     Ok(())

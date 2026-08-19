@@ -1,3 +1,4 @@
+use num_traits::ToPrimitive;
 use wisecrow_dto::{
     AnnotatedTokenDto, CardDto, CardStatusDto, ClozeQuizDto, DnbAdaptationDto, DnbModeDto,
     DnbSessionResultsDto, DnbTrialDto, GlossaryEntryDto, GradedReaderDto, LanguageInfo,
@@ -120,39 +121,36 @@ pub fn language_info(code: &str, name: &str) -> LanguageInfo {
     }
 }
 
-impl From<DnbMode> for DnbModeDto {
-    fn from(mode: DnbMode) -> Self {
-        match mode {
-            DnbMode::AudioWritten => Self::AudioWritten,
-            DnbMode::WordTranslation => Self::WordTranslation,
-            DnbMode::AudioImage => Self::AudioImage,
-        }
+#[must_use]
+pub const fn dnb_mode_to_dto(mode: DnbMode) -> DnbModeDto {
+    match mode {
+        DnbMode::AudioWritten => DnbModeDto::AudioWritten,
+        DnbMode::WordTranslation => DnbModeDto::WordTranslation,
+        DnbMode::AudioImage => DnbModeDto::AudioImage,
     }
 }
 
-impl From<DnbModeDto> for DnbMode {
-    fn from(dto: DnbModeDto) -> Self {
-        match dto {
-            DnbModeDto::AudioWritten => Self::AudioWritten,
-            DnbModeDto::WordTranslation => Self::WordTranslation,
-            DnbModeDto::AudioImage => Self::AudioImage,
-        }
+#[must_use]
+pub const fn dnb_mode_from_dto(mode: DnbModeDto) -> DnbMode {
+    match mode {
+        DnbModeDto::AudioWritten => DnbMode::AudioWritten,
+        DnbModeDto::WordTranslation => DnbMode::WordTranslation,
+        DnbModeDto::AudioImage => DnbMode::AudioImage,
     }
 }
 
-impl From<&Trial> for DnbTrialDto {
-    fn from(trial: &Trial) -> Self {
-        Self {
-            trial_number: trial.trial_number,
-            n_level: trial.n_level,
-            audio_translation_id: trial.audio_vocab.translation_id,
-            visual_translation_id: trial.visual_vocab.translation_id,
-            audio_phrase: trial.audio_vocab.to_phrase.clone(), // clone: building owned DTO from borrowed domain type
-            visual_phrase: trial.visual_vocab.from_phrase.clone(), // clone: building owned DTO from borrowed domain type
-            audio_match: trial.audio_match,
-            visual_match: trial.visual_match,
-            interval_ms: trial.interval_ms,
-        }
+#[must_use]
+pub fn dnb_trial_to_dto(trial: &Trial) -> DnbTrialDto {
+    DnbTrialDto {
+        trial_number: trial.trial_number,
+        n_level: trial.n_level,
+        audio_translation_id: trial.audio_vocab.translation_id,
+        visual_translation_id: trial.visual_vocab.translation_id,
+        audio_phrase: trial.audio_vocab.to_phrase.clone(), // clone: DTO must own borrowed phrase
+        visual_phrase: trial.visual_vocab.from_phrase.clone(), // clone: DTO must own borrowed phrase
+        audio_match: trial.audio_match,
+        visual_match: trial.visual_match,
+        interval_ms: trial.interval_ms,
     }
 }
 
@@ -170,10 +168,8 @@ pub fn adaptation_to_dto(
     DnbAdaptationDto {
         new_n_level: state.n_level,
         new_interval_ms: state.interval_ms,
-        #[expect(clippy::cast_possible_truncation)]
-        audio_accuracy: audio_acc as f32,
-        #[expect(clippy::cast_possible_truncation)]
-        visual_accuracy: visual_acc as f32,
+        audio_accuracy: audio_acc.to_f32().unwrap_or(0.0),
+        visual_accuracy: visual_acc.to_f32().unwrap_or(0.0),
         should_terminate: terminated,
     }
 }
@@ -189,7 +185,7 @@ pub fn dnb_results_to_dto(
 ) -> DnbSessionResultsDto {
     DnbSessionResultsDto {
         session_id,
-        mode: DnbModeDto::from(mode),
+        mode: dnb_mode_to_dto(mode),
         n_level_start: state.n_level_start,
         n_level_peak: state.n_level_peak,
         n_level_end: state.n_level,

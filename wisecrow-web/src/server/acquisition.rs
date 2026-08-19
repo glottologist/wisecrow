@@ -172,7 +172,7 @@ pub async fn preview_subtitles(
         .into_iter()
         .filter(|a| !unknown_only || matches!(a.status, Status::New | Status::Unknown))
         .collect();
-    filtered.sort_by(|a, b| b.frequency.unwrap_or(0).cmp(&a.frequency.unwrap_or(0)));
+    filtered.sort_by_key(|entry| std::cmp::Reverse(entry.frequency.unwrap_or(0)));
     if let Some(n) = top_n {
         filtered.truncate(usize::try_from(n).unwrap_or(usize::MAX));
     }

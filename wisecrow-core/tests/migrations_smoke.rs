@@ -13,6 +13,58 @@ async fn test_pool() -> PgPool {
     pool
 }
 
+async fn assert_mobile_offline_sync_schema(pool: &PgPool) {
+    for table in [
+        "mobile_devices",
+        "corpus_changes",
+        "card_review_baselines",
+        "review_events",
+        "card_changes",
+        "mobile_nback_uploads",
+    ] {
+        let exists: bool = sqlx::query_scalar("SELECT to_regclass($1) IS NOT NULL")
+            .bind(table)
+            .fetch_one(pool)
+            .await
+            .expect("relation existence query failed");
+        assert!(exists, "{table} should exist after migrations");
+    }
+
+    for (table, expected_trigger) in [
+        ("translations", "wisecrow_corpus_change"),
+        ("phrase_translations", "wisecrow_phrase_membership_change"),
+        ("cards", "wisecrow_card_change"),
+    ] {
+        let triggers: Vec<String> = sqlx::query_scalar(
+            "SELECT tgname
+             FROM pg_trigger
+             JOIN pg_class ON pg_class.oid = tgrelid
+             WHERE pg_class.relname = $1
+               AND NOT tgisinternal
+               AND tgenabled <> 'D'
+             ORDER BY tgname",
+        )
+        .bind(table)
+        .fetch_all(pool)
+        .await
+        .expect("trigger query failed");
+        assert_eq!(triggers, [expected_trigger]);
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn mobile_offline_sync_schema_is_idempotent() {
+    let pool = test_pool().await;
+    assert_mobile_offline_sync_schema(&pool).await;
+
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("second migration run failed");
+    assert_mobile_offline_sync_schema(&pool).await;
+}
+
 #[tokio::test]
 #[ignore = "requires PostgreSQL"]
 async fn glosses_table_exists() {
