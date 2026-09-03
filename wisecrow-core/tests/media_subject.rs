@@ -41,6 +41,7 @@ async fn seed_pair(pool: &PgPool, from: &str, to: &str) -> i32 {
 /// The served text comes from the database row, never from the caller — the
 /// property that makes cache poisoning impossible.
 #[tokio::test]
+#[ignore = "requires PostgreSQL"]
 async fn subject_is_the_rows_own_text() {
     let pool = test_pool().await;
     let id = seed_pair(&pool, "subject probe water", "uisge dearbhaidh").await;
@@ -54,6 +55,7 @@ async fn subject_is_the_rows_own_text() {
 }
 
 #[tokio::test]
+#[ignore = "requires PostgreSQL"]
 async fn unknown_id_is_none() {
     let pool = test_pool().await;
     assert!(load_media_subject(&pool, 999_999_999)
@@ -64,6 +66,7 @@ async fn unknown_id_is_none() {
 
 /// A different id yields that pair's own text, not anything a caller chose.
 #[tokio::test]
+#[ignore = "requires PostgreSQL"]
 async fn each_id_maps_to_its_own_pair() {
     let pool = test_pool().await;
     let first = seed_pair(&pool, "subject probe fire", "teine dearbhaidh").await;

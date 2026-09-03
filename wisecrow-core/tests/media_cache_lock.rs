@@ -49,6 +49,7 @@ async fn seed_translation(pool: &PgPool) -> i32 {
 /// the advisory lock serialises the miss path and the second holder finds the
 /// row the first wrote.
 #[tokio::test]
+#[ignore = "requires PostgreSQL"]
 async fn concurrent_misses_fetch_once() {
     let pool = test_pool().await;
     let translation_id = seed_translation(&pool).await;

@@ -1,10 +1,11 @@
 use dioxus::prelude::*;
 use wisecrow_dto::{
     CardChangePageDto, CorpusChangePageDto, CorpusPageDto, CorpusSnapshotRequestDto,
-    DeviceRegistrationRequestDto, MobileCapabilitiesDto, MobileFeatureDto, NbackBatchRequestDto,
+    DeviceRegistrationRequestDto, MobileCapabilitiesDto, NbackBatchRequestDto,
     NbackBatchResponseDto, RegisteredDeviceDto, ReviewBatchRequestDto, ReviewBatchResponseDto,
-    MOBILE_PROTOCOL_VERSION,
 };
+#[cfg(feature = "server")]
+use wisecrow_dto::{MobileFeatureDto, MOBILE_PROTOCOL_VERSION};
 
 /// Returns the public protocol capabilities of this server build.
 ///

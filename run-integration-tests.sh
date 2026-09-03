@@ -54,6 +54,9 @@ TEST_DATABASE_URL="${TEST_URL}" CC=cc cargo nextest run \
     --test-threads=1 \
     "$@"
 
+echo "Preparing Dioxus test asset directory..."
+mkdir -p target/debug/deps/public
+
 echo "Running web server integration tests..."
 TEST_DATABASE_URL="${TEST_URL}" CC=cc cargo nextest run \
     -p wisecrow-web \
