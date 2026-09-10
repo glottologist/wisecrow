@@ -6,14 +6,19 @@ use tracing::info;
 
 use crate::errors::WisecrowError;
 use crate::media::cache::MediaCache;
+use crate::media::MediaSubject;
+use crate::presentation::PresentationRepository;
 
 #[cfg(feature = "tts")]
+use crate::media::audio_cache_key;
+#[cfg(feature = "tts")]
 use crate::media::cereproc::CereprocClient;
+#[cfg(feature = "images")]
+use crate::media::image_cache_key;
 #[cfg(feature = "images")]
 use crate::media::images::ImageFetcher;
 
 const MAX_CONCURRENT_FETCHES: usize = 4;
-type MediaRow = (i32, String);
 type PrefetchHandle = tokio::task::JoinHandle<usize>;
 
 /// Prefetches audio and images for all translations in a language pair.
@@ -35,7 +40,7 @@ pub async fn prefetch_media(
     #[cfg(feature = "images")] image_fetcher: Option<&ImageFetcher>,
     #[cfg(feature = "tts")] cereproc: Option<&CereprocClient>,
 ) -> Result<usize, WisecrowError> {
-    let rows = load_media_rows(pool, native_lang, foreign_lang).await?;
+    let rows = PresentationRepository::load_for_pair(pool, native_lang, foreign_lang).await?;
     if rows.is_empty() {
         info!("No translations found for {native_lang}-{foreign_lang}");
         return Ok(0);
@@ -44,7 +49,6 @@ pub async fn prefetch_media(
     info!("Prefetching media for {total} translations ({native_lang}-{foreign_lang})");
     let progress = progress_bar(total)?;
     let plan = PrefetchPlan {
-        foreign_lang: String::from(foreign_lang),
         fetch_audio,
         fetch_images,
         #[cfg(feature = "images")]
@@ -59,26 +63,6 @@ pub async fn prefetch_media(
     Ok(total_fetched)
 }
 
-async fn load_media_rows(
-    pool: &PgPool,
-    native_lang: &str,
-    foreign_lang: &str,
-) -> Result<Vec<MediaRow>, WisecrowError> {
-    sqlx::query_as::<_, MediaRow>(
-        "SELECT t.id, t.to_phrase
-         FROM translations t
-         JOIN languages fl ON fl.id = t.from_language_id
-         JOIN languages tl ON tl.id = t.to_language_id
-         WHERE fl.code = $1 AND tl.code = $2
-         ORDER BY t.id",
-    )
-    .bind(native_lang)
-    .bind(foreign_lang)
-    .fetch_all(pool)
-    .await
-    .map_err(Into::into)
-}
-
 fn progress_bar(total: usize) -> Result<ProgressBar, WisecrowError> {
     let progress = ProgressBar::new(u64::try_from(total).unwrap_or(u64::MAX));
     progress.set_style(
@@ -89,13 +73,8 @@ fn progress_bar(total: usize) -> Result<ProgressBar, WisecrowError> {
 }
 
 /// Everything a prefetch task needs beyond the row it works on.
-///
-/// Grouped rather than passed individually: the fan-out threads the same five
-/// values through three functions, and each provider added pushes every one of
-/// those signatures wider.
 #[derive(Clone)]
 struct PrefetchPlan {
-    foreign_lang: String,
     fetch_audio: bool,
     fetch_images: bool,
     #[cfg(feature = "images")]
@@ -106,13 +85,13 @@ struct PrefetchPlan {
 
 async fn spawn_prefetches(
     pool: &PgPool,
-    rows: Vec<MediaRow>,
+    rows: Vec<crate::presentation::PresentedTranslation>,
     plan: &PrefetchPlan,
     progress: &ProgressBar,
 ) -> Result<Vec<PrefetchHandle>, WisecrowError> {
     let semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_FETCHES));
     let mut handles = Vec::new();
-    for (translation_id, to_phrase) in rows {
+    for presented in rows {
         let permit = Arc::clone(&semaphore) // clone: Arc shared ownership for semaphore
             .acquire_owned()
             .await
@@ -121,7 +100,9 @@ async fn spawn_prefetches(
         let progress_ref = progress.clone(); // clone: ProgressBar is Arc-based
         let plan = plan.clone(); // clone: providers inside share Arcs across tasks
         let handle = tokio::spawn(async move {
-            let fetched = prefetch_single(&pool_owned, translation_id, &to_phrase, &plan).await;
+            let translation_id = presented.translation_id;
+            let subject = MediaSubject::from(presented);
+            let fetched = prefetch_single(&pool_owned, translation_id, &subject, &plan).await;
             progress_ref.inc(1);
             drop(permit);
             fetched
@@ -145,14 +126,14 @@ async fn collect_prefetches(handles: Vec<PrefetchHandle>) -> usize {
 async fn prefetch_single(
     pool: &PgPool,
     translation_id: i32,
-    to_phrase: &str,
+    subject: &MediaSubject,
     plan: &PrefetchPlan,
 ) -> usize {
     let cache = match MediaCache::new(pool.clone()) {
         // clone: MediaCache owns an Arc-backed pool handle
-        Ok(c) => c,
-        Err(e) => {
-            tracing::warn!("Cache init failed for translation {translation_id}: {e}");
+        Ok(cache) => cache,
+        Err(error) => {
+            tracing::warn!("Cache init failed for translation {translation_id}: {error}");
             return 0;
         }
     };
@@ -160,8 +141,7 @@ async fn prefetch_single(
     let audio_count = prefetch_audio(
         &cache,
         translation_id,
-        to_phrase,
-        &plan.foreign_lang,
+        subject,
         plan.fetch_audio,
         #[cfg(feature = "tts")]
         plan.cereproc.as_ref(),
@@ -170,7 +150,7 @@ async fn prefetch_single(
     let image_count = prefetch_image(
         &cache,
         translation_id,
-        to_phrase,
+        subject,
         plan.fetch_images,
         #[cfg(feature = "images")]
         plan.image_fetcher.as_ref(),
@@ -184,20 +164,25 @@ async fn prefetch_single(
 async fn prefetch_audio(
     cache: &MediaCache,
     translation_id: i32,
-    to_phrase: &str,
-    foreign_lang: &str,
+    subject: &MediaSubject,
     fetch_audio: bool,
     cereproc: Option<&CereprocClient>,
 ) -> usize {
     if !fetch_audio {
         return 0;
     }
-    let lang = String::from(foreign_lang);
-    let word = String::from(to_phrase);
+    let Ok(fingerprint) = audio_cache_key(subject, cereproc) else {
+        return 0;
+    };
+    let lang = String::from(subject.foreign_lang.as_str());
+    let word = String::from(subject.to_phrase.as_str());
     let result = cache
-        .get_or_fetch(translation_id, crate::media::MediaType::Audio, || {
-            crate::media::audio::generate_tts(&word, &lang, cereproc)
-        })
+        .get_or_fetch(
+            translation_id,
+            crate::media::MediaType::Audio,
+            &fingerprint,
+            || crate::media::audio::generate_tts(&word, &lang, cereproc),
+        )
         .await;
     usize::from(result.is_ok())
 }
@@ -206,8 +191,7 @@ async fn prefetch_audio(
 async fn prefetch_audio(
     _cache: &MediaCache,
     _translation_id: i32,
-    _to_phrase: &str,
-    _foreign_lang: &str,
+    _subject: &MediaSubject,
     _fetch_audio: bool,
 ) -> usize {
     0
@@ -217,7 +201,7 @@ async fn prefetch_audio(
 async fn prefetch_image(
     cache: &MediaCache,
     translation_id: i32,
-    to_phrase: &str,
+    subject: &MediaSubject,
     fetch_images: bool,
     image_fetcher: Option<&ImageFetcher>,
 ) -> usize {
@@ -227,14 +211,25 @@ async fn prefetch_image(
     let Some(fetcher) = image_fetcher else {
         return 0;
     };
+    let Some(query) = subject.applicable_image_query() else {
+        return 0;
+    };
+    let Some(fingerprint) = image_cache_key(subject, fetcher) else {
+        return 0;
+    };
     let client = reqwest::Client::new();
-    let word = String::from(to_phrase);
+    let query = String::from(query);
     let result = cache
-        .get_or_fetch_attributed(translation_id, crate::media::MediaType::Image, || async {
-            crate::media::images::fetch_image(&client, &word, fetcher)
-                .await
-                .map(|image| (image.bytes, image.attribution))
-        })
+        .get_or_fetch_attributed(
+            translation_id,
+            crate::media::MediaType::Image,
+            &fingerprint,
+            || async {
+                crate::media::images::fetch_image(&client, &query, fetcher)
+                    .await
+                    .map(|image| (image.bytes, image.attribution))
+            },
+        )
         .await;
     usize::from(result.is_ok())
 }
@@ -243,7 +238,7 @@ async fn prefetch_image(
 async fn prefetch_image(
     _cache: &MediaCache,
     _translation_id: i32,
-    _to_phrase: &str,
+    _subject: &MediaSubject,
     _fetch_images: bool,
 ) -> usize {
     0

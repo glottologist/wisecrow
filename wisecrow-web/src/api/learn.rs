@@ -1,5 +1,34 @@
 use dioxus::prelude::*;
+#[cfg(feature = "server")]
+use wisecrow_dto::FastCardDto;
 use wisecrow_dto::{CardDto, FastDeckDto, LanguageInfo, ReviewRatingDto, SessionDto};
+
+#[cfg(feature = "server")]
+fn validate_requested_deck_size(size: u32) -> Result<usize, ServerFnError> {
+    wisecrow::srs::session::validate_deck_size(size).map_err(|_| {
+        crate::server::client_error(
+            axum::http::StatusCode::BAD_REQUEST,
+            wisecrow::srs::session::DECK_SIZE_ERROR,
+        )
+    })?;
+    usize::try_from(size).map_err(|_| {
+        crate::server::client_error(
+            axum::http::StatusCode::BAD_REQUEST,
+            wisecrow::srs::session::DECK_SIZE_ERROR,
+        )
+    })
+}
+
+#[cfg(feature = "server")]
+fn fast_card(entry: wisecrow::vocabulary::VocabularyEntry, image_allowed: bool) -> FastCardDto {
+    FastCardDto {
+        translation_id: entry.translation_id,
+        from_phrase: entry.from_phrase,
+        to_phrase: entry.to_phrase,
+        frequency: entry.frequency,
+        image_allowed,
+    }
+}
 
 /// Lists supported learning languages for an authenticated user.
 ///
@@ -30,6 +59,7 @@ pub async fn create_session(
     let user = crate::server::auth::current_user().await?;
     crate::server::validate_lang(&native)?;
     crate::server::validate_lang(&foreign)?;
+    validate_requested_deck_size(deck_size)?;
     let session = wisecrow::srs::session::SessionManager::create(
         crate::server::pool()?,
         user.id,
@@ -139,18 +169,11 @@ pub async fn create_fast_deck(
     size: u32,
 ) -> Result<FastDeckDto, ServerFnError> {
     use wisecrow::vocabulary::{interleave_deck, IncludeCarded, PhraseFilter, VocabularyQuery};
-    use wisecrow_dto::FastCardDto;
 
     crate::server::auth::current_user().await?;
     crate::server::validate_lang(&native)?;
     crate::server::validate_lang(&foreign)?;
-    if size == 0 {
-        return Err(crate::server::client_error(
-            axum::http::StatusCode::BAD_REQUEST,
-            "Deck size must be positive",
-        ));
-    }
-    let size = size.min(500);
+    let deck_size = validate_requested_deck_size(size)?;
     let pool = crate::server::pool()?;
 
     let words = VocabularyQuery::ranked_candidates(
@@ -174,18 +197,14 @@ pub async fn create_fast_deck(
     .await
     .map_err(|error| crate::server::internal_error("fast deck phrases", &error))?;
 
-    let to_dto = |image_allowed: bool| {
-        move |entry: wisecrow::vocabulary::VocabularyEntry| FastCardDto {
-            translation_id: entry.translation_id,
-            from_phrase: entry.from_phrase,
-            to_phrase: entry.to_phrase,
-            frequency: entry.frequency,
-            image_allowed,
-        }
-    };
-    let words: Vec<FastCardDto> = words.into_iter().map(to_dto(true)).collect();
-    let phrases: Vec<FastCardDto> = phrases.into_iter().map(to_dto(false)).collect();
-    let deck_size = usize::try_from(size).unwrap_or(usize::MAX);
+    let words: Vec<FastCardDto> = words
+        .into_iter()
+        .map(|entry| fast_card(entry, true))
+        .collect();
+    let phrases: Vec<FastCardDto> = phrases
+        .into_iter()
+        .map(|entry| fast_card(entry, false))
+        .collect();
     Ok(FastDeckDto {
         cards: interleave_deck(words, phrases, deck_size),
     })

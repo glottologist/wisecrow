@@ -33,7 +33,7 @@ pub async fn get_audio_data(translation_id: i32) -> Result<String, ServerFnError
 #[post("/api/media/image")]
 pub async fn get_image_data(
     translation_id: i32,
-) -> Result<wisecrow_dto::CardImageDto, ServerFnError> {
+) -> Result<Option<wisecrow_dto::CardImageDto>, ServerFnError> {
     crate::server::auth::current_user().await?;
     validate_media_request(translation_id)?;
     #[cfg(feature = "images")]
@@ -83,8 +83,10 @@ mod implementation {
         // Absent an account this is `None` and Edge handles the language, so a
         // deployment without CereProc credentials keeps its existing speech.
         let cereproc = wisecrow::media::cereproc::CereprocClient::from_config(&app_config()?);
+        let fingerprint = wisecrow::media::audio_cache_key(&subject, cereproc.as_ref())
+            .map_err(|error| crate::server::internal_error("audio fingerprint", &error))?;
         let path = cache
-            .get_or_fetch(translation_id, MediaType::Audio, || {
+            .get_or_fetch(translation_id, MediaType::Audio, &fingerprint, || {
                 wisecrow::media::audio::generate_tts(
                     &subject.to_phrase,
                     &subject.foreign_lang,
@@ -101,19 +103,26 @@ mod implementation {
     #[cfg(feature = "images")]
     pub(super) async fn image(
         translation_id: i32,
-    ) -> Result<wisecrow_dto::CardImageDto, ServerFnError> {
-        let fetcher = image_fetcher()?;
+    ) -> Result<Option<wisecrow_dto::CardImageDto>, ServerFnError> {
         let db = crate::server::pool()?;
         let subject = load_subject(db, translation_id).await?;
+        let Some(query) = subject.applicable_image_query() else {
+            return Ok(None);
+        };
+        let fetcher = image_fetcher()?;
+        let Some(fingerprint) = wisecrow::media::image_cache_key(&subject, &fetcher) else {
+            return Ok(None);
+        };
         let client = reqwest::Client::new();
         let cache =
             MediaCache::new(db.clone()) // clone: MediaCache owns an Arc-backed pool handle
                 .map_err(|error| {
                     crate::server::internal_error("image cache initialization", &error)
                 })?;
+        let query = query.to_owned();
         let (path, attribution) = cache
-            .get_or_fetch_attributed(translation_id, MediaType::Image, || async {
-                wisecrow::media::images::fetch_image(&client, &subject.from_phrase, &fetcher)
+            .get_or_fetch_attributed(translation_id, MediaType::Image, &fingerprint, || async {
+                wisecrow::media::images::fetch_image(&client, &query, &fetcher)
                     .await
                     .map(|image| (image.bytes, image.attribution))
             })
@@ -121,10 +130,10 @@ mod implementation {
             .map_err(|error| crate::server::internal_error("image fetch", &error))?;
         let bytes = read_bounded_file(&path, MAX_IMAGE_BYTES, "Image").await?;
         let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
-        Ok(wisecrow_dto::CardImageDto {
+        Ok(Some(wisecrow_dto::CardImageDto {
             data_url: ["data:image/jpeg;base64,", encoded.as_str()].concat(),
             attribution,
-        })
+        }))
     }
 
     async fn load_subject(

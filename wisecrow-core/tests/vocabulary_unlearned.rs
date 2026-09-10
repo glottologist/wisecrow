@@ -40,19 +40,31 @@ async fn cleanup(pool: &PgPool) {
         .expect("word_glosses cleanup");
 }
 
-/// Stores a translation for a word, as `wisecrow gloss-deck` would.
-async fn seed_gloss(pool: &PgPool, welsh_word: &str, english: &str) {
+async fn seed_presentation(
+    pool: &PgPool,
+    welsh_word: &str,
+    english: &str,
+    display_form: &str,
+    teachable: bool,
+) {
     sqlx::query(
-        "INSERT INTO word_glosses (lang_code, word, native_lang, translation)
-         VALUES ('cy', $1, 'en', $2)
+        "INSERT INTO word_glosses
+             (lang_code, word, native_lang, translation, display_form,
+              teachable, presentation_version)
+         VALUES ('cy', $1, 'en', $2, $3, $4, 1)
          ON CONFLICT (lang_code, word, native_lang) DO UPDATE
-           SET translation = EXCLUDED.translation",
+         SET translation = EXCLUDED.translation,
+             display_form = EXCLUDED.display_form,
+             teachable = EXCLUDED.teachable,
+             presentation_version = EXCLUDED.presentation_version",
     )
     .bind(welsh_word)
     .bind(english)
+    .bind(display_form)
+    .bind(teachable)
     .execute(pool)
     .await
-    .expect("gloss seed");
+    .expect("presentation seed");
 }
 
 /// Seeds a pair as ranking would leave it: a corpus count in `corpus_frequency`.
@@ -170,7 +182,7 @@ async fn the_native_phrase_shown_is_the_one_the_corpus_agrees_on() {
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL"]
-async fn a_word_the_corpus_states_once_is_shown_its_gloss_instead() {
+async fn canonical_presentation_replaces_a_single_subtitle_alignment() {
     let pool = test_pool().await;
     cleanup(&pool).await;
 
@@ -178,7 +190,7 @@ async fn a_word_the_corpus_states_once_is_shown_its_gloss_instead() {
     // alignment failure — this is `Die! → An!` from the real Irish deck, which
     // no rule over the Welsh side can see, because the Welsh side is fine.
     seed(&pool, "Die!", "Marw", 500).await;
-    seed_gloss(&pool, "marw", "dead").await;
+    seed_presentation(&pool, "marw", "dead", "marw", true).await;
 
     let deck = VocabularyQuery::unlearned(&pool, "en", "cy", 50)
         .await
@@ -187,53 +199,41 @@ async fn a_word_the_corpus_states_once_is_shown_its_gloss_instead() {
     assert_eq!(deck.len(), 1, "still one card for the one word");
     assert_eq!(
         deck[0].from_phrase, "dead",
-        "an uncorroborated pairing loses to a stored translation"
+        "canonical translation replaces subtitle context"
     );
-    assert_eq!(
-        deck[0].to_phrase, "Marw",
-        "only the prompt is substituted; the word being taught is untouched"
-    );
+    assert_eq!(deck[0].to_phrase, "marw", "canonical display form wins");
 
     cleanup(&pool).await;
 }
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL"]
-async fn a_pairing_the_corpus_repeats_beats_a_gloss() {
+async fn canonical_presentation_beats_repeated_subtitle_alignment() {
     let pool = test_pool().await;
     cleanup(&pool).await;
 
-    // The corroborated case, and the reason the substitution is conditional. Two
-    // rows agree on "Yes", so the corpus is speaking from evidence rather than
-    // from a single accident, and authentic evidence has to win — otherwise
-    // every card in the deck would come from a model.
-    seed(&pool, "Yes.", "Ie.", 500).await;
-    seed(&pool, "Yes?", "Ie?", 500).await;
-    seed_gloss(&pool, "ie", "affirmative").await;
+    seed(&pool, "Wrong subtitle.", "Ie.", 500).await;
+    seed(&pool, "Wrong subtitle?", "Ie?", 500).await;
+    seed_presentation(&pool, "ie", "yes", "ie", true).await;
 
     let deck = VocabularyQuery::unlearned(&pool, "en", "cy", 50)
         .await
         .expect("unlearned");
 
     assert_eq!(deck.len(), 1, "still one card for the one word");
-    assert!(
-        deck[0].from_phrase.starts_with("Yes"),
-        "expected the corroborated corpus partner, got {:?}",
-        deck[0].from_phrase
-    );
+    assert_eq!(deck[0].from_phrase, "yes");
+    assert_eq!(deck[0].to_phrase, "ie");
 
     cleanup(&pool).await;
 }
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL"]
-async fn a_word_with_no_gloss_keeps_whatever_the_corpus_gave_it() {
+async fn a_word_without_a_presentation_keeps_the_corpus_fallback() {
     let pool = test_pool().await;
     cleanup(&pool).await;
 
-    // Glossing is incremental — the command runs against a limit and a second
-    // run picks up where the first stopped — so an uncorroborated word with no
-    // gloss yet must still produce a card rather than vanish from the deck.
+    // Enrichment is incremental, so pending words retain a usable fallback.
     seed(&pool, "Die!", "Marw", 500).await;
 
     let deck = VocabularyQuery::unlearned(&pool, "en", "cy", 50)
@@ -344,6 +344,97 @@ async fn cleanup_phrases(pool: &PgPool) {
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL"]
+async fn one_word_spanning_many_frequencies_does_not_starve_lower_words() {
+    let pool = test_pool().await;
+    cleanup(&pool).await;
+    for (english, welsh, frequency) in [
+        ("one a", "Un", 1000),
+        ("one b", "un.", 999),
+        ("one c", "UN?", 998),
+        ("one d", "\"un\"", 997),
+        ("one e", "¡un!", 996),
+        ("two", "dau", 900),
+        ("three", "tri", 800),
+    ] {
+        seed(&pool, english, welsh, frequency).await;
+    }
+
+    let deck = VocabularyQuery::unlearned(&pool, "en", "cy", 3)
+        .await
+        .expect("distinct-word deck");
+    let words: Vec<&str> = deck.iter().map(|entry| entry.to_phrase.as_str()).collect();
+    assert_eq!(words, vec!["Un", "dau", "tri"]);
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn unteachable_presentations_are_excluded_without_shortening_the_deck() {
+    let pool = test_pool().await;
+    cleanup(&pool).await;
+    seed(&pool, "[noise]", "Torri", 1000).await;
+    seed_presentation(&pool, "torri", "broken fragment", "torri", false).await;
+    seed(&pool, "usable", "dilys", 900).await;
+
+    let deck = VocabularyQuery::unlearned(&pool, "en", "cy", 1)
+        .await
+        .expect("teachable deck");
+    assert_eq!(deck.len(), 1);
+    assert_eq!(deck[0].to_phrase, "dilys");
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn equal_frequency_words_have_deterministic_order() {
+    let pool = test_pool().await;
+    cleanup(&pool).await;
+    seed(&pool, "last alphabetically", "zeta", 500).await;
+    seed(&pool, "first alphabetically", "alffa", 500).await;
+
+    let deck = VocabularyQuery::unlearned(&pool, "en", "cy", 2)
+        .await
+        .expect("tied deck");
+    let words: Vec<&str> = deck.iter().map(|entry| entry.to_phrase.as_str()).collect();
+    assert_eq!(words, vec!["alffa", "zeta"]);
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn tied_adversarial_selection_is_read_only_and_bounded() {
+    let pool = test_pool().await;
+    cleanup(&pool).await;
+    sqlx::query(
+        "INSERT INTO translations
+             (from_language_id, from_phrase, to_language_id, to_phrase,
+              corpus_frequency, frequency)
+         SELECT (SELECT id FROM languages WHERE code = 'en'),
+                'native-' || value,
+                (SELECT id FROM languages WHERE code = 'cy'),
+                'word-' || lpad(value::TEXT, 4, '0'), 500, 1
+         FROM generate_series(1, 250) value",
+    )
+    .execute(&pool)
+    .await
+    .expect("tied fixture");
+    let counts_before: (i64, i64) =
+        sqlx::query_as("SELECT (SELECT count(*) FROM cards), (SELECT count(*) FROM sessions)")
+            .fetch_one(&pool)
+            .await
+            .expect("counts before");
+
+    let deck = VocabularyQuery::unlearned(&pool, "en", "cy", 50)
+        .await
+        .expect("bounded tied deck");
+    let counts_after: (i64, i64) =
+        sqlx::query_as("SELECT (SELECT count(*) FROM cards), (SELECT count(*) FROM sessions)")
+            .fetch_one(&pool)
+            .await
+            .expect("counts after");
+    assert_eq!(deck.len(), 50);
+    assert_eq!(counts_after, counts_before);
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
 async fn ranked_candidates_carded_switch_controls_card_exclusion() {
     use wisecrow::vocabulary::{IncludeCarded, PhraseFilter};
     let pool = test_pool().await;
@@ -360,7 +451,7 @@ async fn ranked_candidates_carded_switch_controls_card_exclusion() {
         "cy",
         50,
         IncludeCarded::Yes,
-        PhraseFilter::All,
+        PhraseFilter::Exclude,
     )
     .await
     .expect("include carded");
@@ -373,7 +464,7 @@ async fn ranked_candidates_carded_switch_controls_card_exclusion() {
         "cy",
         50,
         IncludeCarded::No,
-        PhraseFilter::All,
+        PhraseFilter::Exclude,
     )
     .await
     .expect("exclude carded");
@@ -444,7 +535,7 @@ async fn ranked_candidates_deduplicates_spellings_when_carded_included() {
         "cy",
         50,
         IncludeCarded::Yes,
-        PhraseFilter::All,
+        PhraseFilter::Exclude,
     )
     .await
     .expect("dedup");

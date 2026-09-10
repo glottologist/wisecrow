@@ -548,29 +548,27 @@ async fn handle_gloss_deck(args: GlossDeckArgs) -> Result<(), Error> {
     let native_name = resolve_language_name(&args.native_lang)?;
 
     let words =
-        wisecrow::glossing::uncorroborated_words(&pool, &args.native_lang, &args.lang, args.limit)
+        wisecrow::glossing::pending_presentations(&pool, &args.native_lang, &args.lang, args.limit)
             .await?;
 
     if words.is_empty() {
-        info!(
-            "No {} deck words need a gloss: every word the deck would serve has a pairing the corpus repeats",
-            args.lang
-        );
+        info!("All selected {} word presentations are current", args.lang);
         return Ok(());
     }
 
     if args.dry_run {
+        let pending: Vec<&str> = words.iter().map(|word| word.word.as_str()).collect();
         info!(
-            "Would gloss {} {} words whose corpus pairing occurs once: {}",
+            "Would enrich {} {} word presentations: {}",
             words.len(),
             args.lang,
-            words.join(", ")
+            pending.join(", ")
         );
         return Ok(());
     }
 
     let provider = wisecrow::llm::create_provider(&config)?;
-    let written = wisecrow::glossing::gloss_words(
+    let written = wisecrow::glossing::enrich_presentations(
         &pool,
         provider.as_ref(),
         &words,
@@ -581,7 +579,7 @@ async fn handle_gloss_deck(args: GlossDeckArgs) -> Result<(), Error> {
     )
     .await?;
     info!(
-        "Glossed {written} of {} uncorroborated {} deck words",
+        "Enriched {written} of {} pending {} word presentations",
         words.len(),
         args.lang
     );
@@ -756,12 +754,12 @@ async fn handle_translate_phrases(args: TranslatePhrasesArgs) -> Result<(), Erro
 
 async fn handle_prefetch_media(args: PrefetchMediaArgs) -> Result<(), Error> {
     validate_languages(&args.native_lang, &args.foreign_lang)?;
-    let (config, pool) = load_config_and_pool().await?;
+    let (_config, pool) = load_config_and_pool().await?;
 
     #[cfg(feature = "images")]
-    let image_fetcher = wisecrow::media::images::ImageFetcher::from_config(&config);
+    let image_fetcher = wisecrow::media::images::ImageFetcher::from_config(&_config);
     #[cfg(feature = "tts")]
-    let cereproc = wisecrow::media::cereproc::CereprocClient::from_config(&config);
+    let cereproc = wisecrow::media::cereproc::CereprocClient::from_config(&_config);
     let count = wisecrow::media::prefetch::prefetch_media(
         &pool,
         &args.native_lang,
@@ -1275,7 +1273,6 @@ async fn handle_learn(args: LearnArgs) -> Result<(), Error> {
     let gloss_ctx = build_gloss_context(&config, &pool);
     let media_ctx = build_media_context(
         pool.clone(), // clone: media context and TUI share the pool handle
-        args.foreign_lang,
         &config,
     );
 
@@ -1300,12 +1297,8 @@ fn build_gloss_context(config: &Config, pool: &PgPool) -> Option<wisecrow::tui::
 
 /// Builds the media (audio/image) context, degrading gracefully to no media when
 /// the cache directory cannot be initialised.
-fn build_media_context(
-    pool: PgPool,
-    foreign_lang: String,
-    config: &Config,
-) -> Option<MediaContext> {
-    match MediaContext::from_config(pool, foreign_lang, config) {
+fn build_media_context(pool: PgPool, config: &Config) -> Option<MediaContext> {
+    match MediaContext::from_config(pool, config) {
         Ok(ctx) => Some(ctx),
         Err(e) => {
             tracing::warn!("Media cache init failed, running without media: {e}");

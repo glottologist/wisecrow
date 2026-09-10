@@ -1,5 +1,9 @@
 # Introduction
 
+<p align="center">
+  <img src="../media/wisecrow-medium-res.png" alt="Wisecrow logo" width="200"/>
+</p>
+
 Wisecrow is an intensive language-cramming toolkit built around the idea that
 *frequency drives fluency*. It mines large multilingual subtitle and translation
 corpora from [OPUS](https://opus.nlpl.eu) — OpenSubtitles, CCAligned, CCMatrix,

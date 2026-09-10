@@ -62,6 +62,9 @@ pub struct CardDto {
     /// `default` keeps payloads from older servers deserialising.
     #[serde(default)]
     pub is_phrase: bool,
+    /// Whether the canonical presentation has a concrete image query.
+    #[serde(default)]
+    pub image_allowed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

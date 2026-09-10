@@ -43,6 +43,9 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
 
+      - name: Theme bootstrap
+        run: node --test wisecrow-web/tests/theme_bootstrap.mjs
+
       - name: Clippy (core)
         run: cargo clippy -p wisecrow-core --all-targets -- -D warnings
 

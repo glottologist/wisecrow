@@ -4,6 +4,39 @@ use std::path::Path;
 use crate::errors::WisecrowError;
 use crate::media::cereproc::CereprocClient;
 
+/// Increment when speech encoding or synthesis settings change output bytes.
+pub const AUDIO_FORMAT_VERSION: u32 = 1;
+const EDGE_BACKEND_ID: &str = "edge";
+const CEREPROC_BACKEND_ID: &str = "cereproc";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TtsBackend {
+    Edge,
+    Cereproc,
+}
+
+/// Stable backend and voice identity selected for speech synthesis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TtsProfile<'a> {
+    backend: TtsBackend,
+    voice: &'a str,
+}
+
+impl<'a> TtsProfile<'a> {
+    #[must_use]
+    pub const fn backend_id(&self) -> &'static str {
+        match self.backend {
+            TtsBackend::Edge => EDGE_BACKEND_ID,
+            TtsBackend::Cereproc => CEREPROC_BACKEND_ID,
+        }
+    }
+
+    #[must_use]
+    pub const fn voice(&self) -> &'a str {
+        self.voice
+    }
+}
+
 /// MS Edge voices. Scottish Gaelic is absent because Edge does not offer one —
 /// see [`crate::media::cereproc`].
 const TTS_VOICES: &[(&str, &str)] = &[
@@ -90,6 +123,32 @@ pub fn voice_for_language(lang_code: &str) -> Option<&'static str> {
         .find_map(|(code, voice)| (*code == lang_code).then_some(*voice))
 }
 
+/// Resolves the backend and voice that determine speech output.
+#[must_use]
+pub fn tts_profile_for_language<'a>(
+    lang_code: &str,
+    cereproc: Option<&'a CereprocClient>,
+) -> Option<TtsProfile<'a>> {
+    let cereproc_voice = cereproc.and_then(|client| client.voice_for_language(lang_code));
+    select_tts_profile(lang_code, cereproc_voice)
+}
+
+fn select_tts_profile<'a>(
+    lang_code: &str,
+    cereproc_voice: Option<&'a str>,
+) -> Option<TtsProfile<'a>> {
+    if let Some(voice) = cereproc_voice {
+        return Some(TtsProfile {
+            backend: TtsBackend::Cereproc,
+            voice,
+        });
+    }
+    voice_for_language(lang_code).map(|voice| TtsProfile {
+        backend: TtsBackend::Edge,
+        voice,
+    })
+}
+
 /// Generates MP3 audio for the given text.
 ///
 /// Celtic languages go to CereProc when an account is configured — Edge has no
@@ -105,23 +164,26 @@ pub async fn generate_tts(
     lang_code: &str,
     cereproc: Option<&CereprocClient>,
 ) -> Result<Vec<u8>, WisecrowError> {
-    if let Some(client) = cereproc {
-        if let Some(voice) = client.voice_for_language(lang_code) {
-            return client.synthesise(text, voice).await;
-        }
-    }
-
-    let voice = voice_for_language(lang_code).ok_or_else(|| {
+    let profile = tts_profile_for_language(lang_code, cereproc).ok_or_else(|| {
         WisecrowError::MediaError(format!("No TTS voice available for language: {lang_code}"))
     })?;
+    match profile.backend {
+        TtsBackend::Edge => generate_edge_tts(text, profile.voice).await,
+        TtsBackend::Cereproc => {
+            let client = cereproc.ok_or_else(|| {
+                WisecrowError::MediaError("CereProc profile has no configured client".to_owned())
+            })?;
+            client.synthesise(text, profile.voice).await
+        }
+    }
+}
 
+async fn generate_edge_tts(text: &str, voice: &str) -> Result<Vec<u8>, WisecrowError> {
     let text = String::from(text);
     let voice = String::from(voice);
-
     tokio::task::spawn_blocking(move || {
         let mut tts = msedge_tts::tts::client::connect()
             .map_err(|e| WisecrowError::MediaError(format!("TTS connection failed: {e}")))?;
-
         let config = msedge_tts::tts::SpeechConfig::from(
             &msedge_tts::voice::get_voices_list()
                 .map_err(|e| WisecrowError::MediaError(format!("Failed to get voices: {e}")))?
@@ -129,11 +191,9 @@ pub async fn generate_tts(
                 .find(|candidate| candidate.short_name.as_deref() == Some(voice.as_str()))
                 .ok_or_else(|| WisecrowError::MediaError(format!("Voice not found: {voice}")))?,
         );
-
         let audio = tts
             .synthesize(&text, &config)
             .map_err(|e| WisecrowError::MediaError(format!("TTS synthesis failed: {e}")))?;
-
         Ok(audio.audio_bytes)
     })
     .await
@@ -189,6 +249,24 @@ mod tests {
                 prop_assert!(voice_for_language(&s).is_none());
             }
         }
+    }
+
+    #[test]
+    fn profile_identifies_edge_voice_and_format() {
+        let profile = tts_profile_for_language("fr", None).expect("French Edge profile");
+
+        assert_eq!(profile.backend_id(), "edge");
+        assert_eq!(profile.voice(), "fr-FR-HenriNeural");
+        assert_ne!(AUDIO_FORMAT_VERSION, 0);
+    }
+
+    #[test]
+    fn profile_identifies_cereproc_voice() {
+        let profile = select_tts_profile("cy", Some("Gethin-CY-SW-C-M"))
+            .expect("configured CereProc profile");
+
+        assert_eq!(profile.backend_id(), "cereproc");
+        assert_eq!(profile.voice(), "Gethin-CY-SW-C-M");
     }
 
     #[test]

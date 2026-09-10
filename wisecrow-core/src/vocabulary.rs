@@ -22,12 +22,127 @@ pub enum IncludeCarded {
 /// promoted phrases from ordinary word rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PhraseFilter {
-    All,
     Only,
     Exclude,
 }
 
+const RANKED_QUERY_TIMEOUT: &str = "2s";
+
+const MEMBERSHIP_CTES: &str = "WITH carded_ids AS MATERIALIZED (
+         SELECT DISTINCT translation_id FROM cards WHERE translation_id IS NOT NULL
+     ),
+     promoted_ids AS MATERIALIZED (
+         SELECT DISTINCT translation_id
+         FROM phrase_translations
+         WHERE translation_id IS NOT NULL
+     ),
+     unteachable_words AS MATERIALIZED (
+         SELECT word FROM word_glosses
+         WHERE native_lang = $1 AND lang_code = $2 AND NOT teachable
+     )";
+
+const FINAL_SELECTION: &str = "SELECT p.translation_id, p.from_phrase, p.to_phrase, best.frequency
+     FROM best
+     JOIN translation_presentations p ON p.translation_id = best.id
+     WHERE p.teachable
+     ORDER BY best.frequency DESC, best.norm_to, best.id";
+
+impl IncludeCarded {
+    const fn predicate(self) -> &'static str {
+        match self {
+            Self::Yes => "",
+            Self::No => "AND t.id NOT IN (SELECT translation_id FROM carded_ids)",
+        }
+    }
+}
+
+impl PhraseFilter {
+    const fn predicate(self) -> &'static str {
+        match self {
+            Self::Only => "AND t.id IN (SELECT translation_id FROM promoted_ids)",
+            Self::Exclude => "AND t.id NOT IN (SELECT translation_id FROM promoted_ids)",
+        }
+    }
+
+    fn teachable_predicate(self) -> String {
+        match self {
+            Self::Only => String::new(),
+            Self::Exclude => format!(
+                "AND lower(btrim(t.to_phrase, '{}')) NOT IN
+                     (SELECT word FROM unteachable_words)",
+                crate::frequency::MATCH_TRIM_SQL
+            ),
+        }
+    }
+}
+
 pub struct VocabularyQuery;
+
+fn ranked_statement(carded: IncludeCarded, phrase_filter: PhraseFilter) -> String {
+    let carded = carded.predicate();
+    let phrase = phrase_filter.predicate();
+    let teachable = phrase_filter.teachable_predicate();
+    let selected = selected_words_cte(carded, phrase, &teachable);
+    let scored = scored_candidates_ctes(carded, phrase);
+    format!("{MEMBERSHIP_CTES},\n{selected},\n{scored}\n{FINAL_SELECTION}")
+}
+
+fn selected_words_cte(carded: &str, phrase: &str, teachable: &str) -> String {
+    format!(
+        "selected_words AS MATERIALIZED (
+           SELECT lower(btrim(t.to_phrase, '{trim}')) AS norm_to,
+                  max(t.corpus_frequency) AS max_frequency
+           FROM translations t
+           JOIN languages fl ON fl.id = t.from_language_id
+           JOIN languages tl ON tl.id = t.to_language_id
+           WHERE fl.code = $1 AND tl.code = $2
+             AND t.corpus_frequency > 1
+             AND LENGTH(t.from_phrase) BETWEEN 2 AND 200
+             AND LENGTH(t.to_phrase) BETWEEN 2 AND 200
+             {carded}
+             {phrase}
+             {teachable}
+           GROUP BY lower(btrim(t.to_phrase, '{trim}'))
+           ORDER BY max_frequency DESC, norm_to
+           LIMIT $3
+         )",
+        trim = crate::frequency::MATCH_TRIM_SQL
+    )
+}
+
+fn scored_candidates_ctes(carded: &str, phrase: &str) -> String {
+    format!(
+        "scored AS (
+           SELECT t.id, t.from_phrase, t.to_phrase,
+                  t.corpus_frequency AS frequency,
+                  lower(btrim(t.to_phrase, '{trim}')) AS norm_to,
+                  count(*) OVER (
+                    PARTITION BY lower(btrim(t.to_phrase, '{trim}')),
+                                 lower(btrim(t.from_phrase, '{trim}'))
+                  ) AS agreement
+           FROM translations t
+           JOIN languages fl ON fl.id = t.from_language_id
+           JOIN languages tl ON tl.id = t.to_language_id
+           WHERE fl.code = $1 AND tl.code = $2
+             AND t.corpus_frequency > 1
+             AND LENGTH(t.from_phrase) BETWEEN 2 AND 200
+             AND LENGTH(t.to_phrase) BETWEEN 2 AND 200
+             {carded}
+             {phrase}
+             AND lower(btrim(t.to_phrase, '{trim}')) = ANY (
+               ARRAY(SELECT norm_to FROM selected_words)
+             )
+         ),
+         best AS (
+           SELECT DISTINCT ON (norm_to)
+                  id, frequency, agreement, norm_to, from_phrase, to_phrase
+           FROM scored
+           ORDER BY norm_to, frequency DESC, agreement DESC,
+                    LENGTH(to_phrase), LENGTH(from_phrase), id
+         )",
+        trim = crate::frequency::MATCH_TRIM_SQL
+    )
+}
 
 impl VocabularyQuery {
     /// Returns translations that don't yet have associated SRS cards, one per
@@ -49,14 +164,14 @@ impl VocabularyQuery {
             foreign_lang,
             limit,
             IncludeCarded::No,
-            PhraseFilter::All,
+            PhraseFilter::Exclude,
         )
         .await
     }
 
-    /// The deck-selection query behind both session types: normalised
-    /// dedup on the learned side, agreement-based partner choice, and gloss
-    /// fallback, parameterised on card exclusion and phrase membership.
+    /// Selects distinct ranked forms before scoring their representative rows.
+    /// Canonical presentations override corpus display text and rejected forms
+    /// are omitted.
     ///
     /// # Errors
     ///
@@ -69,121 +184,34 @@ impl VocabularyQuery {
         carded: IncludeCarded,
         phrase_filter: PhraseFilter,
     ) -> Result<Vec<VocabularyEntry>, WisecrowError> {
-        // Translations that no user has yet started a card on are universally
-        // unlearned. Per-user "what should I learn next" should additionally
-        // filter against this user's cards once consumed.
-        //
-        // The deck is drawn from `corpus_frequency`, which only ranking writes,
-        // so a pair that was merely ingested twice cannot reach it: NULL fails
-        // `> 1` without a special case. Filtering on `frequency` served 3.2M
-        // Irish sentences ordered by how often a pair happened to be duplicated
-        // (migration 017).
-        //
-        // The deck is deduplicated on the phrase being *learned*, normalised.
-        // Deduplicating on `from_phrase` instead put one foreign word into as
-        // many cards as it had native-language partners: a Gaelic deck opened
-        // with ten separate cards for "Tha", differing only in the English
-        // beside them, because every row carrying that word shares the one
-        // corpus count and so ties. Normalising matters as much as the side
-        // does — "Tha", "Tha." and "Tha?" are three strings and one word.
-        //
-        // Which partner to show is then chosen by consensus. Corpus counts say
-        // nothing about it, and the alternative — picking arbitrarily among
-        // rows that all tie — put "AZ has" and "thatthe" against "Tha" while
-        // "Yes" sat in the same corpus. `agreement` counts how many of a word's
-        // stored pairs give the same native phrase, so a translation the corpus
-        // repeats beats a one-off, and mojibake and run-together fragments lose
-        // by construction rather than by a rule enumerating them.
-        //
-        // Ordering cannot rescue a corrupt native phrase, and it was a mistake to
-        // try. Measured on the Gaelic deck, 200 of its 315 words have exactly one
-        // candidate partner, so there is nothing to order; and where there are
-        // several, the corruption ties with the correct answer on every statistic
-        // this query can see — "What?" and "Dthat" both partnered "Dè" twice, and
-        // the card fell to whichever held the lower id. Junk native phrases have
-        // to be removed from the data, which is [`crate::pruning`]'s job.
-        //
-        // Where the corpus offers no corroboration at all — an `agreement` of 1,
-        // meaning the chosen pairing occurs exactly once — a stored translation
-        // is preferred if one exists. That is the 200-of-315 case above, and the
-        // only case: a pairing the corpus repeats is authentic evidence and beats
-        // anything generated. See [`crate::glossing`].
-        let carded_clause = match carded {
-            IncludeCarded::Yes => "",
-            IncludeCarded::No => "AND c.id IS NULL",
-        };
-        let phrase_clause = match phrase_filter {
-            PhraseFilter::All => "",
-            PhraseFilter::Only => {
-                "AND EXISTS (SELECT 1 FROM phrase_translations pt WHERE pt.translation_id = t.id)"
-            }
-            PhraseFilter::Exclude => {
-                "AND NOT EXISTS (SELECT 1 FROM phrase_translations pt WHERE pt.translation_id = t.id)"
-            }
-        };
-        let statement = format!(
-            "SELECT best.id,
-                    CASE WHEN best.agreement = 1 AND g.translation IS NOT NULL
-                         THEN g.translation
-                         ELSE best.from_phrase
-                    END,
-                    best.to_phrase,
-                    best.frequency
-             FROM (
-               SELECT DISTINCT ON (norm_to)
-                      id, from_phrase, to_phrase, frequency, agreement, norm_to
-               FROM (
-                 SELECT t.id, t.from_phrase, t.to_phrase,
-                        t.corpus_frequency AS frequency,
-                        lower(btrim(t.to_phrase, '{trim}')) AS norm_to,
-                        count(*) OVER (
-                          PARTITION BY lower(btrim(t.to_phrase, '{trim}')),
-                                       lower(btrim(t.from_phrase, '{trim}'))
-                        ) AS agreement
-                 FROM translations t
-                 JOIN languages fl ON t.from_language_id = fl.id
-                 JOIN languages tl ON t.to_language_id = tl.id
-                 LEFT JOIN cards c ON c.translation_id = t.id
-                 WHERE fl.code = $1 AND tl.code = $2 {carded_clause}
-                   AND t.corpus_frequency > 1
-                   AND LENGTH(t.from_phrase) BETWEEN 2 AND 200
-                   AND LENGTH(t.to_phrase) BETWEEN 2 AND 200
-                   {phrase_clause}
-               ) scored
-               ORDER BY norm_to,
-                        frequency DESC,
-                        agreement DESC,
-                        LENGTH(to_phrase),
-                        LENGTH(from_phrase),
-                        id
-             ) best
-             LEFT JOIN word_glosses g
-               ON g.lang_code = $2 AND g.native_lang = $1 AND g.word = best.norm_to
-             ORDER BY best.frequency DESC
-             LIMIT $3",
-            trim = crate::frequency::MATCH_TRIM_SQL
-        );
+        let statement = ranked_statement(carded, phrase_filter);
+        let mut transaction = pool.begin().await?;
+        sqlx::query("SET TRANSACTION READ ONLY")
+            .execute(&mut *transaction)
+            .await?;
+        sqlx::query("SELECT set_config('statement_timeout', $1, true)")
+            .bind(RANKED_QUERY_TIMEOUT)
+            .execute(&mut *transaction)
+            .await?;
         let rows = sqlx::query_as::<_, (i32, String, String, i32)>(&statement)
             .bind(native_lang)
             .bind(foreign_lang)
             .bind(i64::from(limit))
-            .fetch_all(pool)
+            .fetch_all(&mut *transaction)
             .await?;
-
+        transaction.commit().await?;
         Ok(rows
             .into_iter()
-            .map(|(id, from, to, freq)| VocabularyEntry {
+            .map(|(id, from, to, frequency)| VocabularyEntry {
                 translation_id: id,
                 from_phrase: from,
                 to_phrase: to,
-                frequency: freq,
+                frequency,
             })
             .collect())
     }
 
-    /// Returns translations whose card (for the given user) is in any of the
-    /// given FSRS states, optionally requiring a minimum stability. Ordered by
-    /// frequency descending.
+    /// Returns a user's cards in selected FSRS states, highest frequency first.
     ///
     /// # Errors
     ///
@@ -198,10 +226,6 @@ impl VocabularyQuery {
         limit: u32,
     ) -> Result<Vec<VocabularyEntry>, WisecrowError> {
         let rows = sqlx::query_as::<_, (i32, String, String, i32)>(
-            // `COALESCE` because, unlike `unlearned`, nothing here filters out
-            // rows ranking has never touched: a card seeded before migration 017
-            // may have no corpus count, and it should sort last rather than
-            // fail to decode.
             "SELECT t.id, t.from_phrase, t.to_phrase, COALESCE(t.corpus_frequency, 0)
              FROM translations t
              JOIN languages fl ON t.from_language_id = fl.id

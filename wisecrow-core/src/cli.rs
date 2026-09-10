@@ -270,14 +270,11 @@ pub struct GlossDeckArgs {
     /// The language the learner reads the prompt in.
     #[arg(short, long)]
     pub native_lang: String,
-    /// How many words to gloss. Only words the deck would actually serve and
-    /// whose pairing the corpus states exactly once are eligible, so this is a
-    /// ceiling rather than a target and a second run picks up where this left
-    /// off.
+    /// Maximum presentation records to generate. Repeated runs skip words at
+    /// the current presentation version and continue down the frequency order.
     #[arg(long, default_value_t = 200)]
     pub limit: u32,
-    /// List the words that would be glossed without calling the model or
-    /// writing anything.
+    /// List pending words without calling the model or writing anything.
     #[arg(long, default_value_t = false)]
     pub dry_run: bool,
 }

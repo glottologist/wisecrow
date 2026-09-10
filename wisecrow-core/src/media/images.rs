@@ -6,6 +6,8 @@ use crate::errors::WisecrowError;
 use crate::media::image_provider::{ImageProvider, ImageQuery};
 use crate::media::providers::{PexelsProvider, PixabayProvider, UnsplashProvider};
 
+/// Increment when image resizing, encoding, or output dimensions change.
+pub const IMAGE_FORMAT_VERSION: u32 = 1;
 const MAX_IMAGE_WIDTH: u32 = 200;
 const MAX_IMAGE_HEIGHT: u32 = 200;
 
@@ -97,20 +99,17 @@ impl ImageFetcher {
 
         let push_unsplash = |providers: &mut Vec<Arc<dyn ImageProvider>>| {
             if let Some(key) = unsplash.filter(|k| !k.expose().trim().is_empty()) {
-                // clone: SecureString ownership for provider storage
-                providers.push(Arc::new(UnsplashProvider::new(key.clone())));
+                providers.push(Arc::new(UnsplashProvider::new(key.clone()))); // clone: provider owns the secret
             }
         };
         let push_pexels = |providers: &mut Vec<Arc<dyn ImageProvider>>| {
             if let Some(key) = pexels.filter(|k| !k.expose().trim().is_empty()) {
-                // clone: SecureString ownership for provider storage
-                providers.push(Arc::new(PexelsProvider::new(key.clone())));
+                providers.push(Arc::new(PexelsProvider::new(key.clone()))); // clone: provider owns the secret
             }
         };
         let push_pixabay = |providers: &mut Vec<Arc<dyn ImageProvider>>| {
             if let Some(key) = pixabay.filter(|k| !k.expose().trim().is_empty()) {
-                // clone: SecureString ownership for provider storage
-                providers.push(Arc::new(PixabayProvider::new(key.clone())));
+                providers.push(Arc::new(PixabayProvider::new(key.clone()))); // clone: provider owns the secret
             }
         };
 
@@ -305,8 +304,7 @@ mod tests {
             if self.fail {
                 return Err(WisecrowError::MediaError("mock search failed".to_owned()));
             }
-            // clone: return owned hit from mock
-            Ok(self.hit.clone())
+            Ok(self.hit.clone()) // clone: mock returns an independently owned hit
         }
     }
 
@@ -332,7 +330,7 @@ mod tests {
     proptest! {
         #[test]
         fn resize_image_never_panics(data in proptest::collection::vec(any::<u8>(), 0..1000)) {
-            let _ = resize_image(&data);
+            drop(resize_image(&data));
         }
     }
 
@@ -347,6 +345,23 @@ mod tests {
             ImageProviderMode::Pexels
         );
         assert!(ImageProviderMode::parse("flickr").is_err());
+    }
+
+    #[test]
+    fn automatic_profile_preserves_provider_order_and_format() {
+        let fetcher = ImageFetcher::from_keys(
+            ImageProviderMode::Auto,
+            Some(&SecureString::from("u".to_owned())),
+            Some(&SecureString::from("p".to_owned())),
+            Some(&SecureString::from("x".to_owned())),
+        )
+        .expect("all providers configured");
+
+        assert_eq!(
+            fetcher.provider_ids(),
+            vec!["unsplash", "pexels", "pixabay"]
+        );
+        assert_ne!(IMAGE_FORMAT_VERSION, 0);
     }
 
     #[test]
@@ -414,8 +429,7 @@ mod tests {
             attribution: Some("test".to_owned()),
             provider_id: "mock",
         };
-        // clone: test ownership independence
-        let other = hit.clone();
+        let other = hit.clone(); // clone: test verifies ownership independence
         assert_eq!(other.provider_id, "mock");
     }
 }

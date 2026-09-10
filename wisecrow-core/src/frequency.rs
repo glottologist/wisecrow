@@ -530,13 +530,23 @@ mod tests {
             "the SQL literal must spell out MATCH_TRIM_CHARS with the quote doubled"
         );
 
-        let migration = include_str!("../migrations/016_normalised_phrase_indexes.sql");
+        let index_migration = include_str!("../migrations/016_normalised_phrase_indexes.sql");
         for column in ["from_phrase", "to_phrase"] {
             assert!(
-                migration.contains(&format!("btrim({column}, '{MATCH_TRIM_SQL}')")),
+                index_migration.contains(&format!("btrim({column}, '{MATCH_TRIM_SQL}')")),
                 "migration 016 must index the same normalisation used to match {column}"
             );
         }
+        let presentation_migration = include_str!("../migrations/023_word_presentations.sql");
+        assert!(
+            presentation_migration.contains(&format!("btrim(t.to_phrase, '{MATCH_TRIM_SQL}')")),
+            "presentation lookup must use the indexed normalisation"
+        );
+        let ranking_migration = include_str!("../migrations/024_ranked_word_candidates.sql");
+        assert!(
+            ranking_migration.contains(&format!("btrim(to_phrase, '{MATCH_TRIM_SQL}')")),
+            "rank selection must index the same learned-form normalisation"
+        );
     }
 
     #[rstest]

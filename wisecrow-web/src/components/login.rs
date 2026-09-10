@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::api::auth::login;
+use crate::components::theme::ThemeSelector;
 use crate::router::Route;
 
 #[component]
@@ -11,7 +12,10 @@ pub fn LoginPage() -> Element {
     let navigator = use_navigator();
 
     rsx! {
-        div { class: "min-h-screen bg-gray-900 text-white flex items-center justify-center",
+        div { class: "min-h-screen bg-gray-900 text-white flex items-center justify-center relative",
+            div { class: "login-theme-selector",
+                ThemeSelector {}
+            }
             div { class: "w-full max-w-sm bg-gray-800 rounded-xl p-8 space-y-4",
                 h1 { class: "text-2xl font-bold text-center text-emerald-400", "Wisecrow" }
                 h2 { class: "text-lg text-center text-gray-300", "Sign in" }
@@ -21,14 +25,14 @@ pub fn LoginPage() -> Element {
                 }
 
                 input {
-                    class: "w-full bg-gray-700 rounded px-3 py-2 text-white",
+                    class: "w-full bg-gray-700 rounded-lg px-3 py-3 text-white",
                     r#type: "email",
                     placeholder: "Email",
                     value: "{email}",
                     oninput: move |e| email.set(e.value()),
                 }
                 input {
-                    class: "w-full bg-gray-700 rounded px-3 py-2 text-white",
+                    class: "w-full bg-gray-700 rounded-lg px-3 py-3 text-white",
                     r#type: "password",
                     placeholder: "Password",
                     value: "{password}",

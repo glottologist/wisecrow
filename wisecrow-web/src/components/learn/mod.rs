@@ -41,7 +41,7 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
     let mut speed = use_signal(|| SpeedController::new(DEFAULT_SPEED_MS));
     let mut loading = use_signal(|| true);
     let mut error_msg: Signal<Option<String>> = use_signal(|| None);
-    let mut media: Signal<std::collections::HashMap<usize, preload::MediaEntry>> =
+    let mut media: Signal<std::collections::HashMap<usize, preload::CardChannels>> =
         use_signal(std::collections::HashMap::new);
 
     let native_clone = native.clone(); // clone: need owned copies for async closure
@@ -75,46 +75,42 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
         }
     });
 
-    {
-        use preload::{CardMedia, MediaEntry};
-        use_effect(move || {
-            let sess = session();
-            let idx = current_index();
-            let Some(ref s) = sess else { return };
-            let tracked: std::collections::HashSet<usize> = media.read().keys().copied().collect();
-            for stale in preload::indices_to_evict(&tracked, idx, PRELOAD_WINDOW) {
-                media.write().remove(&stale);
-            }
-            for fetch_index in
-                preload::indices_to_fetch(idx, s.cards.len(), PRELOAD_WINDOW, &tracked)
-            {
-                let Some(card) = s.cards.get(fetch_index) else {
-                    continue;
-                };
-                let tid = card.translation_id;
-                media.write().insert(fetch_index, MediaEntry::Pending);
+    use_effect(move || {
+        let sess = session();
+        let idx = current_index();
+        let Some(ref s) = sess else { return };
+        let tracked: std::collections::HashSet<usize> = media.read().keys().copied().collect();
+        for stale in preload::indices_to_evict(&tracked, idx, PRELOAD_WINDOW) {
+            media.write().remove(&stale);
+        }
+        for fetch_index in preload::indices_to_fetch(idx, s.cards.len(), PRELOAD_WINDOW, &tracked) {
+            let Some(card) = s.cards.get(fetch_index) else {
+                continue;
+            };
+            let tid = card.translation_id;
+            let fetch_image = preload::should_fetch_image(card.is_phrase, card.image_allowed);
+            media
+                .write()
+                .insert(fetch_index, preload::CardChannels::begin(fetch_image));
+            spawn(async move {
+                let audio = get_audio_data(tid).await.map_err(|_| ());
+                preload::publish_audio(&mut media.write(), fetch_index, audio);
+            });
+            if fetch_image {
                 spawn(async move {
-                    let mut entry = CardMedia::default();
-                    let mut any = false;
-                    if let Ok(url) = get_audio_data(tid).await {
-                        entry.audio_url = Some(url);
-                        any = true;
-                    }
-                    if let Ok(image) = get_image_data(tid).await {
-                        entry.image_url = Some(image.data_url);
-                        entry.image_credit = image.attribution;
-                        any = true;
-                    }
-                    let state = if any {
-                        MediaEntry::Ready(entry)
-                    } else {
-                        MediaEntry::Failed
+                    let image = match get_image_data(tid).await {
+                        Ok(Some(image)) => Ok(Some(preload::ImageReady {
+                            url: image.data_url,
+                            credit: image.attribution,
+                        })),
+                        Ok(None) => Ok(None),
+                        Err(_) => Err(()),
                     };
-                    media.write().insert(fetch_index, state);
+                    preload::publish_image(&mut media.write(), fetch_index, image);
                 });
             }
-        });
-    }
+        }
+    });
 
     let _timer_task = use_future(move || async move {
         loop {
@@ -179,13 +175,20 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
 
     let current_card = &sess.cards[idx];
     let card_id = current_card.card_id;
+    let translation_id = current_card.translation_id;
     let session_id = sess.id;
     let timer_fraction = speed().remaining_fraction();
     let is_flipped = flipped();
-    let current_media = match media.read().get(&current_index()) {
-        Some(preload::MediaEntry::Ready(m)) => m.clone(),
-        _ => preload::CardMedia::default(),
-    };
+    let current_channels = media
+        .read()
+        .get(&current_index())
+        .cloned()
+        .unwrap_or_else(|| preload::CardChannels::begin(false));
+    let audio_url = current_channels.audio_url().map(str::to_owned);
+    let image_url = current_channels.image_url().map(str::to_owned);
+    let image_credit = current_channels.image_credit().map(str::to_owned);
+    let audio_failed = current_channels.audio_failed();
+    let retry_index = idx;
 
     rsx! {
         div { class: "grid grid-cols-1 lg:grid-cols-4 gap-6",
@@ -196,9 +199,23 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
                     flipped: is_flipped,
                     index: idx,
                     total: total,
-                    audio_url: current_media.audio_url,
-                    image_url: current_media.image_url,
-                    image_credit: current_media.image_credit,
+                    audio_url: audio_url,
+                    image_url: image_url,
+                    image_credit: image_credit,
+                    audio_failed: audio_failed,
+                    on_retry_audio: move |_| {
+                        let mut media_write = media.write();
+                        if let Some(channels) = media_write.get_mut(&retry_index) {
+                            if channels.retry_audio() {
+                                let tid = translation_id;
+                                drop(media_write);
+                                spawn(async move {
+                                    let audio = get_audio_data(tid).await.map_err(|_| ());
+                                    preload::publish_audio(&mut media.write(), retry_index, audio);
+                                });
+                            }
+                        }
+                    },
                     on_flip: move |_| {
                         flipped.set(true);
                         speed.write().reset();

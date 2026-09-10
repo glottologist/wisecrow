@@ -19,21 +19,19 @@ pub fn Home() -> Element {
     };
 
     rsx! {
-        div { class: "space-y-8",
-            h1 { class: "text-4xl font-bold text-center mb-4",
-                "Welcome to Wisecrow"
+        div { class: "flex flex-col items-center",
+            p { class: "text-sm text-gray-500 uppercase tracking-wide mb-2",
+                "Frequency-based flashcards"
             }
-            p { class: "text-gray-400 text-center text-lg",
-                "Frequency-based language learning flashcards"
+            h1 { class: "text-3xl font-bold mb-6",
+                "Start a session"
             }
 
-            div { class: "bg-gray-800 rounded-xl p-6 max-w-md mx-auto space-y-4",
-                h2 { class: "text-xl font-semibold mb-2", "Start Learning" }
-
+            div { class: "bg-gray-800 rounded-xl p-8 w-full max-w-md space-y-4 border border-gray-700",
                 div { class: "space-y-2",
-                    label { class: "block text-sm text-gray-400", "Native Language" }
+                    label { class: "block text-sm text-gray-400", "I speak" }
                     select {
-                        class: "w-full bg-gray-700 rounded px-3 py-2 text-white",
+                        class: "w-full bg-gray-700 rounded-lg px-3 py-3 text-white",
                         value: "{native}",
                         // Choosing the language already set as foreign would
                         // otherwise leave both equal and offer `/learn/x/x`,
@@ -57,9 +55,9 @@ pub fn Home() -> Element {
                 }
 
                 div { class: "space-y-2",
-                    label { class: "block text-sm text-gray-400", "Foreign Language" }
+                    label { class: "block text-sm text-gray-400", "I am learning" }
                     select {
-                        class: "w-full bg-gray-700 rounded px-3 py-2 text-white",
+                        class: "w-full bg-gray-700 rounded-lg px-3 py-3 text-white",
                         value: "{foreign}",
                         onchange: move |evt| foreign.set(evt.value()),
                         option { value: "", "Select..." }
@@ -81,9 +79,9 @@ pub fn Home() -> Element {
                 // learner on the route-parse error page.
                 if foreign().is_empty() {
                     button {
-                        class: "block w-full text-center bg-gray-700 text-gray-500 rounded px-4 py-3 font-semibold cursor-not-allowed",
+                        class: "block w-full text-center bg-gray-700 text-gray-500 rounded-lg px-4 py-3 font-semibold cursor-not-allowed",
                         disabled: true,
-                        "Select a foreign language"
+                        "Choose a language to learn"
                     }
                 } else {
                     Link {
@@ -91,16 +89,19 @@ pub fn Home() -> Element {
                             native: native(),
                             foreign: foreign(),
                         },
-                        class: "block w-full text-center bg-emerald-600 hover:bg-emerald-500 rounded px-4 py-3 font-semibold transition",
-                        "Start Session"
+                        class: "block w-full text-center bg-emerald-600 hover:bg-emerald-500 rounded-lg px-4 py-3 font-semibold transition",
+                        "Start session"
                     }
                     Link {
                         to: Route::FastPage {
                             native: native(),
                             foreign: foreign(),
                         },
-                        class: "block w-full text-center bg-cyan-700 hover:bg-cyan-600 rounded px-4 py-3 font-semibold transition mt-2",
-                        "Fast Download"
+                        class: "block w-full text-center bg-cyan-700 hover:bg-cyan-600 rounded-lg px-4 py-3 font-semibold transition mt-2",
+                        "Fast download"
+                    }
+                    p { class: "text-xs text-gray-500 text-center mt-2",
+                        "Session rates cards. Fast plays both sides on a timer."
                     }
                 }
             }

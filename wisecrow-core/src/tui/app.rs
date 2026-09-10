@@ -204,65 +204,27 @@ mod media_support {
             }
         }
 
-        pub fn fetch_for_card(&self, translation_id: i32, to_phrase: &str) {
-            let to_phrase = String::from(to_phrase);
+        pub fn fetch_for_card(&self, translation_id: i32) {
             let ctx = Arc::clone(&self.ctx); // clone: Arc shared ownership for async task
             let tx = self.tx.clone(); // clone: sender for async task
 
             tokio::spawn(async move {
-                #[cfg(feature = "audio")]
-                {
-                    let lang = ctx.foreign_lang.clone(); // clone: need owned copy for closure
-                    let word = to_phrase.clone(); // clone: need owned copy for closure
-                    let result = ctx
-                        .cache
-                        .get_or_fetch(translation_id, crate::media::MediaType::Audio, || {
-                            crate::media::audio::generate_tts(&word, &lang, ctx.cereproc.as_ref())
-                        })
-                        .await;
-                    match result {
-                        Ok(path) => {
-                            if let Err(e) = tx.send(MediaResult::Audio(path)) {
-                                tracing::warn!("Failed to send audio result: {e}");
-                            }
+                let subject =
+                    match crate::media::load_media_subject(&ctx.pool, translation_id).await {
+                        Ok(Some(subject)) => subject,
+                        Ok(None) => {
+                            tracing::warn!(translation_id, "media subject missing");
+                            return;
                         }
-                        Err(e) => tracing::debug!("Audio fetch failed: {e}"),
-                    }
-                }
-
-                #[cfg(feature = "images")]
-                {
-                    let Some(ref fetcher) = ctx.image_fetcher else {
-                        return;
+                        Err(error) => {
+                            tracing::warn!(translation_id, %error, "media subject load failed");
+                            return;
+                        }
                     };
-                    let client = ctx.http_client.clone(); // clone: reqwest::Client is Arc-based
-                    let word = to_phrase;
-                    let result = ctx
-                        .cache
-                        .get_or_fetch_attributed(
-                            translation_id,
-                            crate::media::MediaType::Image,
-                            || async {
-                                crate::media::images::fetch_image(&client, &word, fetcher)
-                                    .await
-                                    .map(|image| (image.bytes, image.attribution))
-                            },
-                        )
-                        .await;
-                    match result {
-                        Ok((path, _)) => {
-                            match crate::media::images::load_image_for_display(&path) {
-                                Ok(protocol) => {
-                                    if let Err(e) = tx.send(MediaResult::Image(protocol)) {
-                                        tracing::warn!("Failed to send image result: {e}");
-                                    }
-                                }
-                                Err(e) => tracing::debug!("Image display load failed: {e}"),
-                            }
-                        }
-                        Err(e) => tracing::debug!("Image fetch failed: {e}"),
-                    }
-                }
+                #[cfg(feature = "audio")]
+                fetch_card_audio(&ctx, translation_id, &subject, &tx).await;
+                #[cfg(feature = "images")]
+                fetch_card_image(&ctx, translation_id, &subject, &tx).await;
             });
         }
 
@@ -273,6 +235,85 @@ mod media_support {
                     tracing::debug!("Audio playback failed: {e}");
                 }
             }
+        }
+    }
+
+    #[cfg(feature = "audio")]
+    async fn fetch_card_audio(
+        ctx: &MediaContext,
+        translation_id: i32,
+        subject: &crate::media::MediaSubject,
+        tx: &mpsc::UnboundedSender<MediaResult>,
+    ) {
+        let fingerprint = match crate::media::audio_cache_key(subject, ctx.cereproc.as_ref()) {
+            Ok(fingerprint) => fingerprint,
+            Err(error) => {
+                tracing::debug!("Audio fingerprint failed: {error}");
+                return;
+            }
+        };
+        let lang = String::from(subject.foreign_lang.as_str());
+        let word = String::from(subject.to_phrase.as_str());
+        match ctx
+            .cache
+            .get_or_fetch(
+                translation_id,
+                crate::media::MediaType::Audio,
+                &fingerprint,
+                || crate::media::audio::generate_tts(&word, &lang, ctx.cereproc.as_ref()),
+            )
+            .await
+        {
+            Ok(path) => {
+                if let Err(error) = tx.send(MediaResult::Audio(path)) {
+                    tracing::warn!("Failed to send audio result: {error}");
+                }
+            }
+            Err(error) => tracing::debug!("Audio fetch failed: {error}"),
+        }
+    }
+
+    #[cfg(feature = "images")]
+    async fn fetch_card_image(
+        ctx: &MediaContext,
+        translation_id: i32,
+        subject: &crate::media::MediaSubject,
+        tx: &mpsc::UnboundedSender<MediaResult>,
+    ) {
+        let Some(fetcher) = ctx.image_fetcher.as_ref() else {
+            return;
+        };
+        let Some(query) = subject.applicable_image_query() else {
+            return;
+        };
+        let Some(fingerprint) = crate::media::image_cache_key(subject, fetcher) else {
+            return;
+        };
+        let client = ctx.http_client.clone(); // clone: reqwest::Client is Arc-based
+        let query = String::from(query);
+        match ctx
+            .cache
+            .get_or_fetch_attributed(
+                translation_id,
+                crate::media::MediaType::Image,
+                &fingerprint,
+                || async {
+                    crate::media::images::fetch_image(&client, &query, fetcher)
+                        .await
+                        .map(|image| (image.bytes, image.attribution))
+                },
+            )
+            .await
+        {
+            Ok((path, _)) => match crate::media::images::load_image_for_display(&path) {
+                Ok(protocol) => {
+                    if let Err(error) = tx.send(MediaResult::Image(protocol)) {
+                        tracing::warn!("Failed to send image result: {error}");
+                    }
+                }
+                Err(error) => tracing::debug!("Image display load failed: {error}"),
+            },
+            Err(error) => tracing::debug!("Image fetch failed: {error}"),
         }
     }
 }
@@ -334,7 +375,7 @@ impl App {
         #[cfg(any(feature = "audio", feature = "images"))]
         if let Some(ref media) = self.media {
             if let Some(card) = self.session.cards.get(self.current_index) {
-                media.fetch_for_card(card.translation_id, &card.to_phrase);
+                media.fetch_for_card(card.translation_id);
             }
         }
     }
@@ -672,6 +713,7 @@ mod gloss_state_tests {
                 reps: 0,
                 lapses: 0,
                 is_phrase: false,
+                image_allowed: false,
             }],
         }
     }

@@ -14,6 +14,8 @@ pub fn CardDisplay(
     /// Unsplash both require the origin to be visible wherever it is displayed.
     #[props(default = None)]
     image_credit: Option<String>,
+    #[props(default = false)] audio_failed: bool,
+    #[props(default)] on_retry_audio: EventHandler<()>,
     on_flip: EventHandler<()>,
     on_rate: EventHandler<ReviewRatingDto>,
     #[props(default = ScriptDirection::Ltr)] script_direction: ScriptDirection,
@@ -54,13 +56,10 @@ pub fn CardDisplay(
                                 "Frequency rank: {card.frequency}"
                             }
                         }
-                        if let Some(ref audio_src) = audio_url {
-                            audio {
-                                src: "{audio_src}",
-                                autoplay: true,
-                                controls: true,
-                                class: "mx-auto mt-2",
-                            }
+                        AudioStatus {
+                            audio_url: audio_url.clone(),
+                            audio_failed: audio_failed,
+                            on_retry_audio: on_retry_audio,
                         }
                     }
                 } else {
@@ -82,13 +81,10 @@ pub fn CardDisplay(
                         p { class: "text-gray-500 text-sm",
                             "Click or press Space to reveal"
                         }
-                        if let Some(ref audio_src) = audio_url {
-                            audio {
-                                src: "{audio_src}",
-                                autoplay: true,
-                                controls: true,
-                                class: "mx-auto mt-2",
-                            }
+                        AudioStatus {
+                            audio_url: audio_url.clone(),
+                            audio_failed: audio_failed,
+                            on_retry_audio: on_retry_audio,
                         }
                     }
                 }
@@ -104,6 +100,37 @@ pub fn CardDisplay(
             }
         }
     }
+}
+
+#[component]
+fn AudioStatus(
+    audio_url: Option<String>,
+    audio_failed: bool,
+    on_retry_audio: EventHandler<()>,
+) -> Element {
+    if let Some(ref audio_src) = audio_url {
+        return rsx! {
+            audio {
+                src: "{audio_src}",
+                autoplay: true,
+                controls: true,
+                class: "mx-auto mt-2",
+            }
+        };
+    }
+    if audio_failed {
+        return rsx! {
+            div { class: "mt-2 space-y-2",
+                p { class: "text-sm text-red-400", "Audio unavailable" }
+                button {
+                    class: "bg-gray-700 hover:bg-gray-600 rounded px-3 py-1 text-sm",
+                    onclick: move |_| on_retry_audio.call(()),
+                    "Retry"
+                }
+            }
+        };
+    }
+    rsx! {}
 }
 
 #[component]

@@ -36,6 +36,16 @@ uuid = { version = "1", features = ["serde", "v4"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 gloo-timers = { version = "0.3", features = ["futures"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Element",
+    "HtmlAudioElement",
+    "HtmlMediaElement",
+    "Storage",
+    "Window",
+] }
 
 [features]
 # Sound (TTS) and images are on by default so learn sessions get pronunciation

@@ -8,6 +8,23 @@ use crate::srs::reviews::{ReviewLedger, ReviewSource};
 use crate::srs::scheduler::{CardManager, CardState, ReviewRating};
 use crate::vocabulary::VocabularyQuery;
 
+/// Largest deck accepted by normal and passive learning sessions.
+pub const MAX_DECK_SIZE: u32 = 500;
+/// Stable validation message shared by core and HTTP boundaries.
+pub const DECK_SIZE_ERROR: &str = "Deck size must be between 1 and 500";
+
+/// Validates the shared positive deck-size boundary.
+///
+/// # Errors
+///
+/// Returns [`WisecrowError::InvalidInput`] outside `1..=MAX_DECK_SIZE`.
+pub fn validate_deck_size(deck_size: u32) -> Result<(), WisecrowError> {
+    if !(1..=MAX_DECK_SIZE).contains(&deck_size) {
+        return Err(WisecrowError::InvalidInput(DECK_SIZE_ERROR.into()));
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 pub struct Session {
     pub id: i32,
@@ -37,100 +54,156 @@ impl SessionManager {
         deck_size: u32,
         speed_ms: u32,
     ) -> Result<Session, WisecrowError> {
-        let due =
-            CardManager::due_cards(pool, native_lang, foreign_lang, user_id, deck_size).await?;
-        let due_count = u32::try_from(due.len()).unwrap_or(u32::MAX);
-
-        let mut all_cards = due;
-
-        if due_count < deck_size {
-            let remaining = deck_size.saturating_sub(due_count);
-            // New-card fill follows the 80/20 word/phrase split: each pool is
-            // ranked on its own scale (a phrase seen in 40 sentences can never
-            // outrank a word seen 40,000 times), fetched at full size so the
-            // deck fills when either pool runs short, and interleaved with a
-            // phrase in every 5th slot.
-            let words = VocabularyQuery::ranked_candidates(
-                pool,
-                native_lang,
-                foreign_lang,
-                remaining,
-                crate::vocabulary::IncludeCarded::No,
-                crate::vocabulary::PhraseFilter::Exclude,
-            )
-            .await?;
-            let phrases = VocabularyQuery::ranked_candidates(
-                pool,
-                native_lang,
-                foreign_lang,
-                remaining / 5,
-                crate::vocabulary::IncludeCarded::No,
-                crate::vocabulary::PhraseFilter::Only,
-            )
-            .await?;
-            let unlearned = crate::vocabulary::interleave_deck(
-                words,
-                phrases,
-                usize::try_from(remaining).unwrap_or(usize::MAX),
-            );
-
-            if !unlearned.is_empty() {
-                let translation_ids: Vec<i32> =
-                    unlearned.iter().map(|v| v.translation_id).collect();
-                CardManager::ensure_cards(pool, &translation_ids, user_id).await?;
-
-                let new_cards =
-                    CardManager::due_cards(pool, native_lang, foreign_lang, user_id, remaining)
-                        .await?;
-                all_cards.extend(new_cards);
-            }
-        }
-
-        let deck_size_i32 = i32::try_from(all_cards.len()).unwrap_or(i32::MAX);
-        let speed_ms_i32 = i32::try_from(speed_ms).unwrap_or(i32::MAX);
-
-        let session_id = sqlx::query_scalar::<_, i32>(
-            "INSERT INTO sessions (user_id, native_lang, foreign_lang, deck_size, speed_ms)
-             VALUES ($1, $2, $3, $4, $5)
-             RETURNING id",
+        validate_deck_size(deck_size)?;
+        let cards = Self::build_cards(pool, user_id, native_lang, foreign_lang, deck_size).await?;
+        let stored_deck_size = i32::try_from(cards.len())
+            .map_err(|_| WisecrowError::InvalidInput("session deck is too large".into()))?;
+        let stored_speed = i32::try_from(speed_ms).unwrap_or(i32::MAX);
+        let session_id = Self::insert_session(
+            pool,
+            user_id,
+            native_lang,
+            foreign_lang,
+            stored_deck_size,
+            stored_speed,
         )
-        .bind(user_id)
-        .bind(native_lang)
-        .bind(foreign_lang)
-        .bind(deck_size_i32)
-        .bind(speed_ms_i32)
-        .fetch_one(pool)
         .await?;
-
-        if !all_cards.is_empty() {
-            let card_ids: Vec<i32> = all_cards.iter().map(|c| c.card_id).collect();
-            let positions: Vec<i32> =
-                (0..i32::try_from(all_cards.len()).unwrap_or(i32::MAX)).collect();
-            sqlx::query(
-                "INSERT INTO session_cards (session_id, card_id, position)
-                 SELECT $1, unnest($2::int[]), unnest($3::int[])",
-            )
-            .bind(session_id)
-            .bind(&card_ids)
-            .bind(&positions)
-            .execute(pool)
-            .await?;
-        }
-
+        Self::insert_session_cards(pool, session_id, &cards).await?;
         Ok(Session {
             id: session_id,
             user_id,
             native_lang: native_lang.to_owned(),
             foreign_lang: foreign_lang.to_owned(),
-            deck_size: deck_size_i32,
-            speed_ms: speed_ms_i32,
+            deck_size: stored_deck_size,
+            speed_ms: stored_speed,
             current_index: 0,
-            cards: all_cards,
+            cards,
         })
     }
 
-    /// Resumes the most recent unfinished session for this user and language pair.
-    /// Returns `None` if no paused session exists.
+    async fn build_cards(
+        pool: &PgPool,
+        user_id: i32,
+        native_lang: &str,
+        foreign_lang: &str,
+        deck_size: u32,
+    ) -> Result<Vec<CardState>, WisecrowError> {
+        let mut cards =
+            CardManager::due_cards(pool, native_lang, foreign_lang, user_id, deck_size).await?;
+        let due_count = u32::try_from(cards.len())
+            .map_err(|_| WisecrowError::InvalidInput("too many due cards".into()))?;
+        if due_count >= deck_size {
+            return Ok(cards);
+        }
+        let remaining = deck_size - due_count;
+        let unlearned = Self::select_unlearned(pool, native_lang, foreign_lang, remaining).await?;
+        if unlearned.is_empty() {
+            return Ok(cards);
+        }
+        let translation_ids: Vec<i32> =
+            unlearned.iter().map(|entry| entry.translation_id).collect();
+        CardManager::ensure_cards(pool, &translation_ids, user_id).await?;
+        let new_cards =
+            CardManager::cards_for_translation_ids(pool, user_id, &translation_ids).await?;
+        cards.extend(new_cards);
+        Ok(cards)
+    }
+
+    async fn select_unlearned(
+        pool: &PgPool,
+        native_lang: &str,
+        foreign_lang: &str,
+        remaining: u32,
+    ) -> Result<Vec<crate::vocabulary::VocabularyEntry>, WisecrowError> {
+        let words = VocabularyQuery::ranked_candidates(
+            pool,
+            native_lang,
+            foreign_lang,
+            remaining,
+            crate::vocabulary::IncludeCarded::No,
+            crate::vocabulary::PhraseFilter::Exclude,
+        )
+        .await?;
+        let phrases = VocabularyQuery::ranked_candidates(
+            pool,
+            native_lang,
+            foreign_lang,
+            remaining / 5,
+            crate::vocabulary::IncludeCarded::No,
+            crate::vocabulary::PhraseFilter::Only,
+        )
+        .await?;
+        let size = usize::try_from(remaining)
+            .map_err(|_| WisecrowError::InvalidInput("remaining deck is too large".into()))?;
+        Ok(crate::vocabulary::interleave_deck(words, phrases, size))
+    }
+
+    async fn insert_session(
+        pool: &PgPool,
+        user_id: i32,
+        native_lang: &str,
+        foreign_lang: &str,
+        deck_size: i32,
+        speed_ms: i32,
+    ) -> Result<i32, WisecrowError> {
+        Ok(sqlx::query_scalar(
+            "INSERT INTO sessions (user_id, native_lang, foreign_lang, deck_size, speed_ms)
+             VALUES ($1, $2, $3, $4, $5) RETURNING id",
+        )
+        .bind(user_id)
+        .bind(native_lang)
+        .bind(foreign_lang)
+        .bind(deck_size)
+        .bind(speed_ms)
+        .fetch_one(pool)
+        .await?)
+    }
+
+    async fn insert_session_cards(
+        pool: &PgPool,
+        session_id: i32,
+        cards: &[CardState],
+    ) -> Result<(), WisecrowError> {
+        if cards.is_empty() {
+            return Ok(());
+        }
+        let card_ids: Vec<i32> = cards.iter().map(|card| card.card_id).collect();
+        let card_count = i32::try_from(cards.len())
+            .map_err(|_| WisecrowError::InvalidInput("too many session cards".into()))?;
+        let positions: Vec<i32> = (0..card_count).collect();
+        sqlx::query(
+            "INSERT INTO session_cards (session_id, card_id, position)
+             SELECT $1, unnest($2::int[]), unnest($3::int[])",
+        )
+        .bind(session_id)
+        .bind(&card_ids)
+        .bind(&positions)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn latest_paused_session(
+        pool: &PgPool,
+        user_id: i32,
+        native_lang: &str,
+        foreign_lang: &str,
+    ) -> Result<Option<(i32, i32, i32)>, WisecrowError> {
+        Ok(sqlx::query_as(
+            "SELECT id, deck_size, speed_ms
+             FROM sessions
+             WHERE native_lang = $1 AND foreign_lang = $2 AND user_id = $3
+               AND completed_at IS NULL AND paused_at IS NOT NULL
+             ORDER BY paused_at DESC LIMIT 1",
+        )
+        .bind(native_lang)
+        .bind(foreign_lang)
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?)
+    }
+
+    /// Resumes the latest unfinished session, if one is paused.
     ///
     /// # Errors
     ///
@@ -141,19 +214,7 @@ impl SessionManager {
         native_lang: &str,
         foreign_lang: &str,
     ) -> Result<Option<Session>, WisecrowError> {
-        let row = sqlx::query_as::<_, (i32, i32, i32)>(
-            "SELECT id, deck_size, speed_ms
-             FROM sessions
-             WHERE native_lang = $1 AND foreign_lang = $2 AND user_id = $3
-               AND completed_at IS NULL AND paused_at IS NOT NULL
-             ORDER BY paused_at DESC
-             LIMIT 1",
-        )
-        .bind(native_lang)
-        .bind(foreign_lang)
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await?;
+        let row = Self::latest_paused_session(pool, user_id, native_lang, foreign_lang).await?;
 
         let Some((session_id, deck_size, speed_ms)) = row else {
             return Ok(None);
@@ -303,10 +364,11 @@ impl SessionManager {
             "SELECT {} \
              FROM session_cards sc \
              JOIN cards c ON sc.card_id = c.id \
-             JOIN translations t ON c.translation_id = t.id \
+             {} \
              WHERE sc.session_id = $1 \
              ORDER BY sc.position",
-            super::scheduler::CARD_SELECT_COLUMNS
+            super::scheduler::CARD_SELECT_COLUMNS,
+            super::scheduler::CARD_PRESENTATION_JOINS
         );
         let rows = sqlx::query_as::<_, super::scheduler::CardRow>(&query)
             .bind(session_id)
@@ -323,5 +385,33 @@ const fn review_rating_dto(rating: ReviewRating) -> ReviewRatingDto {
         ReviewRating::Hard => ReviewRatingDto::Hard,
         ReviewRating::Good => ReviewRatingDto::Good,
         ReviewRating::Easy => ReviewRatingDto::Easy,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+    use sqlx::postgres::PgPoolOptions;
+
+    #[rstest]
+    #[case(0, false)]
+    #[case(1, true)]
+    #[case(500, true)]
+    #[case(501, false)]
+    fn deck_size_boundaries(#[case] size: u32, #[case] valid: bool) {
+        assert_eq!(validate_deck_size(size).is_ok(), valid);
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(501)]
+    #[tokio::test]
+    async fn create_rejects_invalid_size_before_database_access(#[case] size: u32) {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://wisecrow:wisecrow@127.0.0.1:1/unreachable")
+            .expect("lazy pool");
+        let result = SessionManager::create(&pool, 1, "en", "fr", size, 1_000).await;
+        assert!(matches!(result, Err(WisecrowError::InvalidInput(_))));
     }
 }

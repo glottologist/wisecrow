@@ -30,6 +30,7 @@ impl From<&CardState> for CardDto {
             reps: card.reps,
             lapses: card.lapses,
             is_phrase: card.is_phrase,
+            image_allowed: card.image_allowed,
         }
     }
 }

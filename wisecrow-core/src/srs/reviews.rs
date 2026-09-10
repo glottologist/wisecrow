@@ -10,7 +10,9 @@ use wisecrow_learning::srs::{
 };
 
 use crate::errors::WisecrowError;
-use crate::srs::scheduler::{f64_to_f32, CardRow, CardState, CardStatus, CARD_SELECT_COLUMNS};
+use crate::srs::scheduler::{
+    f64_to_f32, CardRow, CardState, CardStatus, CARD_PRESENTATION_JOINS, CARD_SELECT_COLUMNS,
+};
 
 const MAX_REVIEW_BATCH: usize = 500;
 const MAX_FUTURE_MINUTES: i64 = 5;
@@ -509,8 +511,7 @@ async fn load_card(
     translation_id: i32,
 ) -> Result<CardState, WisecrowError> {
     let query = format!(
-        "SELECT {CARD_SELECT_COLUMNS} FROM cards c
-         JOIN translations t ON c.translation_id = t.id
+        "SELECT {CARD_SELECT_COLUMNS} FROM cards c {CARD_PRESENTATION_JOINS}
          WHERE c.user_id = $1 AND c.translation_id = $2"
     );
     let row = sqlx::query_as::<_, CardRow>(&query)

@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::api::auth::logout;
+use crate::components::theme::ThemeSelector;
 use crate::router::Route;
 
 #[component]
@@ -10,11 +11,11 @@ pub fn Layout() -> Element {
     rsx! {
         div { class: "min-h-screen bg-gray-900 text-white",
             nav { class: "bg-gray-800 border-b border-gray-700 px-6 py-4",
-                div { class: "flex items-center justify-between max-w-6xl mx-auto",
+                div { class: "flex items-center justify-between max-w-6xl mx-auto site-nav-inner",
                     Link { to: Route::Home {}, class: "text-2xl font-bold text-emerald-400 hover:text-emerald-300",
                         "Wisecrow"
                     }
-                    div { class: "flex gap-4 items-center",
+                    div { class: "flex gap-4 items-center nav-actions",
                         Link { to: Route::Home {}, class: "px-3 py-2 rounded hover:bg-gray-700 transition",
                             "Home"
                         }
@@ -23,8 +24,10 @@ pub fn Layout() -> Element {
                             class: "px-3 py-2 rounded hover:bg-gray-700 transition",
                             "Quiz"
                         }
+                        ThemeSelector {}
                         button {
-                            class: "px-3 py-2 rounded hover:bg-gray-700 transition text-gray-300",
+                            r#type: "button",
+                            class: "px-3 py-2 rounded hover:bg-gray-700 transition text-gray-300 logout-button",
                             onclick: move |_| async move {
                                 match logout().await {
                                     Ok(()) => {

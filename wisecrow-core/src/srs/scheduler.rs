@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
 use num_traits::ToPrimitive;
 use sqlx::PgPool;
@@ -9,10 +11,13 @@ use wisecrow_learning::srs::{
 use crate::errors::WisecrowError;
 
 pub(crate) const CARD_SELECT_COLUMNS: &str =
-    "c.id, c.translation_id, t.from_phrase, t.to_phrase, t.frequency, \
+    "c.id, c.translation_id, p.from_phrase, p.to_phrase, t.frequency, \
      c.stability, c.difficulty, c.elapsed_days, c.scheduled_days, c.state, \
-     c.last_review, c.due, c.reps, c.lapses, \
-     EXISTS (SELECT 1 FROM phrase_translations pt WHERE pt.translation_id = t.id)";
+     c.last_review, c.due, c.reps, c.lapses, p.is_phrase, \
+     p.image_query IS NOT NULL";
+
+pub(crate) const CARD_PRESENTATION_JOINS: &str = "JOIN translations t ON c.translation_id = t.id \
+     JOIN translation_presentations p ON p.translation_id = t.id";
 
 pub(crate) type CardRow = (
     i32,
@@ -29,6 +34,7 @@ pub(crate) type CardRow = (
     DateTime<Utc>,
     i32,
     i32,
+    bool,
     bool,
 );
 
@@ -48,9 +54,10 @@ pub struct CardState {
     pub due: DateTime<Utc>,
     pub reps: i32,
     pub lapses: i32,
-    /// A promoted phrase rather than a word; phrase cards skip image
-    /// fetches because image queries are word-shaped.
+    /// A promoted phrase rather than a word.
     pub is_phrase: bool,
+    /// Whether the canonical presentation has a concrete image query.
+    pub image_allowed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -174,6 +181,7 @@ impl CardState {
             reps,
             lapses,
             is_phrase,
+            image_allowed,
         ): CardRow,
     ) -> Self {
         Self {
@@ -192,6 +200,7 @@ impl CardState {
             reps,
             lapses,
             is_phrase,
+            image_allowed,
         }
     }
 
@@ -232,6 +241,7 @@ impl CardState {
             reps: state.reps,
             lapses: state.lapses,
             is_phrase: self.is_phrase,
+            image_allowed: self.image_allowed,
         })
     }
 }
@@ -269,6 +279,46 @@ impl CardManager {
         Ok(ids)
     }
 
+    /// Loads one user card for every translation ID in input order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for duplicate/missing IDs or a failed database query.
+    pub async fn cards_for_translation_ids(
+        pool: &PgPool,
+        user_id: i32,
+        translation_ids: &[i32],
+    ) -> Result<Vec<CardState>, WisecrowError> {
+        if translation_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let unique: HashSet<i32> = translation_ids.iter().copied().collect();
+        if unique.len() != translation_ids.len() {
+            return Err(WisecrowError::InvalidInput(
+                "selected translation IDs must be unique".into(),
+            ));
+        }
+        let query = format!(
+            "SELECT {CARD_SELECT_COLUMNS} \
+             FROM unnest($1::INT[]) WITH ORDINALITY requested(translation_id, position) \
+             JOIN cards c ON c.translation_id = requested.translation_id \
+                         AND c.user_id = $2 \
+             {CARD_PRESENTATION_JOINS} \
+             ORDER BY requested.position"
+        );
+        let rows = sqlx::query_as::<_, CardRow>(&query)
+            .bind(translation_ids)
+            .bind(user_id)
+            .fetch_all(pool)
+            .await?;
+        if rows.len() != translation_ids.len() {
+            return Err(WisecrowError::InvalidInput(
+                "not every selected translation has a user card".into(),
+            ));
+        }
+        Ok(rows.into_iter().map(CardState::from_row).collect())
+    }
+
     /// Fetches a single card by ID, including its translation data.
     ///
     /// # Errors
@@ -277,8 +327,7 @@ impl CardManager {
     pub async fn get_card_by_id(pool: &PgPool, card_id: i32) -> Result<CardState, WisecrowError> {
         let query = format!(
             "SELECT {CARD_SELECT_COLUMNS} \
-             FROM cards c \
-             JOIN translations t ON c.translation_id = t.id \
+             FROM cards c {CARD_PRESENTATION_JOINS} \
              WHERE c.id = $1"
         );
         let row = sqlx::query_as::<_, CardRow>(&query)
@@ -307,12 +356,9 @@ impl CardManager {
     ) -> Result<Vec<CardState>, WisecrowError> {
         let query = format!(
             "SELECT {CARD_SELECT_COLUMNS} \
-             FROM cards c \
-             JOIN translations t ON c.translation_id = t.id \
-             JOIN languages fl ON t.from_language_id = fl.id \
-             JOIN languages tl ON t.to_language_id = tl.id \
-             WHERE fl.code = $1 AND tl.code = $2 \
-               AND c.user_id = $3 AND c.due <= NOW() \
+             FROM cards c {CARD_PRESENTATION_JOINS} \
+             WHERE p.native_lang = $1 AND p.foreign_lang = $2 \
+               AND p.teachable AND c.user_id = $3 AND c.due <= NOW() \
              ORDER BY \
                 CASE c.state \
                     WHEN 3 THEN 0 \
@@ -321,7 +367,7 @@ impl CardManager {
                     WHEN 2 THEN 3 \
                     ELSE 4 \
                 END, \
-                c.due ASC \
+                c.due ASC, c.id \
              LIMIT $4"
         );
         let rows = sqlx::query_as::<_, CardRow>(&query)
@@ -388,8 +434,7 @@ impl CardManager {
     ) -> Result<Option<CardState>, WisecrowError> {
         let query = format!(
             "SELECT {CARD_SELECT_COLUMNS} \
-             FROM cards c \
-             JOIN translations t ON c.translation_id = t.id \
+             FROM cards c {CARD_PRESENTATION_JOINS} \
              WHERE c.translation_id = $1 AND c.user_id = $2"
         );
         let row = sqlx::query_as::<_, CardRow>(&query)
