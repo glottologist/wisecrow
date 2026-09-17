@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-bb69ef0e.js";
+            window.path_to_searchindex_js = "../searchindex-e7485dfb.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -218,6 +218,31 @@ from disk:</p>
 attributes matching the codes you pass, which is the shape OPUS, the Welsh
 Government memories and most CAT tools emit. Decompress the archive first —
 a <code>.gz</code> is rejected rather than silently parsed as empty.</p>
+<p>Where the file tags a language differently from Wisecrow’s own code, pass
+the file’s tag alongside the code. A memory that labels its Chinese side
+<code>zh_CN</code>, for instance, is still stored under the application language <code>zh</code>:</p>
+<pre><code class="language-sh">wisecrow ingest -n en -f zh --file ./sample.tmx --tmx-target-lang zh_CN
+</code></pre>
+<p><code>--tmx-source-lang</code> does the same for the native side; both flags require
+<code>--file</code>. The tag only selects which <code>&lt;tuv&gt;</code> to read. It never becomes a
+language record of its own, and the text is still checked against the
+script of the canonical code, so an alias cannot smuggle the wrong language
+into a deck.</p>
+<h2 id="chinese-and-other-aliased-releases"><a class="header" href="#chinese-and-other-aliased-releases">Chinese and other aliased releases</a></h2>
+<p>OpenSubtitles publishes its Chinese memories as <code>zh_CN</code> and <code>zh_TW</code> rather
+than a bare <code>zh</code>, so a request for <code>zh</code> would otherwise find no archive.
+Wisecrow maps <code>zh</code> to the Simplified release automatically for that corpus,
+in either direction (<code>-n en -f zh</code> or <code>-n zh -f en</code>), and stores the pairs
+under <code>zh</code>. The Traditional release is not imported; the other corpora carry
+a plain <code>zh</code> and need no mapping.</p>
+<h2 id="when-an-import-fails"><a class="header" href="#when-an-import-fails">When an import fails</a></h2>
+<p>An ingest that stores nothing is reported as a failure rather than as a
+successful run with a zero in the log. Malformed XML, a database rejection,
+or a file whose <code>xml:lang</code> tags match neither code (the usual sign that an
+alias flag is missing) each abort that job with an error. When several
+corpus jobs run in one invocation, the remaining jobs still complete; the
+command then exits nonzero with a summary such as <code>2 corpus jobs failed</code>, so
+a scripted ingest cannot pass silently.</p>
 <h2 id="filter-at-the-cli"><a class="header" href="#filter-at-the-cli">Filter at the CLI</a></h2>
 <p>The <code>--corpus</code> flag accepts a single space-delimited argument:</p>
 <pre><code class="language-sh">wisecrow ingest -n en -f ja --corpus "open_subtitles cc_matrix"
@@ -270,6 +295,19 @@ reproducibility) without writing them into the database, use:</p>
 languages — useful for fixture preparation:</p>
 <pre><code class="language-sh">wisecrow download-all -n en -o ./fixtures --corpus "open_subtitles"
 </code></pre>
+<h2 id="warm-media-for-what-will-be-learned"><a class="header" href="#warm-media-for-what-will-be-learned">Warm media for what will be learned</a></h2>
+<p>Once a pair is ranked and enriched, <code>prefetch-media</code> prepares speech and
+images for a bounded slice of the deck rather than for every row the corpus
+holds. Preview the first page first: it is read-only, calls no provider,
+and reports what is cached, what is missing and what this build cannot
+produce.</p>
+<pre><code class="language-sh">wisecrow prefetch-media -n en -f fr --limit 100 --offset 0 --dry-run
+wisecrow prefetch-media -n en -f fr --limit 100 --offset 0 --max-bytes 67108864
+</code></pre>
+<p>Running the same range again returns only cache hits and admits no bytes,
+which is the check that a warmup completed. See the
+<a href="../reference/cli-reference.html#prefetch-media">CLI reference</a> for the budget
+definition and paging rules.</p>
 <h2 id="layer-external-frequency-lists"><a class="header" href="#layer-external-frequency-lists">Layer external frequency lists</a></h2>
 <p>If you find OPUS frequencies too noisy, layer a Hermit Dave list on top.
 This is not a CLI command yet, but the function is exposed in the library:</p>

@@ -38,7 +38,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-bb69ef0e.js";
+            window.path_to_searchindex_js = "searchindex-e7485dfb.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d4c59dab.js"></script>
@@ -493,6 +493,31 @@ from disk:</p>
 attributes matching the codes you pass, which is the shape OPUS, the Welsh
 Government memories and most CAT tools emit. Decompress the archive first —
 a <code>.gz</code> is rejected rather than silently parsed as empty.</p>
+<p>Where the file tags a language differently from Wisecrow’s own code, pass
+the file’s tag alongside the code. A memory that labels its Chinese side
+<code>zh_CN</code>, for instance, is still stored under the application language <code>zh</code>:</p>
+<pre><code class="language-sh">wisecrow ingest -n en -f zh --file ./sample.tmx --tmx-target-lang zh_CN
+</code></pre>
+<p><code>--tmx-source-lang</code> does the same for the native side; both flags require
+<code>--file</code>. The tag only selects which <code>&lt;tuv&gt;</code> to read. It never becomes a
+language record of its own, and the text is still checked against the
+script of the canonical code, so an alias cannot smuggle the wrong language
+into a deck.</p>
+<h2 id="chinese-and-other-aliased-releases"><a class="header" href="#chinese-and-other-aliased-releases">Chinese and other aliased releases</a></h2>
+<p>OpenSubtitles publishes its Chinese memories as <code>zh_CN</code> and <code>zh_TW</code> rather
+than a bare <code>zh</code>, so a request for <code>zh</code> would otherwise find no archive.
+Wisecrow maps <code>zh</code> to the Simplified release automatically for that corpus,
+in either direction (<code>-n en -f zh</code> or <code>-n zh -f en</code>), and stores the pairs
+under <code>zh</code>. The Traditional release is not imported; the other corpora carry
+a plain <code>zh</code> and need no mapping.</p>
+<h2 id="when-an-import-fails"><a class="header" href="#when-an-import-fails">When an import fails</a></h2>
+<p>An ingest that stores nothing is reported as a failure rather than as a
+successful run with a zero in the log. Malformed XML, a database rejection,
+or a file whose <code>xml:lang</code> tags match neither code (the usual sign that an
+alias flag is missing) each abort that job with an error. When several
+corpus jobs run in one invocation, the remaining jobs still complete; the
+command then exits nonzero with a summary such as <code>2 corpus jobs failed</code>, so
+a scripted ingest cannot pass silently.</p>
 <h2 id="filter-at-the-cli"><a class="header" href="#filter-at-the-cli">Filter at the CLI</a></h2>
 <p>The <code>--corpus</code> flag accepts a single space-delimited argument:</p>
 <pre><code class="language-sh">wisecrow ingest -n en -f ja --corpus "open_subtitles cc_matrix"
@@ -545,6 +570,19 @@ reproducibility) without writing them into the database, use:</p>
 languages — useful for fixture preparation:</p>
 <pre><code class="language-sh">wisecrow download-all -n en -o ./fixtures --corpus "open_subtitles"
 </code></pre>
+<h2 id="warm-media-for-what-will-be-learned"><a class="header" href="#warm-media-for-what-will-be-learned">Warm media for what will be learned</a></h2>
+<p>Once a pair is ranked and enriched, <code>prefetch-media</code> prepares speech and
+images for a bounded slice of the deck rather than for every row the corpus
+holds. Preview the first page first: it is read-only, calls no provider,
+and reports what is cached, what is missing and what this build cannot
+produce.</p>
+<pre><code class="language-sh">wisecrow prefetch-media -n en -f fr --limit 100 --offset 0 --dry-run
+wisecrow prefetch-media -n en -f fr --limit 100 --offset 0 --max-bytes 67108864
+</code></pre>
+<p>Running the same range again returns only cache hits and admits no bytes,
+which is the check that a warmup completed. See the
+<a href="#prefetch-media">CLI reference</a> for the budget
+definition and paging rules.</p>
 <h2 id="layer-external-frequency-lists"><a class="header" href="#layer-external-frequency-lists">Layer external frequency lists</a></h2>
 <p>If you find OPUS frequencies too noisy, layer a Hermit Dave list on top.
 This is not a CLI command yet, but the function is exposed in the library:</p>
@@ -673,6 +711,22 @@ Gaelic list reached 369.</p>
 whole-phrase, so this ranks single-word rows and leaves the sentences
 containing those words alone. A tokeniser is required, so Khmer, Lao and
 Burmese are refused rather than mis-segmented.</p>
+<h2 id="what-counts-as-corpus-evidence"><a class="header" href="#what-counts-as-corpus-evidence">What counts as corpus evidence</a></h2>
+<p>Not every row in <code>translations</code> is corpus text. <code>promote-words</code> generates a
+learning row for a word that only ever appeared inside sentences, and
+<code>translate-phrases</code> links a promoted phrase to a row of its own; both are
+learning material that Wisecrow itself wrote. Were they counted, each
+promotion would add one occurrence of its own word to the very counts that
+justified it, and a repeated cycle would slowly inflate the ranking with its
+own output.</p>
+<p>Corpus derivation, phrase extraction and sentence scoring therefore read the
+<code>corpus_evidence_translations</code> view, which excludes rows owned by a word
+promotion and rows linked from <code>phrase_translations</code>. Ranking likewise leaves
+those rows’ <code>corpus_frequency</code> alone: a generated word carries the evidence
+count that produced it, and a promoted phrase its own review. One visible
+consequence is that historical phrase counts may fall slightly after
+upgrading, since a phrase’s own linked row no longer counts towards it; that
+is the count becoming honest, not data going missing.</p>
 <h2 id="checking-the-result"><a class="header" href="#checking-the-result">Checking the result</a></h2>
 <p>The command reports how many rows it updated, and the count of rows that clear
 the deck filter is the figure that matters:</p>
@@ -1712,6 +1766,8 @@ list.</p>
 <tr><td><a href="#import-pdf"><code>import-pdf</code></a></td><td><code>ip</code></td><td style="text-align: center">yes</td><td>Import grammar rules extracted from a PDF.</td></tr>
 <tr><td><a href="#generate-exercises"><code>generate-exercises</code></a></td><td><code>ge</code></td><td style="text-align: center">yes + LLM</td><td>Generate cloze and MC quizzes from stored rules.</td></tr>
 <tr><td><a href="#quiz"><code>quiz</code></a></td><td><code>q</code></td><td style="text-align: center">no</td><td>Run a quiz directly from a PDF.</td></tr>
+<tr><td><a href="#extract-words"><code>extract-words</code></a></td><td>—</td><td style="text-align: center">yes</td><td>Count sentence words into word candidates.</td></tr>
+<tr><td><a href="#promote-words"><code>promote-words</code></a></td><td>—</td><td style="text-align: center">yes + LLM</td><td>Give candidates meanings and link them to learning rows.</td></tr>
 <tr><td><a href="#prefetch-media"><code>prefetch-media</code></a></td><td><code>pm</code></td><td style="text-align: center">yes</td><td>Pre-warm the audio/image cache.</td></tr>
 <tr><td><a href="#sync-1"><code>sync</code></a></td><td><code>s</code></td><td style="text-align: center">yes</td><td>Pull data from a remote Wisecrow.</td></tr>
 <tr><td><a href="#gloss"><code>gloss</code></a></td><td><code>gl</code></td><td style="text-align: center">yes + LLM</td><td>Leipzig interlinear gloss for a sentence (cached).</td></tr>
@@ -1787,9 +1843,15 @@ in-flight tasks on SIGINT/SIGTERM.</p>
 </thead>
 <tbody>
 <tr><td><code>--file</code></td><td style="text-align: right">—</td><td>Ingest this local TMX file instead of downloading. Must be decompressed; the corpus and download options are ignored.</td></tr>
+<tr><td><code>--tmx-source-lang</code></td><td style="text-align: right">native code</td><td>Exact <code>xml:lang</code> tag the file uses for the native side. Requires <code>--file</code>.</td></tr>
+<tr><td><code>--tmx-target-lang</code></td><td style="text-align: right">foreign code</td><td>Exact <code>xml:lang</code> tag the file uses for the foreign side, such as <code>zh_CN</code> for <code>zh</code>. Requires <code>--file</code>.</td></tr>
 </tbody>
 </table>
 </div>
+<p>OpenSubtitles publishes Chinese as <code>zh_CN</code>; a request for <code>zh</code> selects that
+archive automatically and stores its pairs under <code>zh</code>. An import that accepts
+no pairs, meets malformed XML or is refused by the database fails that job,
+and the command exits nonzero once every job has finished.</p>
 <p>Per-batch behaviour:</p>
 <ul>
 <li>Batches of 1000 pairs are deduplicated by <code>(source, target)</code> before insert.</li>
@@ -1841,6 +1903,54 @@ whichever side of a pair holds the listed language, so ingest direction is
 irrelevant. Only whole phrases match: a word list ranks single-word rows, not
 the sentences containing that word. A file that parses to no entries is an
 error rather than a silent no-op.</p>
+<hr>
+<h2 id="extract-words"><a class="header" href="#extract-words"><code>extract-words</code></a></h2>
+<pre><code class="language-sh">wisecrow extract-words -n &lt;NATIVE&gt; -f &lt;FOREIGN&gt; [--limit N] [--min-occurrences N]
+</code></pre>
+<p>Counts the words of every corpus sentence for the pair and publishes the most
+frequent as word candidates, each with up to three source sentences kept as
+evidence. Counting runs inside PostgreSQL temporary tables on one dedicated
+connection, so a corpus of millions of rows is never held in memory, and a
+re-run replaces a candidate’s count rather than adding to it.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th style="text-align: right">Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--limit</code></td><td style="text-align: right"><code>500</code></td><td>Candidates to publish, most frequent first (1–10,000).</td></tr>
+<tr><td><code>--min-occurrences</code></td><td style="text-align: right"><code>5</code></td><td>Occurrences a word needs, across at least two sentences (at least 2).</td></tr>
+</tbody>
+</table>
+</div>
+<p>Rows that an earlier <code>promote-words</code> generated, and rows promoted as phrases,
+are not corpus text and are never counted.</p>
+<hr>
+<h2 id="promote-words"><a class="header" href="#promote-words"><code>promote-words</code></a></h2>
+<pre><code class="language-sh">wisecrow promote-words -n &lt;NATIVE&gt; -f &lt;FOREIGN&gt; [--limit N] [--mode pending|retry-failed|all]
+</code></pre>
+<p>Asks the model for a canonical presentation of each candidate, with its source
+sentences as untrusted context, and links every accepted word to the
+translation row that will teach it. An existing corpus row spelling the word is
+reused; otherwise a generated row is created and owned by the promotion. IDs
+are stable: refreshing a meaning under <code>--mode all</code> changes the text of the
+same row and leaves every card and review on it untouched.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th style="text-align: right">Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--limit</code></td><td style="text-align: right"><code>200</code></td><td>Candidates to attempt in one run (1–1,000).</td></tr>
+<tr><td><code>--mode</code></td><td style="text-align: right"><code>pending</code></td><td><code>pending</code> attempts new candidates; <code>retry-failed</code> adds those whose last attempt failed; <code>all</code> refreshes every candidate.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The run reports attempted, accepted, rejected, failed and stale counts and
+exits nonzero when any candidate failed or went stale, so a scripted pilot
+cannot pass on a partial result. Generation happens outside the database
+transaction; each candidate then commits on its own, so a failure part-way
+keeps every earlier success.</p>
 <hr>
 <h2 id="learn"><a class="header" href="#learn"><code>learn</code></a></h2>
 <pre><code class="language-sh">wisecrow learn -n &lt;NATIVE&gt; -f &lt;FOREIGN&gt; [--deck-size N] [--speed-ms MS] [--user-id N]
@@ -1960,13 +2070,53 @@ trying the quiz UI.</p>
 </div>
 <hr>
 <h2 id="prefetch-media"><a class="header" href="#prefetch-media"><code>prefetch-media</code></a></h2>
-<pre><code class="language-sh">wisecrow prefetch-media -n &lt;NATIVE&gt; -f &lt;FOREIGN&gt; [--audio BOOL] [--images BOOL]
+<pre><code class="language-sh">wisecrow prefetch-media -n &lt;NATIVE&gt; -f &lt;FOREIGN&gt; [--limit N] [--offset N] [--max-bytes N] [--dry-run] [--audio BOOL] [--images BOOL]
 </code></pre>
-<p>Walks the deck and warms the on-disk cache for audio and/or image media.
-Audio uses Microsoft Edge TTS (no API key). Images need at least one
-stock-photo key (<code>WISECROW__UNSPLASH_API_KEY</code>, <code>WISECROW__PEXELS_API_KEY</code>,
-and/or <code>WISECROW__PIXABAY_API_KEY</code>; optional <code>WISECROW__IMAGE_PROVIDER</code>).</p>
-<p>This command is a no-op for media types whose feature is not compiled in.</p>
+<p>Prepares the on-disk cache for a finite slice of the pair’s preparation
+deck: the first 10,000 ranked words that carry a current presentation and
+the first 2,000 ranked phrases, interleaved to at most 10,000 entries. The
+deck is the same however much of it a run asks for, so <code>--offset</code> names a
+stable position until the ranking or presentations change; after an
+import, ranking or enrichment, preview again from offset zero.</p>
+<pre><code class="language-sh">wisecrow prefetch-media -n en -f fr --limit 100 --offset 0 --dry-run
+wisecrow prefetch-media -n en -f fr --limit 100 --offset 0 --max-bytes 67108864
+wisecrow prefetch-media -n en -f br --limit 100 --audio=false --images=true --dry-run
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th style="text-align: right">Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--limit</code></td><td style="text-align: right"><code>100</code></td><td>Deck entries in this run (1–5,000).</td></tr>
+<tr><td><code>--offset</code></td><td style="text-align: right"><code>0</code></td><td>Deck position to start from; offset plus limit may not pass 10,000.</td></tr>
+<tr><td><code>--max-bytes</code></td><td style="text-align: right"><code>67108864</code></td><td>Generated payload bytes the run may admit (1 byte–5 GiB).</td></tr>
+<tr><td><code>--dry-run</code></td><td style="text-align: right">off</td><td>Read-only preview: reports cached and missing media, generates nothing, applies no migrations and creates no cache directory.</td></tr>
+<tr><td><code>--audio</code></td><td style="text-align: right"><code>true</code></td><td>Prepare speech; <code>--audio=false</code> skips it.</td></tr>
+<tr><td><code>--images</code></td><td style="text-align: right"><code>true</code></td><td>Prepare images; <code>--images=false</code> skips it.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The budget counts new payload bytes admitted during this invocation and
+nothing else: cache hits cost nothing, filesystem overhead and completed
+provider transfers are not counted, and a charge is never refunded, so a
+payload admitted and then lost to a publication error still counts. Once a
+payload is refused, later misses are reported as budget-exhausted without a
+provider call, while probes continue so hits stay identifiable. At most four
+requests are outstanding at once, and presentations are loaded one hundred
+at a time.</p>
+<p>Audio uses Microsoft Edge TTS (no API key), or CereProc where configured.
+Images need at least one stock-photo key (<code>WISECROW__UNSPLASH_API_KEY</code>,
+<code>WISECROW__PEXELS_API_KEY</code> and/or <code>WISECROW__PIXABAY_API_KEY</code>; optional
+<code>WISECROW__IMAGE_PROVIDER</code>). A medium this build or configuration cannot
+produce is reported as unsupported rather than ready: a preview says so,
+and an execution is refused before any call, so a language without a voice
+(Breton, for instance) is prepared with <code>--audio=false --images=true</code>.</p>
+<p>The run prints the range, per-medium counters, admitted and generated bytes
+and the next offset, then exits nonzero when any medium failed, was refused
+by the budget or is unsupported, naming the first affected IDs so the same
+range can be retried before advancing. A preview’s missing entries are
+expected and do not fail the run.</p>
 <hr>
 <h2 id="sync-1"><a class="header" href="#sync-1"><code>sync</code></a></h2>
 <pre><code class="language-sh">wisecrow sync --remote https://wisecrow.example.com [--api-key KEY]

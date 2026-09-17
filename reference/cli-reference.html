@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-bb69ef0e.js";
+            window.path_to_searchindex_js = "../searchindex-e7485dfb.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -206,6 +206,8 @@ list.</p>
 <tr><td><a href="#import-pdf"><code>import-pdf</code></a></td><td><code>ip</code></td><td style="text-align: center">yes</td><td>Import grammar rules extracted from a PDF.</td></tr>
 <tr><td><a href="#generate-exercises"><code>generate-exercises</code></a></td><td><code>ge</code></td><td style="text-align: center">yes + LLM</td><td>Generate cloze and MC quizzes from stored rules.</td></tr>
 <tr><td><a href="#quiz"><code>quiz</code></a></td><td><code>q</code></td><td style="text-align: center">no</td><td>Run a quiz directly from a PDF.</td></tr>
+<tr><td><a href="#extract-words"><code>extract-words</code></a></td><td>—</td><td style="text-align: center">yes</td><td>Count sentence words into word candidates.</td></tr>
+<tr><td><a href="#promote-words"><code>promote-words</code></a></td><td>—</td><td style="text-align: center">yes + LLM</td><td>Give candidates meanings and link them to learning rows.</td></tr>
 <tr><td><a href="#prefetch-media"><code>prefetch-media</code></a></td><td><code>pm</code></td><td style="text-align: center">yes</td><td>Pre-warm the audio/image cache.</td></tr>
 <tr><td><a href="#sync"><code>sync</code></a></td><td><code>s</code></td><td style="text-align: center">yes</td><td>Pull data from a remote Wisecrow.</td></tr>
 <tr><td><a href="#gloss"><code>gloss</code></a></td><td><code>gl</code></td><td style="text-align: center">yes + LLM</td><td>Leipzig interlinear gloss for a sentence (cached).</td></tr>
@@ -281,9 +283,15 @@ in-flight tasks on SIGINT/SIGTERM.</p>
 </thead>
 <tbody>
 <tr><td><code>--file</code></td><td style="text-align: right">—</td><td>Ingest this local TMX file instead of downloading. Must be decompressed; the corpus and download options are ignored.</td></tr>
+<tr><td><code>--tmx-source-lang</code></td><td style="text-align: right">native code</td><td>Exact <code>xml:lang</code> tag the file uses for the native side. Requires <code>--file</code>.</td></tr>
+<tr><td><code>--tmx-target-lang</code></td><td style="text-align: right">foreign code</td><td>Exact <code>xml:lang</code> tag the file uses for the foreign side, such as <code>zh_CN</code> for <code>zh</code>. Requires <code>--file</code>.</td></tr>
 </tbody>
 </table>
 </div>
+<p>OpenSubtitles publishes Chinese as <code>zh_CN</code>; a request for <code>zh</code> selects that
+archive automatically and stores its pairs under <code>zh</code>. An import that accepts
+no pairs, meets malformed XML or is refused by the database fails that job,
+and the command exits nonzero once every job has finished.</p>
 <p>Per-batch behaviour:</p>
 <ul>
 <li>Batches of 1000 pairs are deduplicated by <code>(source, target)</code> before insert.</li>
@@ -335,6 +343,54 @@ whichever side of a pair holds the listed language, so ingest direction is
 irrelevant. Only whole phrases match: a word list ranks single-word rows, not
 the sentences containing that word. A file that parses to no entries is an
 error rather than a silent no-op.</p>
+<hr>
+<h2 id="extract-words"><a class="header" href="#extract-words"><code>extract-words</code></a></h2>
+<pre><code class="language-sh">wisecrow extract-words -n &lt;NATIVE&gt; -f &lt;FOREIGN&gt; [--limit N] [--min-occurrences N]
+</code></pre>
+<p>Counts the words of every corpus sentence for the pair and publishes the most
+frequent as word candidates, each with up to three source sentences kept as
+evidence. Counting runs inside PostgreSQL temporary tables on one dedicated
+connection, so a corpus of millions of rows is never held in memory, and a
+re-run replaces a candidate’s count rather than adding to it.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th style="text-align: right">Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--limit</code></td><td style="text-align: right"><code>500</code></td><td>Candidates to publish, most frequent first (1–10,000).</td></tr>
+<tr><td><code>--min-occurrences</code></td><td style="text-align: right"><code>5</code></td><td>Occurrences a word needs, across at least two sentences (at least 2).</td></tr>
+</tbody>
+</table>
+</div>
+<p>Rows that an earlier <code>promote-words</code> generated, and rows promoted as phrases,
+are not corpus text and are never counted.</p>
+<hr>
+<h2 id="promote-words"><a class="header" href="#promote-words"><code>promote-words</code></a></h2>
+<pre><code class="language-sh">wisecrow promote-words -n &lt;NATIVE&gt; -f &lt;FOREIGN&gt; [--limit N] [--mode pending|retry-failed|all]
+</code></pre>
+<p>Asks the model for a canonical presentation of each candidate, with its source
+sentences as untrusted context, and links every accepted word to the
+translation row that will teach it. An existing corpus row spelling the word is
+reused; otherwise a generated row is created and owned by the promotion. IDs
+are stable: refreshing a meaning under <code>--mode all</code> changes the text of the
+same row and leaves every card and review on it untouched.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th style="text-align: right">Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--limit</code></td><td style="text-align: right"><code>200</code></td><td>Candidates to attempt in one run (1–1,000).</td></tr>
+<tr><td><code>--mode</code></td><td style="text-align: right"><code>pending</code></td><td><code>pending</code> attempts new candidates; <code>retry-failed</code> adds those whose last attempt failed; <code>all</code> refreshes every candidate.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The run reports attempted, accepted, rejected, failed and stale counts and
+exits nonzero when any candidate failed or went stale, so a scripted pilot
+cannot pass on a partial result. Generation happens outside the database
+transaction; each candidate then commits on its own, so a failure part-way
+keeps every earlier success.</p>
 <hr>
 <h2 id="learn"><a class="header" href="#learn"><code>learn</code></a></h2>
 <pre><code class="language-sh">wisecrow learn -n &lt;NATIVE&gt; -f &lt;FOREIGN&gt; [--deck-size N] [--speed-ms MS] [--user-id N]
@@ -454,13 +510,53 @@ trying the quiz UI.</p>
 </div>
 <hr>
 <h2 id="prefetch-media"><a class="header" href="#prefetch-media"><code>prefetch-media</code></a></h2>
-<pre><code class="language-sh">wisecrow prefetch-media -n &lt;NATIVE&gt; -f &lt;FOREIGN&gt; [--audio BOOL] [--images BOOL]
+<pre><code class="language-sh">wisecrow prefetch-media -n &lt;NATIVE&gt; -f &lt;FOREIGN&gt; [--limit N] [--offset N] [--max-bytes N] [--dry-run] [--audio BOOL] [--images BOOL]
 </code></pre>
-<p>Walks the deck and warms the on-disk cache for audio and/or image media.
-Audio uses Microsoft Edge TTS (no API key). Images need at least one
-stock-photo key (<code>WISECROW__UNSPLASH_API_KEY</code>, <code>WISECROW__PEXELS_API_KEY</code>,
-and/or <code>WISECROW__PIXABAY_API_KEY</code>; optional <code>WISECROW__IMAGE_PROVIDER</code>).</p>
-<p>This command is a no-op for media types whose feature is not compiled in.</p>
+<p>Prepares the on-disk cache for a finite slice of the pair’s preparation
+deck: the first 10,000 ranked words that carry a current presentation and
+the first 2,000 ranked phrases, interleaved to at most 10,000 entries. The
+deck is the same however much of it a run asks for, so <code>--offset</code> names a
+stable position until the ranking or presentations change; after an
+import, ranking or enrichment, preview again from offset zero.</p>
+<pre><code class="language-sh">wisecrow prefetch-media -n en -f fr --limit 100 --offset 0 --dry-run
+wisecrow prefetch-media -n en -f fr --limit 100 --offset 0 --max-bytes 67108864
+wisecrow prefetch-media -n en -f br --limit 100 --audio=false --images=true --dry-run
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th style="text-align: right">Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--limit</code></td><td style="text-align: right"><code>100</code></td><td>Deck entries in this run (1–5,000).</td></tr>
+<tr><td><code>--offset</code></td><td style="text-align: right"><code>0</code></td><td>Deck position to start from; offset plus limit may not pass 10,000.</td></tr>
+<tr><td><code>--max-bytes</code></td><td style="text-align: right"><code>67108864</code></td><td>Generated payload bytes the run may admit (1 byte–5 GiB).</td></tr>
+<tr><td><code>--dry-run</code></td><td style="text-align: right">off</td><td>Read-only preview: reports cached and missing media, generates nothing, applies no migrations and creates no cache directory.</td></tr>
+<tr><td><code>--audio</code></td><td style="text-align: right"><code>true</code></td><td>Prepare speech; <code>--audio=false</code> skips it.</td></tr>
+<tr><td><code>--images</code></td><td style="text-align: right"><code>true</code></td><td>Prepare images; <code>--images=false</code> skips it.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The budget counts new payload bytes admitted during this invocation and
+nothing else: cache hits cost nothing, filesystem overhead and completed
+provider transfers are not counted, and a charge is never refunded, so a
+payload admitted and then lost to a publication error still counts. Once a
+payload is refused, later misses are reported as budget-exhausted without a
+provider call, while probes continue so hits stay identifiable. At most four
+requests are outstanding at once, and presentations are loaded one hundred
+at a time.</p>
+<p>Audio uses Microsoft Edge TTS (no API key), or CereProc where configured.
+Images need at least one stock-photo key (<code>WISECROW__UNSPLASH_API_KEY</code>,
+<code>WISECROW__PEXELS_API_KEY</code> and/or <code>WISECROW__PIXABAY_API_KEY</code>; optional
+<code>WISECROW__IMAGE_PROVIDER</code>). A medium this build or configuration cannot
+produce is reported as unsupported rather than ready: a preview says so,
+and an execution is refused before any call, so a language without a voice
+(Breton, for instance) is prepared with <code>--audio=false --images=true</code>.</p>
+<p>The run prints the range, per-medium counters, admitted and generated bytes
+and the next offset, then exits nonzero when any medium failed, was refused
+by the budget or is unsupported, naming the first affected IDs so the same
+range can be retried before advancing. A preview’s missing entries are
+expected and do not fail the run.</p>
 <hr>
 <h2 id="sync"><a class="header" href="#sync"><code>sync</code></a></h2>
 <pre><code class="language-sh">wisecrow sync --remote https://wisecrow.example.com [--api-key KEY]
