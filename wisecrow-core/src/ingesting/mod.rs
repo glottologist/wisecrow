@@ -4,7 +4,7 @@ pub mod persisting;
 use crate::{
     downloader::{DownloadConfig, Downloader},
     errors::WisecrowError,
-    files::LanguageFileInfo,
+    files::{IngestLanguages, LanguageFileInfo},
     Langs,
 };
 use parsing::{CorpusParser, TranslationPair};
@@ -53,19 +53,33 @@ impl Ingester {
         downloader.download_to(file, Some(output_dir)).await
     }
 
-    /// Downloads and ingests `file`.
+    /// Downloads and ingests `file` using the language mapping it was
+    /// selected with. `native_lang` and `foreign_lang` must be the canonical
+    /// codes of that mapping.
     ///
     /// # Errors
     ///
-    /// Returns an error if the download or any parse/database step fails.
+    /// Returns an error if the languages disagree with the descriptor, the
+    /// download fails, or any parse/database step fails.
     pub async fn download_and_ingest(
         &self,
         file: &LanguageFileInfo,
         native_lang: &str,
         foreign_lang: &str,
     ) -> Result<(), WisecrowError> {
+        let languages = &file.languages;
+        if languages.native().canonical() != native_lang
+            || languages.foreign().canonical() != foreign_lang
+        {
+            return Err(WisecrowError::InvalidInput(format!(
+                "Requested {native_lang}/{foreign_lang} but {} was selected for {}/{}",
+                file.file_name,
+                languages.native().canonical(),
+                languages.foreign().canonical(),
+            )));
+        }
         let path = Self::download_only(&self.config, file).await?;
-        self.ingest_from_file(&path, &file.file_name, native_lang, foreign_lang)
+        self.ingest_from_file_with_languages(&path, &file.file_name, languages)
             .await
     }
 
@@ -79,7 +93,8 @@ impl Ingester {
     ///
     /// # Errors
     ///
-    /// Returns an error if language setup, parsing, or persistence fails.
+    /// Returns an error if the language pair is unsupported, language setup,
+    /// parsing or persistence fails, or no pair is accepted.
     pub async fn ingest_from_file(
         &self,
         path: &str,
@@ -87,58 +102,80 @@ impl Ingester {
         native_lang: &str,
         foreign_lang: &str,
     ) -> Result<(), WisecrowError> {
+        let languages = IngestLanguages::identity(native_lang, foreign_lang)?;
+        self.ingest_from_file_with_languages(path, label, &languages)
+            .await
+    }
+
+    /// Ingests a local file whose TMX tags may differ from the canonical
+    /// codes the pairs are stored under. The XML alignment format has no
+    /// tag mapping and is parsed with canonical codes.
+    ///
+    /// The parser and persister run as two futures scoped to this call, so
+    /// cancelling it drops both and no detached task outlives the caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if language setup, parsing or persistence fails, or
+    /// no pair is accepted: an import that stores nothing is a failure, not a
+    /// success with a zero in the log.
+    pub async fn ingest_from_file_with_languages(
+        &self,
+        path: &str,
+        label: &str,
+        languages: &IngestLanguages,
+    ) -> Result<(), WisecrowError> {
         let (sender, receiver) = mpsc::channel::<TranslationPair>(CHANNEL_BOUND);
         let persister = DatabasePersister::new(self.pool.clone()); // clone: PgPool is Arc-based
+        let native = languages.native().canonical();
+        let foreign = languages.foreign().canonical();
 
-        let from_id = persister.ensure_language(native_lang, native_lang).await?;
-        let to_id = persister
-            .ensure_language(foreign_lang, foreign_lang)
-            .await?;
+        let from_id = persister.ensure_language(native, native).await?;
+        let to_id = persister.ensure_language(foreign, foreign).await?;
 
-        let path_owned = path.to_owned();
-        let native = native_lang.to_owned();
-        let foreign = foreign_lang.to_owned();
-        let label = label.to_owned(); // owned: needed for logging after the await
-
-        let parse_handle = tokio::spawn(async move {
-            if std::path::Path::new(&path_owned)
+        let parse = async {
+            let result = if std::path::Path::new(path)
                 .extension()
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("tmx"))
             {
-                CorpusParser::parse_tmx_file(&path_owned, &native, &foreign, &sender).await
+                CorpusParser::parse_tmx_file_with_languages(path, languages, &sender).await
             } else {
-                CorpusParser::parse_xml_alignment_file(&path_owned, &native, &foreign, &sender)
-                    .await
-            }
-        });
+                CorpusParser::parse_xml_alignment_file(path, native, foreign, &sender).await
+            };
+            // Closing the channel lets the persister flush and finish.
+            drop(sender);
+            result
+        };
 
-        let persist_handle =
-            tokio::spawn(async move { persister.consume(receiver, from_id, to_id).await });
-
-        let (parse_result, persist_result) = tokio::try_join!(parse_handle, persist_handle)
-            .map_err(|e| WisecrowError::InvalidInput(format!("Task join error: {e}")))?;
-
-        let count = parse_result?;
-        persist_result?;
+        let (parsed, persisted) = tokio::join!(parse, persister.consume(receiver, from_id, to_id));
+        let count = parsed?;
+        persisted?;
+        if count == 0 {
+            return Err(WisecrowError::InvalidInput(format!(
+                "No accepted pairs in {label} for {native}/{} to {foreign}/{}",
+                languages.native().corpus(),
+                languages.foreign().corpus(),
+            )));
+        }
         tracing::info!("Ingested {count} items from {label}");
 
         Ok(())
     }
 
+    /// Spawns a download-and-ingest job. The job's outcome is the task's
+    /// result so the caller can count failures rather than read logs.
     #[must_use]
     pub fn spawn(
         pool: PgPool,
         config: DownloadConfig,
         langs: &Langs,
         file: LanguageFileInfo,
-    ) -> tokio::task::JoinHandle<()> {
+    ) -> tokio::task::JoinHandle<Result<(), WisecrowError>> {
         let native = langs.native_code().to_owned();
         let foreign = langs.foreign_code().to_owned();
         tokio::spawn(async move {
             let ingester = Self::new(pool, config);
-            if let Err(e) = ingester.download_and_ingest(&file, &native, &foreign).await {
-                tracing::error!("Ingestion failed for {}: {e:?}", file.file_name);
-            }
+            ingester.download_and_ingest(&file, &native, &foreign).await
         })
     }
 }

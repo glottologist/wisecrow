@@ -3893,9 +3893,9 @@ checksum = "9171a2ea8a68358193d15dd5d70c1c10a2afc3e7e4c5bc92bc9f025cebd7359c"
 
 [[package]]
 name = "httparse"
-version = "1.9.4"
+version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fcc0b4a115bf80b728eb8ea024ad5bd707b615bfed49e0665b6e0f86fd082d9"
+checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
 name = "httpdate"
@@ -5181,9 +5181,9 @@ dependencies = [
 
 [[package]]
 name = "msedge-tts"
-version = "0.2.2"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "877ffe7ea7a465fb62ada5256fb8b42eb4a3e4b1ddf9c4983f16ff6cf42eca29"
+checksum = "2c4486f2d5d593ddfb54e06ffc647de2ce6bb5aa2c10861f2652e875ba51dddf"
 dependencies = [
  "async-io",
  "async-lock",
@@ -5199,7 +5199,8 @@ dependencies = [
  "native-tls",
  "serde",
  "serde_json",
- "thiserror 1.0.63",
+ "sha2",
+ "thiserror 2.0.18",
  "tungstenite 0.24.0",
  "uuid",
 ]

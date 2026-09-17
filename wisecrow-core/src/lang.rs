@@ -75,6 +75,19 @@ pub fn has_invisible_chars(phrase: &str) -> bool {
         .any(|c| INVISIBLE_CHARS.contains(&c) || (c.is_control() && !c.is_whitespace()))
 }
 
+/// Returns `true` if `text` is bounded, visible and carries a letter from any
+/// script. A single character is enough: Chinese `我` and Japanese `は` are
+/// words, whereas `.` and `123` are punctuation and digits that no card should
+/// present as a meaning.
+#[must_use]
+pub fn is_meaningful_text(text: &str, max_chars: usize) -> bool {
+    let text = text.trim();
+    !text.is_empty()
+        && text.chars().count() <= max_chars
+        && !has_invisible_chars(text)
+        && text.chars().any(char::is_alphabetic)
+}
+
 /// Returns `true` if both sides of a pair are the same phrase once normalised.
 ///
 /// A card whose prompt equals its answer teaches nothing, however common the
@@ -417,5 +430,28 @@ mod tests {
         #[case] why: &str,
     ) {
         assert_eq!(is_degenerate_pair(source, target), expected, "{why}");
+    }
+
+    #[rstest]
+    #[case("我", true)]
+    #[case("は", true)]
+    #[case("I", true)]
+    #[case("à", true)]
+    #[case("word", true)]
+    #[case("", false)]
+    #[case("  ", false)]
+    #[case(".", false)]
+    #[case("123", false)]
+    #[case("w\u{200b}ord", false)]
+    fn meaningful_text_cases(#[case] text: &str, #[case] expected: bool) {
+        assert_eq!(is_meaningful_text(text, 200), expected);
+    }
+
+    proptest! {
+        #[test]
+        fn meaningful_text_respects_character_bound(count in 1usize..300) {
+            let text = "我".repeat(count);
+            prop_assert_eq!(is_meaningful_text(&text, 200), count <= 200);
+        }
     }
 }

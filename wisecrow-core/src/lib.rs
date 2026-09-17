@@ -23,6 +23,7 @@ pub mod sync;
 pub mod tui;
 pub mod users;
 pub mod vocabulary;
+pub mod words;
 
 use derive_more::Display;
 

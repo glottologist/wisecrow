@@ -134,6 +134,7 @@ Return only a JSON object with this exact shape:
 }}
 
 - Return one entry per input key in the same order.
+- Preserve each requested word's normalized spelling in display_form; provide an English explanation for particles rather than replacing the word. Mark unsupported or corrupted entries unteachable.
 - Mark corrupt, ambiguous, subtitle-stage, or incomplete fragments unteachable.
 - Use an image query only for a concrete concept a stock photograph can teach.
 - Articles, prepositions, pronouns, abstract words, and unteachable entries use null.

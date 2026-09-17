@@ -19,6 +19,42 @@ use wisecrow_web::server::{build_router, init_pool, pool};
 const PRIMARY_EMAIL: &str = "mobile-corpus-primary@test.local";
 const OTHER_EMAIL: &str = "mobile-corpus-other@test.local";
 const PHRASE_PREFIX: &str = "mobile-sync-";
+const GENERATED_WORD: &str = "haus";
+const GENERATED_MEANING: &str = "mobile-sync-house";
+
+/// Stands in for the model during word promotion. Implemented by hand
+/// because the trait is `async_trait`-shaped and this crate does not depend
+/// on that macro.
+struct HouseProvider;
+
+impl wisecrow::llm::LlmProvider for HouseProvider {
+    fn generate<'life0, 'life1, 'async_trait>(
+        &'life0 self,
+        _prompt: &'life1 str,
+        _max_tokens: u32,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<String, wisecrow::errors::WisecrowError>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
+        Box::pin(async {
+            Ok(format!(
+                r#"{{"presentations":[{{"word":"{GENERATED_WORD}","display_form":"Haus","translation":"{GENERATED_MEANING}","teachable":true,"image_query":null}}]}}"#
+            ))
+        })
+    }
+
+    fn name(&self) -> &str {
+        "fixture"
+    }
+}
 
 async fn post(path: &str, request: Value, bearer: Option<&str>) -> Response {
     let mut builder = Request::post(path).header(header::CONTENT_TYPE, "application/json");
@@ -73,6 +109,18 @@ async fn cleanup(db: &PgPool) {
         .execute(db)
         .await
         .expect("translation cleanup");
+    // Only after the generated translation is gone may its candidate go: the
+    // ownership guard refuses to unlink a live generated row.
+    sqlx::query("DELETE FROM word_candidates WHERE word = $1")
+        .bind(GENERATED_WORD)
+        .execute(db)
+        .await
+        .expect("candidate cleanup");
+    sqlx::query("DELETE FROM word_glosses WHERE lang_code = 'de' AND word = $1")
+        .bind(GENERATED_WORD)
+        .execute(db)
+        .await
+        .expect("gloss cleanup");
 }
 
 async fn language_id(db: &PgPool, code: &str, name: &str) -> i32 {
@@ -502,6 +550,58 @@ async fn assert_corpus_convergence(db: &PgPool, fixture: &Fixture) {
     assert_eq!(local, current_corpus(db).await);
 }
 
+/// A row that word promotion generated is ordinary corpus to the mobile
+/// client: it arrives in the raw snapshot with its initial English meaning
+/// and the ID that later refreshes keep.
+async fn assert_generated_word_in_snapshot(db: &PgPool, fixture: &Fixture) {
+    for index in 0..8 {
+        create_translation(
+            db,
+            fixture.en,
+            fixture.de,
+            &format!("{PHRASE_PREFIX}house {index}"),
+            &format!("{GENERATED_WORD} {GENERATED_WORD} das {GENERATED_WORD} {index}"),
+        )
+        .await;
+    }
+    let extraction = wisecrow::words::ExtractionOptions::new(1, 5).expect("extraction options");
+    wisecrow::words::extract_words(db, "en", "de", &extraction)
+        .await
+        .expect("word extraction");
+    let promotion = wisecrow::words::PromotionOptions::new(1, wisecrow::words::Refresh::Pending)
+        .expect("promotion options");
+    let summary = wisecrow::words::promote_words(db, &HouseProvider, "en", "de", &promotion)
+        .await
+        .expect("word promotion");
+    assert_eq!(summary.accepted, 1, "{summary:?}");
+    let generated: i32 = sqlx::query_scalar(
+        "SELECT p.translation_id FROM word_promotions p
+         JOIN word_candidates c ON c.id = p.candidate_id
+         WHERE c.word = $1 AND p.owns_translation",
+    )
+    .bind(GENERATED_WORD)
+    .fetch_one(db)
+    .await
+    .expect("generated translation id");
+
+    let response = post(
+        "/api/mobile/corpus/snapshot",
+        snapshot_request(0, None, 500),
+        Some(&fixture.token),
+    )
+    .await;
+    let response = assert_status(response, StatusCode::OK, "generated word snapshot").await;
+    let page: CorpusPageDto = response_json(response, "generated word snapshot").await;
+    let row = page
+        .translations
+        .iter()
+        .find(|translation| translation.translation_id == generated)
+        .expect("generated row in snapshot");
+    assert_eq!(row.from_phrase, GENERATED_MEANING);
+    assert_eq!(row.to_phrase, GENERATED_WORD);
+    assert!(!row.is_phrase);
+}
+
 async fn assert_wrong_pair_isolation(fixture: &Fixture) {
     let response = post(
         "/api/mobile/corpus/changes",
@@ -638,6 +738,7 @@ async fn snapshot_changes_devices_and_cards_are_resumable_and_isolated() {
     assert_protocol_and_cursor_validation(&fixture.token).await;
     assert_device_name_validation(&fixture.token).await;
     assert_corpus_convergence(db, &fixture).await;
+    assert_generated_word_in_snapshot(db, &fixture).await;
     assert_wrong_pair_isolation(&fixture).await;
     assert_card_sync(db, &fixture).await;
     assert_revoked_device(db, &fixture, device_id).await;

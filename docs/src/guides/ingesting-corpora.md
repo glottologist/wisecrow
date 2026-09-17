@@ -41,6 +41,39 @@ attributes matching the codes you pass, which is the shape OPUS, the Welsh
 Government memories and most CAT tools emit. Decompress the archive first —
 a `.gz` is rejected rather than silently parsed as empty.
 
+Where the file tags a language differently from Wisecrow's own code, pass
+the file's tag alongside the code. A memory that labels its Chinese side
+`zh_CN`, for instance, is still stored under the application language `zh`:
+
+```sh
+wisecrow ingest -n en -f zh --file ./sample.tmx --tmx-target-lang zh_CN
+```
+
+`--tmx-source-lang` does the same for the native side; both flags require
+`--file`. The tag only selects which `<tuv>` to read. It never becomes a
+language record of its own, and the text is still checked against the
+script of the canonical code, so an alias cannot smuggle the wrong language
+into a deck.
+
+## Chinese and other aliased releases
+
+OpenSubtitles publishes its Chinese memories as `zh_CN` and `zh_TW` rather
+than a bare `zh`, so a request for `zh` would otherwise find no archive.
+Wisecrow maps `zh` to the Simplified release automatically for that corpus,
+in either direction (`-n en -f zh` or `-n zh -f en`), and stores the pairs
+under `zh`. The Traditional release is not imported; the other corpora carry
+a plain `zh` and need no mapping.
+
+## When an import fails
+
+An ingest that stores nothing is reported as a failure rather than as a
+successful run with a zero in the log. Malformed XML, a database rejection,
+or a file whose `xml:lang` tags match neither code (the usual sign that an
+alias flag is missing) each abort that job with an error. When several
+corpus jobs run in one invocation, the remaining jobs still complete; the
+command then exits nonzero with a summary such as `2 corpus jobs failed`, so
+a scripted ingest cannot pass silently.
+
 ## Filter at the CLI
 
 The `--corpus` flag accepts a single space-delimited argument:
@@ -117,6 +150,24 @@ languages — useful for fixture preparation:
 ```sh
 wisecrow download-all -n en -o ./fixtures --corpus "open_subtitles"
 ```
+
+## Warm media for what will be learned
+
+Once a pair is ranked and enriched, `prefetch-media` prepares speech and
+images for a bounded slice of the deck rather than for every row the corpus
+holds. Preview the first page first: it is read-only, calls no provider,
+and reports what is cached, what is missing and what this build cannot
+produce.
+
+```sh
+wisecrow prefetch-media -n en -f fr --limit 100 --offset 0 --dry-run
+wisecrow prefetch-media -n en -f fr --limit 100 --offset 0 --max-bytes 67108864
+```
+
+Running the same range again returns only cache hits and admits no bytes,
+which is the check that a warmup completed. See the
+[CLI reference](../reference/cli-reference.md#prefetch-media) for the budget
+definition and paging rules.
 
 ## Layer external frequency lists
 

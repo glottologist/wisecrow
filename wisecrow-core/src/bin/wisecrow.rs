@@ -12,18 +12,22 @@ use tokio::{
 use tracing::{error, info};
 use wisecrow::{
     cli::{
-        is_supported_language, Cli, Command, DownloadAllArgs, ExtractPhrasesArgs, FrequencyArgs,
-        GenerateExercisesArgs, GlossArgs, GlossDeckArgs, GradedReaderArgs, GradedReaderFormat,
-        ImportGrammarArgs, ImportPdfArgs, IngestArgs, LanguageArgs, LearnArgs, NbackArgs,
-        PrefetchMediaArgs, PreviewArgs, PruneArgs, QuizArgs, ScoreSentencesArgs, SeedGrammarArgs,
-        SentenceCardArgs, SyncArgs, SyncClientCmd, TranslatePhrasesArgs, UserCmd,
-        SUPPORTED_LANGUAGE_INFO,
+        is_supported_language, Cli, Command, DownloadAllArgs, ExtractPhrasesArgs, ExtractWordsArgs,
+        FrequencyArgs, GenerateExercisesArgs, GlossArgs, GlossDeckArgs, GradedReaderArgs,
+        GradedReaderFormat, ImportGrammarArgs, ImportPdfArgs, IngestArgs, LanguageArgs, LearnArgs,
+        NbackArgs, PrefetchMediaArgs, PreviewArgs, PromoteMode, PromoteWordsArgs, PruneArgs,
+        QuizArgs, ScoreSentencesArgs, SeedGrammarArgs, SentenceCardArgs, SyncArgs, SyncClientCmd,
+        TranslatePhrasesArgs, UserCmd, SUPPORTED_LANGUAGE_INFO,
     },
     config::Config,
     downloader::DownloadConfig,
     errors::WisecrowError,
-    files::{Corpus, LanguageFileInfo, LanguageFiles},
+    files::{Corpus, IngestLanguage, IngestLanguages, LanguageFileInfo, LanguageFiles},
     ingesting::Ingester,
+    media::prefetch::{
+        MediaOutcome, MediaProviders, PrefetchMode, PrefetchOptions, PrefetchSummary,
+        RequestedMedia,
+    },
     media::MediaContext,
     srs::session::SessionManager,
     sync::clients::SyncClientRepository,
@@ -34,7 +38,9 @@ use wisecrow::{
 
 const MAX_DB_CONNECTIONS: u32 = 5;
 
-async fn assure_db(database_url: &str) -> Result<PgPool, WisecrowError> {
+/// Connects without touching the schema: a read-only command must not apply
+/// migrations as a side effect of looking.
+async fn connect_db(database_url: &str) -> Result<PgPool, WisecrowError> {
     let connect_options = PgConnectOptions::from_str(database_url)?;
     let pool = PgPoolOptions::new()
         .max_connections(MAX_DB_CONNECTIONS)
@@ -42,18 +48,17 @@ async fn assure_db(database_url: &str) -> Result<PgPool, WisecrowError> {
         .await
         .map_err(WisecrowError::PersistenceConnectionError)?;
     info!("Connected to database");
+    Ok(pool)
+}
+
+async fn assure_db(database_url: &str) -> Result<PgPool, WisecrowError> {
+    let pool = connect_db(database_url).await?;
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
         .map_err(WisecrowError::PersistenceMigrationError)?;
     info!("Database migrations applied");
     Ok(pool)
-}
-
-fn abort_all(handles: &[JoinHandle<()>]) {
-    for handle in handles {
-        handle.abort();
-    }
 }
 
 async fn wait_for_shutdown_signal(term_signal: &mut tokio::signal::unix::Signal) {
@@ -63,37 +68,66 @@ async fn wait_for_shutdown_signal(term_signal: &mut tokio::signal::unix::Signal)
     }
 }
 
-async fn run_until_done_or_signal(mut handles: Vec<JoinHandle<()>>) -> Result<(), Error> {
+/// Waits for every corpus job, counting failures so the process exits
+/// nonzero when any job failed. A shutdown signal aborts the remaining jobs
+/// and drains them before returning, so no task outlives the runner.
+async fn run_until_done_or_signal(
+    mut handles: Vec<JoinHandle<Result<(), WisecrowError>>>,
+) -> Result<(), Error> {
     let mut term_signal = signal(SignalKind::terminate())?;
+    let mut failures = 0usize;
 
-    loop {
-        let Some(last) = handles.last_mut() else {
-            info!("All tasks completed");
-            return Ok(());
-        };
+    while let Some(last) = handles.last_mut() {
         select! {
             result = last => {
                 handles.pop();
-                if let Err(e) = result {
-                    error!("Task panicked: {e}");
+                match result {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => {
+                        failures += 1;
+                        error!(%error, "Corpus job failed");
+                    }
+                    Err(error) => {
+                        failures += 1;
+                        error!(%error, "Corpus task failed");
+                    }
                 }
             }
             () = wait_for_shutdown_signal(&mut term_signal) => {
-                abort_all(&handles);
-                return Ok(());
+                for handle in &handles {
+                    handle.abort();
+                }
+                for handle in handles {
+                    match handle.await {
+                        Ok(Ok(())) => {}
+                        Ok(Err(error)) => error!(%error, "Corpus job failed during shutdown"),
+                        Err(error) if error.is_cancelled() => {}
+                        Err(error) => error!(%error, "Job shutdown failed"),
+                    }
+                }
+                return Err(anyhow::anyhow!("Corpus jobs interrupted"));
             }
         }
     }
+    if failures > 0 {
+        return Err(anyhow::anyhow!("{failures} corpus jobs failed"));
+    }
+    info!("All tasks completed");
+    Ok(())
 }
 
-async fn load_config_and_pool() -> Result<(Config, PgPool), WisecrowError> {
+fn load_config() -> Result<Config, WisecrowError> {
     let settings = ConfigLoader::builder()
         .add_source(Environment::with_prefix("WISECROW").separator("__"))
         .build()
         .map_err(|e| WisecrowError::ConfigurationError(e.to_string()))?;
-    let config: Config = settings
+    settings
         .try_deserialize()
-        .map_err(|e| WisecrowError::ConfigurationError(e.to_string()))?;
+        .map_err(|e| WisecrowError::ConfigurationError(e.to_string()))
+}
+
+async fn load_config_and_pool() -> Result<(Config, PgPool), WisecrowError> {
+    let config = load_config()?;
     let database_url = config.database_url()?;
     let pool = assure_db(&database_url).await?;
     Ok((config, pool))
@@ -161,9 +195,7 @@ async fn handle_download(args: LanguageArgs) -> Result<(), Error> {
     for file in job.files {
         let cfg = job.download_config;
         handles.push(tokio::spawn(async move {
-            if let Err(e) = Ingester::download_only(&cfg, &file).await {
-                error!("Download failed for {}: {e:?}", file.file_name);
-            }
+            Ingester::download_only(&cfg, &file).await.map(|_| ())
         }));
     }
     run_until_done_or_signal(handles).await
@@ -282,7 +314,14 @@ async fn download_language_pair(
 
 async fn handle_ingest(args: IngestArgs) -> Result<(), Error> {
     if let Some(path) = args.file {
-        return handle_ingest_file(&path, &args.langs.native_lang, &args.langs.foreign_lang).await;
+        let native = &args.langs.native_lang;
+        let foreign = &args.langs.foreign_lang;
+        validate_languages(native, foreign)?;
+        let languages = IngestLanguages::new(
+            IngestLanguage::new(native, args.tmx_source_lang.as_deref().unwrap_or(native))?,
+            IngestLanguage::new(foreign, args.tmx_target_lang.as_deref().unwrap_or(foreign))?,
+        )?;
+        return handle_ingest_file(&path, &languages).await;
     }
 
     let job = prepare_job(args.langs)?;
@@ -302,21 +341,20 @@ async fn handle_ingest(args: IngestArgs) -> Result<(), Error> {
 
 /// Ingests a corpus file already on disk. This is the route for translation
 /// memories that OPUS does not carry — published government memories, Tatoeba
-/// exports, anything a script has converted to TMX.
+/// exports, anything a script has converted to TMX. `languages` carries the
+/// file's own `xml:lang` tags beside the canonical codes the pairs are stored
+/// under.
 async fn handle_ingest_file(
     path: &std::path::Path,
-    native_lang: &str,
-    foreign_lang: &str,
+    languages: &IngestLanguages,
 ) -> Result<(), Error> {
-    validate_languages(native_lang, foreign_lang)?;
-
     if !path.is_file() {
         return Err(
             WisecrowError::InvalidInput(format!("No such file: {}", path.display())).into(),
         );
     }
-    // A compressed archive parses to zero pairs rather than failing, which
-    // reads as a successful but empty ingest. Reject it with the remedy.
+    // A compressed archive is not XML; name the remedy rather than surface a
+    // parse error.
     if path
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("gz") || ext.eq_ignore_ascii_case("zip"))
@@ -334,7 +372,7 @@ async fn handle_ingest_file(
     let (_config, pool) = load_config_and_pool().await?;
     let ingester = Ingester::new(pool, DownloadConfig::default());
     ingester
-        .ingest_from_file(path_str, path_str, native_lang, foreign_lang)
+        .ingest_from_file_with_languages(path_str, path_str, languages)
         .await?;
     Ok(())
 }
@@ -547,11 +585,22 @@ async fn handle_gloss_deck(args: GlossDeckArgs) -> Result<(), Error> {
     let lang_name = resolve_language_name(&args.lang)?;
     let native_name = resolve_language_name(&args.native_lang)?;
 
-    let words =
-        wisecrow::glossing::pending_presentations(&pool, &args.native_lang, &args.lang, args.limit)
-            .await?;
+    let page = wisecrow::glossing::pending_page(
+        &pool,
+        &args.native_lang,
+        &args.lang,
+        args.limit,
+        args.offset,
+    )
+    .await?;
+    let words = page.candidates;
+    let rejected = page.scanned.saturating_sub(u32::try_from(words.len())?);
+    let continuation = page.next_offset.map_or_else(
+        || "no further rows".to_owned(),
+        |next| format!("next --offset {next}"),
+    );
 
-    if words.is_empty() {
+    if page.scanned == 0 {
         info!("All selected {} word presentations are current", args.lang);
         return Ok(());
     }
@@ -559,10 +608,22 @@ async fn handle_gloss_deck(args: GlossDeckArgs) -> Result<(), Error> {
     if args.dry_run {
         let pending: Vec<&str> = words.iter().map(|word| word.word.as_str()).collect();
         info!(
-            "Would enrich {} {} word presentations: {}",
-            words.len(),
+            "Scanned {} pending {} rows from offset {}: {} accepted, {rejected} rejected; {continuation}",
+            page.scanned,
             args.lang,
-            pending.join(", ")
+            args.offset,
+            words.len()
+        );
+        info!("Would enrich: {}", pending.join(", "));
+        return Ok(());
+    }
+
+    if words.is_empty() {
+        info!(
+            "Scanned {} pending {} rows from offset {}: none accepted, {rejected} rejected; {continuation}",
+            page.scanned,
+            args.lang,
+            args.offset
         );
         return Ok(());
     }
@@ -579,9 +640,11 @@ async fn handle_gloss_deck(args: GlossDeckArgs) -> Result<(), Error> {
     )
     .await?;
     info!(
-        "Enriched {written} of {} pending {} word presentations",
+        "Enriched {written} of {} accepted {} word presentations ({} scanned from offset {}, {rejected} rejected; {continuation})",
         words.len(),
-        args.lang
+        args.lang,
+        page.scanned,
+        args.offset
     );
     Ok(())
 }
@@ -730,6 +793,61 @@ async fn handle_extract_phrases(args: ExtractPhrasesArgs) -> Result<(), Error> {
     Ok(())
 }
 
+async fn handle_extract_words(args: ExtractWordsArgs) -> Result<(), Error> {
+    validate_languages(&args.langs.native_lang, &args.langs.foreign_lang)?;
+    let options = wisecrow::words::ExtractionOptions::new(args.limit, args.min_occurrences)?;
+    let (_config, pool) = load_config_and_pool().await?;
+    let summary = wisecrow::words::extract_words(
+        &pool,
+        &args.langs.native_lang,
+        &args.langs.foreign_lang,
+        &options,
+    )
+    .await?;
+    info!(
+        "Scanned {} {} sentences and published {} word candidates",
+        summary.scanned_rows, args.langs.foreign_lang, summary.candidates
+    );
+    Ok(())
+}
+
+async fn handle_promote_words(args: PromoteWordsArgs) -> Result<(), Error> {
+    validate_languages(&args.langs.native_lang, &args.langs.foreign_lang)?;
+    let refresh = match args.mode {
+        PromoteMode::Pending => wisecrow::words::Refresh::Pending,
+        PromoteMode::RetryFailed => wisecrow::words::Refresh::RetryFailed,
+        PromoteMode::All => wisecrow::words::Refresh::All,
+    };
+    let options = wisecrow::words::PromotionOptions::new(args.limit, refresh)?;
+    let (config, pool) = load_config_and_pool().await?;
+    let provider = wisecrow::llm::create_provider(&config)?;
+    let summary = wisecrow::words::promote_words(
+        &pool,
+        provider.as_ref(),
+        &args.langs.native_lang,
+        &args.langs.foreign_lang,
+        &options,
+    )
+    .await?;
+    info!(
+        "Attempted {} {} word candidates: {} accepted, {} rejected, {} failed, {} stale",
+        summary.attempted,
+        args.langs.foreign_lang,
+        summary.accepted,
+        summary.rejected,
+        summary.failed,
+        summary.stale
+    );
+    if summary.failed > 0 || summary.stale > 0 {
+        return Err(anyhow::anyhow!(
+            "{} word candidates failed and {} were stale; rerun with --mode retry-failed",
+            summary.failed,
+            summary.stale
+        ));
+    }
+    Ok(())
+}
+
 async fn handle_translate_phrases(args: TranslatePhrasesArgs) -> Result<(), Error> {
     validate_languages(&args.native_lang, &args.lang)?;
     let (config, pool) = load_config_and_pool().await?;
@@ -752,29 +870,131 @@ async fn handle_translate_phrases(args: TranslatePhrasesArgs) -> Result<(), Erro
     Ok(())
 }
 
+/// PostgreSQL's code for a relation that does not exist.
+const UNDEFINED_TABLE: &str = "42P01";
+
 async fn handle_prefetch_media(args: PrefetchMediaArgs) -> Result<(), Error> {
     validate_languages(&args.native_lang, &args.foreign_lang)?;
-    let (_config, pool) = load_config_and_pool().await?;
-
-    #[cfg(feature = "images")]
-    let image_fetcher = wisecrow::media::images::ImageFetcher::from_config(&_config);
-    #[cfg(feature = "tts")]
-    let cereproc = wisecrow::media::cereproc::CereprocClient::from_config(&_config);
-    let count = wisecrow::media::prefetch::prefetch_media(
-        &pool,
-        &args.native_lang,
-        &args.foreign_lang,
-        args.audio,
-        args.images,
-        #[cfg(feature = "images")]
-        image_fetcher.as_ref(),
-        #[cfg(feature = "tts")]
-        cereproc.as_ref(),
-    )
-    .await?;
-
-    info!("Prefetched {count} media items");
+    let media = match (args.audio, args.images) {
+        (true, true) => RequestedMedia::Both,
+        (true, false) => RequestedMedia::Audio,
+        (false, true) => RequestedMedia::Images,
+        (false, false) => {
+            return Err(WisecrowError::InvalidInput(
+                "Nothing to prepare: enable --audio or --images".into(),
+            )
+            .into())
+        }
+    };
+    let mode = if args.dry_run {
+        PrefetchMode::Preview
+    } else {
+        PrefetchMode::Execute
+    };
+    let options = PrefetchOptions::new(args.limit, args.offset, args.max_bytes, media, mode)?;
+    let config = load_config()?;
+    // Preview only reads: connect without migrating so an unprepared
+    // database is reported rather than changed.
+    let pool = match mode {
+        PrefetchMode::Preview => connect_db(&config.database_url()?).await?,
+        PrefetchMode::Execute => assure_db(&config.database_url()?).await?,
+    };
+    let providers = MediaProviders::from_config(&config);
+    let langs = Langs::new(&args.native_lang, &args.foreign_lang);
+    let summary = run_prefetch(&pool, &langs, &options, &providers).await?;
+    report_prefetch(&args, &options, &summary);
+    if summary.needs_attention() {
+        return Err(anyhow::anyhow!(
+            "{} media outcomes need attention; retry the same range (--offset {})",
+            summary.attention_ids().len(),
+            options.offset()
+        ));
+    }
     Ok(())
+}
+
+/// Runs the preparation while a shutdown signal cancels it: workers are
+/// aborted and drained before the error returns, rather than abandoned.
+async fn run_prefetch(
+    pool: &PgPool,
+    langs: &Langs,
+    options: &PrefetchOptions,
+    providers: &MediaProviders,
+) -> Result<PrefetchSummary, Error> {
+    let (stop, cancel) = tokio::sync::watch::channel(false);
+    let mut term_signal = signal(SignalKind::terminate())?;
+    let operation =
+        wisecrow::media::prefetch::prefetch_media(pool, langs, options, providers, cancel);
+    tokio::pin!(operation);
+    let result = select! {
+        result = &mut operation => result,
+        () = wait_for_shutdown_signal(&mut term_signal) => {
+            stop.send_replace(true);
+            operation.await
+        }
+    };
+    result.map_err(|error| match &error {
+        WisecrowError::PersistenceConnectionError(sqlx::Error::Database(database))
+            if options.mode() == PrefetchMode::Preview
+                && database.code().as_deref() == Some(UNDEFINED_TABLE) =>
+        {
+            anyhow::anyhow!(
+                "Database schema is not prepared for preview; run a migrating command (for example `ingest`) first: {error}"
+            )
+        }
+        _ => error.into(),
+    })
+}
+
+fn report_prefetch(args: &PrefetchMediaArgs, options: &PrefetchOptions, summary: &PrefetchSummary) {
+    let outcomes = [
+        ("cached", MediaOutcome::Cached),
+        ("missing", MediaOutcome::Missing),
+        ("not applicable", MediaOutcome::NotApplicable),
+        ("unsupported", MediaOutcome::Unsupported),
+        ("failed", MediaOutcome::Failed),
+        ("budget exhausted", MediaOutcome::BudgetExhausted),
+    ];
+    let generated = summary
+        .outcomes
+        .iter()
+        .flat_map(|item| item.audio.into_iter().chain(item.image))
+        .filter(|outcome| matches!(outcome, MediaOutcome::Generated { .. }))
+        .count();
+    let counters: Vec<String> = outcomes
+        .iter()
+        .map(|(label, kind)| format!("{label} {}", summary.count(*kind)))
+        .chain(std::iter::once(format!("generated {generated}")))
+        .collect();
+    info!(
+        "{} {}-{} entries {}..{}: {} processed; {}; {} bytes admitted, {} bytes generated; {}",
+        if args.dry_run {
+            "Previewed"
+        } else {
+            "Prepared"
+        },
+        args.native_lang,
+        args.foreign_lang,
+        options.offset(),
+        options.offset().saturating_add(summary.selected),
+        summary.processed,
+        counters.join(", "),
+        summary.admitted_bytes,
+        summary.generated_bytes,
+        summary.next_offset.map_or_else(
+            || "end of deck".to_owned(),
+            |next| format!("next --offset {next}")
+        )
+    );
+    let attention = summary.attention_ids();
+    if !attention.is_empty() {
+        let shown: Vec<String> = attention.iter().take(20).map(i32::to_string).collect();
+        info!(
+            "{} entries need attention; first IDs: {}",
+            attention.len(),
+            shown.join(", ")
+        );
+    }
 }
 
 #[tokio::main]
@@ -807,6 +1027,8 @@ async fn main() -> Result<(), Error> {
         Command::PrefetchMedia(args) => handle_prefetch_media(args).await?,
         Command::ExtractPhrases(args) => handle_extract_phrases(args).await?,
         Command::TranslatePhrases(args) => handle_translate_phrases(args).await?,
+        Command::ExtractWords(args) => handle_extract_words(args).await?,
+        Command::PromoteWords(args) => handle_promote_words(args).await?,
         Command::GlossDeck(args) => handle_gloss_deck(args).await?,
         Command::ScoreSentences(args) => handle_score_sentences(args).await?,
         Command::SentenceCard(args) => handle_sentence_card(args).await?,
@@ -1315,4 +1537,70 @@ fn handle_quiz(args: QuizArgs) -> Result<(), Error> {
         })?;
     quiz::run_quiz(&path, args.num_questions)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn preview_does_not_migrate() -> Result<(), Box<dyn std::error::Error>> {
+        use wisecrow::media::prefetch::{
+            MediaProviders, PrefetchMode, PrefetchOptions, RequestedMedia,
+        };
+        let url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://wisecrow:wisecrow@localhost:5432/wisecrow_test".to_owned()
+        });
+        let admin = sqlx::PgPool::connect(&url).await?;
+        sqlx::query("DROP SCHEMA IF EXISTS preview_probe CASCADE")
+            .execute(&admin)
+            .await?;
+        sqlx::query("CREATE SCHEMA preview_probe")
+            .execute(&admin)
+            .await?;
+        let migrated = || async {
+            let present: bool = sqlx::query_scalar(
+                "SELECT to_regclass('preview_probe._sqlx_migrations') IS NOT NULL
+                    OR to_regclass('preview_probe.translations') IS NOT NULL",
+            )
+            .fetch_one(&admin)
+            .await?;
+            Ok::<bool, sqlx::Error>(present)
+        };
+
+        // An empty schema first in the search path: a migrating start would
+        // populate it; a read-only start must not.
+        let scoped = format!("{url}?options=-c%20search_path%3Dpreview_probe");
+        let pool = super::connect_db(&scoped).await?;
+        assert!(!migrated().await?);
+        let options =
+            PrefetchOptions::new(10, 0, 1024, RequestedMedia::Both, PrefetchMode::Preview)?;
+        let result = super::run_prefetch(
+            &pool,
+            &wisecrow::Langs::new("en", "fr"),
+            &options,
+            &MediaProviders::default(),
+        )
+        .await;
+        let message = match result {
+            Ok(summary) => panic!("preview succeeded without a schema: {summary:?}"),
+            Err(error) => error.to_string(),
+        };
+        assert!(message.contains("not prepared for preview"), "{message}");
+        assert!(!migrated().await?, "preview must not create schema objects");
+        sqlx::query("DROP SCHEMA preview_probe CASCADE")
+            .execute(&admin)
+            .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn failed_job_is_not_success() -> Result<(), Box<dyn std::error::Error>> {
+        let failed = tokio::spawn(async {
+            Err(wisecrow::errors::WisecrowError::InvalidInput(String::from(
+                "fixture failure",
+            )))
+        });
+        assert!(super::run_until_done_or_signal(vec![failed]).await.is_err());
+        Ok(())
+    }
 }

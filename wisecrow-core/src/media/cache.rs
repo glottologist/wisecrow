@@ -51,11 +51,47 @@ impl MediaCache {
     ///
     /// Returns an error if the cache directory cannot be created.
     pub fn new(pool: PgPool) -> Result<Self, WisecrowError> {
-        let base = dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("wisecrow")
-            .join("cache");
-        Self::with_cache_dir(pool, base)
+        Self::with_cache_dir(pool, default_cache_dir())
+    }
+
+    /// Opens the default cache for inspection only: no directory is created
+    /// and nothing is cleaned up, so a preview leaves the filesystem as it
+    /// found it.
+    #[must_use]
+    pub(crate) fn open_existing(pool: PgPool) -> Self {
+        Self::open_existing_at(pool, default_cache_dir())
+    }
+
+    /// As [`Self::open_existing`], rooted at `cache_dir`.
+    pub(crate) fn open_existing_at(pool: PgPool, cache_dir: impl AsRef<Path>) -> Self {
+        Self {
+            cache_dir: cache_dir.as_ref().to_path_buf(),
+            pool,
+        }
+    }
+
+    /// Whether a live file for `fingerprint` is already published, read in a
+    /// read-only transaction. Nothing is fetched or written.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the database query fails.
+    pub(crate) async fn probe(
+        &self,
+        translation_id: i32,
+        media_type: MediaType,
+        fingerprint: &MediaFingerprint,
+    ) -> Result<bool, WisecrowError> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("SET TRANSACTION READ ONLY")
+            .execute(&mut *tx)
+            .await?;
+        let row = Self::load_row_tx(&mut tx, translation_id, media_type).await?;
+        let hit = row
+            .as_ref()
+            .is_some_and(|row| self.matching_live_file(row, fingerprint).is_some());
+        tx.commit().await?;
+        Ok(hit)
     }
 
     /// Creates a media cache rooted at `cache_dir`.
@@ -378,6 +414,13 @@ impl MediaCache {
         let canonical = path.canonicalize().ok()?;
         canonical.starts_with(&root).then_some(canonical)
     }
+}
+
+fn default_cache_dir() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("wisecrow")
+        .join("cache")
 }
 
 fn utf8_path(path: &Path) -> Result<&str, WisecrowError> {

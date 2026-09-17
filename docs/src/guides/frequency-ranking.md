@@ -132,6 +132,25 @@ whole-phrase, so this ranks single-word rows and leaves the sentences
 containing those words alone. A tokeniser is required, so Khmer, Lao and
 Burmese are refused rather than mis-segmented.
 
+## What counts as corpus evidence
+
+Not every row in `translations` is corpus text. `promote-words` generates a
+learning row for a word that only ever appeared inside sentences, and
+`translate-phrases` links a promoted phrase to a row of its own; both are
+learning material that Wisecrow itself wrote. Were they counted, each
+promotion would add one occurrence of its own word to the very counts that
+justified it, and a repeated cycle would slowly inflate the ranking with its
+own output.
+
+Corpus derivation, phrase extraction and sentence scoring therefore read the
+`corpus_evidence_translations` view, which excludes rows owned by a word
+promotion and rows linked from `phrase_translations`. Ranking likewise leaves
+those rows' `corpus_frequency` alone: a generated word carries the evidence
+count that produced it, and a promoted phrase its own review. One visible
+consequence is that historical phrase counts may fall slightly after
+upgrading, since a phrase's own linked row no longer counts towards it; that
+is the count becoming honest, not data going missing.
+
 ## Checking the result
 
 The command reports how many rows it updated, and the count of rows that clear

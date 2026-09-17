@@ -87,7 +87,7 @@ pub async fn score_sentences(pool: &PgPool, lang_code: &str) -> Result<usize, Wi
     loop {
         let rows: Vec<(i32, String)> = sqlx::query_as(
             "SELECT t.id, t.to_phrase
-               FROM translations t
+               FROM corpus_evidence_translations t
                JOIN languages tl ON tl.id = t.to_language_id
               WHERE tl.code = $1 AND t.id > $2 AND t.sentence_score IS NULL
               ORDER BY t.id

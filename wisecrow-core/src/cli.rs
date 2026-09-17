@@ -143,6 +143,14 @@ pub struct IngestArgs {
     /// The corpus and download options are ignored when this is given.
     #[arg(long)]
     pub file: Option<std::path::PathBuf>,
+    /// Exact `xml:lang` tag the file uses for the native language, when it
+    /// differs from the application code (for example `zh_CN` for `zh`).
+    #[arg(long, requires = "file")]
+    pub tmx_source_lang: Option<String>,
+    /// Exact `xml:lang` tag the file uses for the foreign language, when it
+    /// differs from the application code (for example `zh_CN` for `zh`).
+    #[arg(long, requires = "file")]
+    pub tmx_target_lang: Option<String>,
 }
 
 #[derive(Args)]
@@ -270,10 +278,17 @@ pub struct GlossDeckArgs {
     /// The language the learner reads the prompt in.
     #[arg(short, long)]
     pub native_lang: String,
-    /// Maximum presentation records to generate. Repeated runs skip words at
-    /// the current presentation version and continue down the frequency order.
+    /// Pending rows to scan in this window (1–1000). Rows that are
+    /// punctuation, digits or the wrong script are reported and skipped, so
+    /// fewer than this may be enriched. Repeated runs skip words at the
+    /// current presentation version and continue down the frequency order.
     #[arg(long, default_value_t = 200)]
     pub limit: u32,
+    /// Pending rows to skip before the window. Use it to step past rejected
+    /// windows during one inspection pass; after enrichment has written
+    /// entries, restart from 0, since accepted words leave the pending list.
+    #[arg(long, default_value_t = 0)]
+    pub offset: u32,
     /// List pending words without calling the model or writing anything.
     #[arg(long, default_value_t = false)]
     pub dry_run: bool,
@@ -325,9 +340,25 @@ pub struct PrefetchMediaArgs {
     pub native_lang: String,
     #[arg(short, long)]
     pub foreign_lang: String,
-    #[arg(long, default_value = "true")]
+    /// Entries of the preparation deck to prepare in this run (1–5,000).
+    #[arg(long, default_value_t = 100)]
+    pub limit: u32,
+    /// Deck position to start from; offset plus limit may not pass 10,000.
+    #[arg(long, default_value_t = 0)]
+    pub offset: u32,
+    /// Generated payload bytes this run may admit (default 64 MiB, at most
+    /// 5 GiB). Cache hits cost nothing; a refused payload is not written.
+    #[arg(long, default_value_t = 67_108_864)]
+    pub max_bytes: u64,
+    /// Report cached and missing media without generating anything. Opens
+    /// the database and cache read-only and applies no migrations.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Prepare speech (`--audio=false` to skip).
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
     pub audio: bool,
-    #[arg(long, default_value = "true")]
+    /// Prepare images (`--images=false` to skip).
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set, num_args = 0..=1, default_missing_value = "true")]
     pub images: bool,
 }
 
@@ -363,6 +394,40 @@ pub struct GlossArgs {
     /// Bypass and overwrite the cached gloss for this sentence (forces LLM re-prompt).
     #[arg(long, default_value_t = false)]
     pub refresh: bool,
+}
+
+#[derive(Args)]
+pub struct ExtractWordsArgs {
+    #[command(flatten)]
+    pub langs: LanguageArgs,
+    /// Most frequent sentence words to publish as candidates (1–10,000).
+    #[arg(long, default_value_t = 500)]
+    pub limit: u32,
+    /// Sentences a word must occur in before it becomes a candidate (at least 2).
+    #[arg(long, default_value_t = 5)]
+    pub min_occurrences: u32,
+}
+
+/// Which candidates a promotion run attempts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum PromoteMode {
+    /// Candidates never attempted.
+    Pending,
+    /// Pending candidates and those whose last attempt failed.
+    RetryFailed,
+    /// Every candidate, refreshing existing presentations under the same IDs.
+    All,
+}
+
+#[derive(Args)]
+pub struct PromoteWordsArgs {
+    #[command(flatten)]
+    pub langs: LanguageArgs,
+    /// Candidates to attempt in this run (1–1,000).
+    #[arg(long, default_value_t = 200)]
+    pub limit: u32,
+    #[arg(long, value_enum, default_value_t = PromoteMode::Pending)]
+    pub mode: PromoteMode,
 }
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
@@ -493,6 +558,10 @@ pub enum Command {
     ExtractPhrases(ExtractPhrasesArgs),
     /// Translate staged phrases with the LLM and promote them into decks.
     TranslatePhrases(TranslatePhrasesArgs),
+    /// Count frequent words across corpus sentences into word candidates.
+    ExtractWords(ExtractWordsArgs),
+    /// Give word candidates canonical meanings and link them to learning rows.
+    PromoteWords(PromoteWordsArgs),
     #[command(aliases = ["pv"])]
     Preview(PreviewArgs),
     #[command(aliases = ["gd"])]
@@ -546,11 +615,80 @@ mod tests {
                 | (Command::PrefetchMedia(_), "PrefetchMedia")
                 | (Command::ExtractPhrases(_), "ExtractPhrases")
                 | (Command::TranslatePhrases(_), "TranslatePhrases")
+                | (Command::ExtractWords(_), "ExtractWords")
+                | (Command::PromoteWords(_), "PromoteWords")
                 | (Command::Preview(_), "Preview")
                 | (Command::Quiz(_), "Quiz")
                 | (Command::SeedGrammar(_), "SeedGrammar")
                 | (Command::Sync(_), "Sync")
         )
+    }
+
+    #[test]
+    fn prefetch_media_accepts_bounded_range_and_media_switches() -> Result<(), clap::Error> {
+        let cli = Cli::try_parse_from([
+            "wisecrow",
+            "prefetch-media",
+            "-n",
+            "en",
+            "-f",
+            "br",
+            "--limit",
+            "100",
+            "--offset",
+            "300",
+            "--max-bytes",
+            "1048576",
+            "--audio=false",
+            "--images=true",
+            "--dry-run",
+        ])?;
+        let Command::PrefetchMedia(args) = cli.command else {
+            panic!("expected prefetch-media");
+        };
+        assert_eq!(
+            (args.limit, args.offset, args.max_bytes, args.dry_run),
+            (100, 300, 1_048_576, true)
+        );
+        assert_eq!((args.audio, args.images), (false, true));
+        let defaults = Cli::try_parse_from(["wisecrow", "prefetch-media", "-n", "en", "-f", "fr"])?;
+        let Command::PrefetchMedia(args) = defaults.command else {
+            panic!("expected prefetch-media");
+        };
+        assert_eq!(
+            (args.limit, args.offset, args.max_bytes, args.dry_run),
+            (100, 0, 67_108_864, false)
+        );
+        assert_eq!((args.audio, args.images), (true, true));
+        Ok(())
+    }
+
+    #[test]
+    fn local_tmx_alias_requires_file() {
+        assert!(Cli::try_parse_from([
+            "wisecrow",
+            "ingest",
+            "-n",
+            "en",
+            "-f",
+            "zh",
+            "--tmx-target-lang",
+            "zh_CN",
+        ])
+        .is_err());
+        assert!(Cli::try_parse_from([
+            "wisecrow",
+            "ingest",
+            "-n",
+            "en",
+            "-f",
+            "zh",
+            "--file",
+            "sample.tmx",
+            "--tmx-target-lang",
+            "zh_CN",
+        ])
+        .is_ok());
     }
 
     #[rstest]
@@ -576,6 +714,18 @@ mod tests {
     #[case(&["wisecrow", "nb", "-n", "en", "-f", "de", "--mode", "word_translation"], "Nback")]
     #[case(&["wisecrow", "prefetch-media", "-n", "en", "-f", "es"], "PrefetchMedia")]
     #[case(&["wisecrow", "extract-phrases", "-l", "gd"], "ExtractPhrases")]
+    #[case(
+        &["wisecrow", "extract-words", "-n", "en", "-f", "gd", "--limit", "500", "--min-occurrences", "5"],
+        "ExtractWords"
+    )]
+    #[case(
+        &["wisecrow", "promote-words", "-n", "en", "-f", "gd", "--limit", "200", "--mode", "pending"],
+        "PromoteWords"
+    )]
+    #[case(
+        &["wisecrow", "promote-words", "-n", "en", "-f", "gd", "--limit", "200", "--mode", "retry-failed"],
+        "PromoteWords"
+    )]
     #[case(
         &["wisecrow", "translate-phrases", "-l", "gd", "-n", "en", "--limit", "50", "--refresh"],
         "TranslatePhrases"

@@ -1,4 +1,5 @@
 use crate::errors::WisecrowError;
+use crate::files::IngestLanguages;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 use std::fs::File;
@@ -26,7 +27,10 @@ trait XmlParseHandler {
     fn format_label(&self) -> &'static str;
 }
 
-struct TmxState {
+struct TmxState<'a> {
+    /// Exact archive tags select `<tuv>` elements; canonical codes are still
+    /// what `send_pair` validates text against.
+    languages: &'a IngestLanguages,
     in_seg: bool,
     seg_buffer: String,
     current_lang: Option<String>,
@@ -34,9 +38,10 @@ struct TmxState {
     target_text: Option<String>,
 }
 
-impl TmxState {
-    const fn new() -> Self {
+impl<'a> TmxState<'a> {
+    const fn new(languages: &'a IngestLanguages) -> Self {
         Self {
+            languages,
             in_seg: false,
             seg_buffer: String::new(),
             current_lang: None,
@@ -46,7 +51,7 @@ impl TmxState {
     }
 }
 
-impl XmlParseHandler for TmxState {
+impl XmlParseHandler for TmxState<'_> {
     fn on_start(&mut self, e: &BytesStart<'_>) {
         match e.name().as_ref() {
             b"tu" => {
@@ -83,8 +88,8 @@ impl XmlParseHandler for TmxState {
                 self.in_seg = false;
                 CorpusParser::assign_by_lang(
                     self.current_lang.as_deref(),
-                    source_lang,
-                    target_lang,
+                    self.languages.native().corpus(),
+                    self.languages.foreign().corpus(),
                     &mut self.seg_buffer,
                     &mut self.source_text,
                     &mut self.target_text,
@@ -366,7 +371,12 @@ impl CorpusParser {
                     }
                 }
                 Ok(Event::Eof) => break,
-                Err(e) => tracing::warn!("{} parse error: {e}", handler.format_label()),
+                Err(error) => {
+                    return Err(WisecrowError::InvalidInput(format!(
+                        "Invalid {} corpus XML: {error}",
+                        handler.format_label()
+                    )))
+                }
                 _ => {}
             }
             buf.clear();
@@ -383,16 +393,40 @@ impl CorpusParser {
     ///
     /// # Errors
     ///
-    /// Returns an error if the file cannot be opened or a fatal I/O error
-    /// occurs during reading.
+    /// Returns an error if the language pair is unsupported, the file cannot
+    /// be opened, the XML is malformed or a fatal I/O error occurs during
+    /// reading.
     pub async fn parse_tmx_file(
         path: &str,
         source_lang: &str,
         target_lang: &str,
         sender: &Sender<TranslationPair>,
     ) -> Result<usize, WisecrowError> {
-        let mut state = TmxState::new();
-        Self::parse_xml_events(path, source_lang, target_lang, sender, &mut state).await
+        let languages = IngestLanguages::identity(source_lang, target_lang)?;
+        Self::parse_tmx_file_with_languages(path, &languages, sender).await
+    }
+
+    /// Parses exact source tags while validating text against application
+    /// languages.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be opened, the XML is malformed or
+    /// a fatal I/O error occurs during reading.
+    pub async fn parse_tmx_file_with_languages(
+        path: &str,
+        languages: &IngestLanguages,
+        sender: &Sender<TranslationPair>,
+    ) -> Result<usize, WisecrowError> {
+        let mut state = TmxState::new(languages);
+        Self::parse_xml_events(
+            path,
+            languages.native().canonical(),
+            languages.foreign().canonical(),
+            sender,
+            &mut state,
+        )
+        .await
     }
 
     /// Parses an OPUS XML alignment file, sending each extracted pair to
@@ -400,8 +434,8 @@ impl CorpusParser {
     ///
     /// # Errors
     ///
-    /// Returns an error if the file cannot be opened or a fatal I/O error
-    /// occurs during reading.
+    /// Returns an error if the file cannot be opened, the XML is malformed or
+    /// a fatal I/O error occurs during reading.
     pub async fn parse_xml_alignment_file(
         path: &str,
         source_lang: &str,
@@ -416,6 +450,7 @@ impl CorpusParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::files::IngestLanguage;
     use proptest::prelude::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
@@ -758,6 +793,105 @@ mod tests {
         let pairs = collect_translations(rx);
         assert_eq!(pairs[0].source_text, "Has both");
         assert_eq!(pairs[0].target_text, "Tiene ambos");
+    }
+
+    const CHINESE_ALIAS_TMX: &str = r#"<tmx><body><tu>
+      <tuv xml:lang="en"><seg>I learn</seg></tuv>
+      <tuv xml:lang="zh_CN"><seg>&#25105;&#23398;&#20064;</seg></tuv>
+      </tu><tu><tuv xml:lang="en"><seg>not selected</seg></tuv>
+      <tuv xml:lang="zh_TW"><seg>&#20320;&#22909;</seg></tuv>
+      </tu></body></tmx>"#;
+
+    async fn parse_mapped(
+        content: &str,
+        native: (&str, &str),
+        foreign: (&str, &str),
+    ) -> Result<(usize, Vec<TranslationPair>), Box<dyn std::error::Error>> {
+        let mut file = NamedTempFile::new()?;
+        file.write_all(content.as_bytes())?;
+        let mapping = IngestLanguages::new(
+            IngestLanguage::new(native.0, native.1)?,
+            IngestLanguage::new(foreign.0, foreign.1)?,
+        )?;
+        let (tx, rx) = mpsc::channel(4);
+        let count = CorpusParser::parse_tmx_file_with_languages(
+            file.path().to_str().ok_or("UTF-8 path required")?,
+            &mapping,
+            &tx,
+        )
+        .await?;
+        drop(tx);
+        Ok((count, collect_translations(rx)))
+    }
+
+    #[tokio::test]
+    async fn mapped_tmx_keeps_canonical_chinese() -> Result<(), Box<dyn std::error::Error>> {
+        // Only the selected zh_CN variant is imported; zh_TW stays excluded.
+        let (count, pairs) = parse_mapped(CHINESE_ALIAS_TMX, ("en", "en"), ("zh", "zh_CN")).await?;
+        assert_eq!(count, 1);
+        assert_eq!(
+            pairs,
+            [TranslationPair {
+                source_text: "I learn".to_owned(),
+                target_text: "我学习".to_owned(),
+            }]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn mapped_tmx_reverses_with_the_mapping() -> Result<(), Box<dyn std::error::Error>> {
+        let (count, pairs) = parse_mapped(CHINESE_ALIAS_TMX, ("zh", "zh_CN"), ("en", "en")).await?;
+        assert_eq!(count, 1);
+        assert_eq!(
+            pairs,
+            [TranslationPair {
+                source_text: "我学习".to_owned(),
+                target_text: "I learn".to_owned(),
+            }]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn source_alias_does_not_bypass_canonical_script_check(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // The alias selects the <tuv>; the canonical code still decides which
+        // script the text must be in.
+        let content = r#"<tmx><body><tu>
+      <tuv xml:lang="en"><seg>We spent every weekend together</seg></tuv>
+      <tuv xml:lang="gd_GB"><seg>うぐぅうぐぅうぐぅうぐぅ</seg></tuv>
+      </tu><tu><tuv xml:lang="en"><seg>Hello my friend</seg></tuv>
+      <tuv xml:lang="gd_GB"><seg>Halò a charaid</seg></tuv>
+      </tu></body></tmx>"#;
+        let (count, pairs) = parse_mapped(content, ("en", "en"), ("gd", "gd_GB")).await?;
+        assert_eq!(count, 1, "kana dropped under the alias, Gaelic kept");
+        assert_eq!(pairs[0].target_text, "Halò a charaid");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn malformed_xml_is_an_error_not_an_empty_success(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let content = r#"<tmx><body><tu>
+      <tuv xml:lang="en"><seg>Hello</seg></tuv>
+      <tuv xml:lang="es"><seg>Hola</seg></tuv>
+      </body></tmx>"#;
+        let mut file = NamedTempFile::new()?;
+        file.write_all(content.as_bytes())?;
+        let (tx, _rx) = mpsc::channel(4);
+        let result = CorpusParser::parse_tmx_file(
+            file.path().to_str().ok_or("UTF-8 path required")?,
+            "en",
+            "es",
+            &tx,
+        )
+        .await;
+        assert!(
+            matches!(result, Err(WisecrowError::InvalidInput(_))),
+            "expected InvalidInput, got {result:?}"
+        );
+        Ok(())
     }
 
     proptest! {

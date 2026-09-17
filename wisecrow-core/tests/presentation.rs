@@ -3,7 +3,9 @@ use sqlx::PgPool;
 use wisecrow::errors::WisecrowError;
 use wisecrow::glossing::{enrich_presentations, pending_presentations};
 use wisecrow::llm::LlmProvider;
-use wisecrow::presentation::{PresentationRepository, PresentedTranslation};
+use wisecrow::presentation::{
+    PresentationRepository, PresentedTranslation, CURRENT_PRESENTATION_VERSION,
+};
 
 const NATIVE_CODE: &str = "en";
 const FOREIGN_CODE: &str = "fr";
@@ -292,7 +294,13 @@ async fn pending_presentations_advance_by_version_and_retry_omissions() {
     assert_eq!(candidate_words(&next), vec!["le", "chien"]);
     assert_eq!(
         stored_presentation(&pool, "avec").await,
-        ("avec".into(), "with".into(), true, None, 1)
+        (
+            "avec".into(),
+            "with".into(),
+            true,
+            None,
+            CURRENT_PRESENTATION_VERSION
+        )
     );
     assert_eq!(
         stored_presentation(&pool, "le").await,

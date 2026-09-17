@@ -43,7 +43,7 @@ image = { version = "0.25", optional = true }
 jieba-rs = "0.9"
 lindera = { version = "3", features = ["embed-ipadic"] }
 indicatif = "0.17.8"
-msedge-tts = { version = "0.2", optional = true }
+msedge-tts = { version = "0.2.5", optional = true }
 num-traits = "0.2"
 pdf-extract = "0.7"
 quick-xml = "0.36"

@@ -261,9 +261,11 @@ impl FrequencyUpdater {
         counts: &mut HashMap<String, i32>,
     ) -> Result<(), WisecrowError> {
         // `column` is chosen from a literal array above, never from user input.
+        // Generated learning rows and promoted phrases are not corpus text, so
+        // the evidence view keeps them out of the counts they were built from.
         let statement = format!(
             "SELECT t.id, t.{column}_phrase
-               FROM translations t
+               FROM corpus_evidence_translations t
                JOIN languages l ON l.id = t.{column}_language_id
               WHERE l.code = $1 AND t.id > $2
               ORDER BY t.id
@@ -427,14 +429,20 @@ impl FrequencyUpdater {
         // This writes `corpus_frequency`, never `frequency`. Ranking is the only
         // source of a real corpus count, and keeping the two columns apart is
         // what stops an ingest collision count reaching a deck — see migration
-        // 017 for what that cost the Irish deck.
+        // 017 for what that cost the Irish deck. Rows a word promotion
+        // generated carry their own evidence rank, and promoted phrases their
+        // own review, so neither is re-ranked here.
         let statement = format!(
             "UPDATE translations SET corpus_frequency = t.freq
              FROM unnest($1::text[], $2::int[]) AS t(phrase, freq)
-             WHERE (translations.from_language_id = $3
-                    AND lower(btrim(translations.from_phrase, '{MATCH_TRIM_SQL}')) = t.phrase)
-                OR (translations.to_language_id = $3
-                    AND lower(btrim(translations.to_phrase, '{MATCH_TRIM_SQL}')) = t.phrase)"
+             WHERE ((translations.from_language_id = $3
+                     AND lower(btrim(translations.from_phrase, '{MATCH_TRIM_SQL}')) = t.phrase)
+                 OR (translations.to_language_id = $3
+                     AND lower(btrim(translations.to_phrase, '{MATCH_TRIM_SQL}')) = t.phrase))
+               AND NOT EXISTS (SELECT 1 FROM word_promotions p
+                               WHERE p.translation_id = translations.id AND p.owns_translation)
+               AND NOT EXISTS (SELECT 1 FROM phrase_translations p
+                               WHERE p.translation_id = translations.id)"
         );
 
         for chunk in entries.chunks(BATCH_SIZE) {

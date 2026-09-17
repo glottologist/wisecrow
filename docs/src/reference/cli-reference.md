@@ -28,6 +28,8 @@ list.
 | [`import-pdf`](#import-pdf) | `ip` | yes | Import grammar rules extracted from a PDF. |
 | [`generate-exercises`](#generate-exercises) | `ge` | yes + LLM | Generate cloze and MC quizzes from stored rules. |
 | [`quiz`](#quiz) | `q` | no | Run a quiz directly from a PDF. |
+| [`extract-words`](#extract-words) | — | yes | Count sentence words into word candidates. |
+| [`promote-words`](#promote-words) | — | yes + LLM | Give candidates meanings and link them to learning rows. |
 | [`prefetch-media`](#prefetch-media) | `pm` | yes | Pre-warm the audio/image cache. |
 | [`sync`](#sync) | `s` | yes | Pull data from a remote Wisecrow. |
 | [`gloss`](#gloss) | `gl` | yes + LLM | Leipzig interlinear gloss for a sentence (cached). |
@@ -102,6 +104,13 @@ in-flight tasks on SIGINT/SIGTERM.
 | Flag | Default | Description |
 |------|--------:|-------------|
 | `--file` | — | Ingest this local TMX file instead of downloading. Must be decompressed; the corpus and download options are ignored. |
+| `--tmx-source-lang` | native code | Exact `xml:lang` tag the file uses for the native side. Requires `--file`. |
+| `--tmx-target-lang` | foreign code | Exact `xml:lang` tag the file uses for the foreign side, such as `zh_CN` for `zh`. Requires `--file`. |
+
+OpenSubtitles publishes Chinese as `zh_CN`; a request for `zh` selects that
+archive automatically and stores its pairs under `zh`. An import that accepts
+no pairs, meets malformed XML or is refused by the database fails that job,
+and the command exits nonzero once every job has finished.
 
 Per-batch behaviour:
 
@@ -149,6 +158,54 @@ whichever side of a pair holds the listed language, so ingest direction is
 irrelevant. Only whole phrases match: a word list ranks single-word rows, not
 the sentences containing that word. A file that parses to no entries is an
 error rather than a silent no-op.
+
+---
+
+## `extract-words`
+
+```sh
+wisecrow extract-words -n <NATIVE> -f <FOREIGN> [--limit N] [--min-occurrences N]
+```
+
+Counts the words of every corpus sentence for the pair and publishes the most
+frequent as word candidates, each with up to three source sentences kept as
+evidence. Counting runs inside PostgreSQL temporary tables on one dedicated
+connection, so a corpus of millions of rows is never held in memory, and a
+re-run replaces a candidate's count rather than adding to it.
+
+| Flag | Default | Description |
+|------|--------:|-------------|
+| `--limit` | `500` | Candidates to publish, most frequent first (1–10,000). |
+| `--min-occurrences` | `5` | Occurrences a word needs, across at least two sentences (at least 2). |
+
+Rows that an earlier `promote-words` generated, and rows promoted as phrases,
+are not corpus text and are never counted.
+
+---
+
+## `promote-words`
+
+```sh
+wisecrow promote-words -n <NATIVE> -f <FOREIGN> [--limit N] [--mode pending|retry-failed|all]
+```
+
+Asks the model for a canonical presentation of each candidate, with its source
+sentences as untrusted context, and links every accepted word to the
+translation row that will teach it. An existing corpus row spelling the word is
+reused; otherwise a generated row is created and owned by the promotion. IDs
+are stable: refreshing a meaning under `--mode all` changes the text of the
+same row and leaves every card and review on it untouched.
+
+| Flag | Default | Description |
+|------|--------:|-------------|
+| `--limit` | `200` | Candidates to attempt in one run (1–1,000). |
+| `--mode` | `pending` | `pending` attempts new candidates; `retry-failed` adds those whose last attempt failed; `all` refreshes every candidate. |
+
+The run reports attempted, accepted, rejected, failed and stale counts and
+exits nonzero when any candidate failed or went stale, so a scripted pilot
+cannot pass on a partial result. Generation happens outside the database
+transaction; each candidate then commits on its own, so a failure part-way
+keeps every earlier success.
 
 ---
 
@@ -294,15 +351,53 @@ trying the quiz UI.
 ## `prefetch-media`
 
 ```sh
-wisecrow prefetch-media -n <NATIVE> -f <FOREIGN> [--audio BOOL] [--images BOOL]
+wisecrow prefetch-media -n <NATIVE> -f <FOREIGN> [--limit N] [--offset N] [--max-bytes N] [--dry-run] [--audio BOOL] [--images BOOL]
 ```
 
-Walks the deck and warms the on-disk cache for audio and/or image media.
-Audio uses Microsoft Edge TTS (no API key). Images need at least one
-stock-photo key (`WISECROW__UNSPLASH_API_KEY`, `WISECROW__PEXELS_API_KEY`,
-and/or `WISECROW__PIXABAY_API_KEY`; optional `WISECROW__IMAGE_PROVIDER`).
+Prepares the on-disk cache for a finite slice of the pair's preparation
+deck: the first 10,000 ranked words that carry a current presentation and
+the first 2,000 ranked phrases, interleaved to at most 10,000 entries. The
+deck is the same however much of it a run asks for, so `--offset` names a
+stable position until the ranking or presentations change; after an
+import, ranking or enrichment, preview again from offset zero.
 
-This command is a no-op for media types whose feature is not compiled in.
+```sh
+wisecrow prefetch-media -n en -f fr --limit 100 --offset 0 --dry-run
+wisecrow prefetch-media -n en -f fr --limit 100 --offset 0 --max-bytes 67108864
+wisecrow prefetch-media -n en -f br --limit 100 --audio=false --images=true --dry-run
+```
+
+| Flag | Default | Description |
+|------|--------:|-------------|
+| `--limit` | `100` | Deck entries in this run (1–5,000). |
+| `--offset` | `0` | Deck position to start from; offset plus limit may not pass 10,000. |
+| `--max-bytes` | `67108864` | Generated payload bytes the run may admit (1 byte–5 GiB). |
+| `--dry-run` | off | Read-only preview: reports cached and missing media, generates nothing, applies no migrations and creates no cache directory. |
+| `--audio` | `true` | Prepare speech; `--audio=false` skips it. |
+| `--images` | `true` | Prepare images; `--images=false` skips it. |
+
+The budget counts new payload bytes admitted during this invocation and
+nothing else: cache hits cost nothing, filesystem overhead and completed
+provider transfers are not counted, and a charge is never refunded, so a
+payload admitted and then lost to a publication error still counts. Once a
+payload is refused, later misses are reported as budget-exhausted without a
+provider call, while probes continue so hits stay identifiable. At most four
+requests are outstanding at once, and presentations are loaded one hundred
+at a time.
+
+Audio uses Microsoft Edge TTS (no API key), or CereProc where configured.
+Images need at least one stock-photo key (`WISECROW__UNSPLASH_API_KEY`,
+`WISECROW__PEXELS_API_KEY` and/or `WISECROW__PIXABAY_API_KEY`; optional
+`WISECROW__IMAGE_PROVIDER`). A medium this build or configuration cannot
+produce is reported as unsupported rather than ready: a preview says so,
+and an execution is refused before any call, so a language without a voice
+(Breton, for instance) is prepared with `--audio=false --images=true`.
+
+The run prints the range, per-medium counters, admitted and generated bytes
+and the next offset, then exits nonzero when any medium failed, was refused
+by the budget or is unsupported, naming the first affected IDs so the same
+range can be retried before advancing. A preview's missing entries are
+expected and do not fail the run.
 
 ---
 

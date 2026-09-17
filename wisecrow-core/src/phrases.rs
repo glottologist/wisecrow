@@ -50,13 +50,13 @@ pub async fn extract_phrases(
 ) -> Result<usize, WisecrowError> {
     let tokenizer = crate::preview::tokenize::for_language(lang_code)?;
 
+    // The evidence view already excludes promoted phrases and generated
+    // word rows, neither of which is corpus text to mine.
     let statement = format!(
         "SELECT DISTINCT lower(btrim(t.to_phrase, '{trim}')) AS surface
-         FROM translations t
+         FROM corpus_evidence_translations t
          JOIN languages tl ON tl.id = t.to_language_id
          WHERE tl.code = $1
-           AND NOT EXISTS (SELECT 1 FROM phrase_translations pt
-                           WHERE pt.translation_id = t.id)
            AND lower(btrim(t.to_phrase, '{trim}')) > $2
          ORDER BY surface
          LIMIT $3",
