@@ -134,6 +134,23 @@ async fn scan_and_publish(
             "No corpus evidence for this language pair".into(),
         ));
     };
+    // Each distinct foreign sentence counts once: a mis-aligned line that the
+    // corpus repeats thousands of times would otherwise outrank real words.
+    // The lowest ID stands for the sentence so paging stays in ID order.
+    sqlx::query("CREATE TEMP TABLE evidence_first (id INTEGER PRIMARY KEY)")
+        .execute(&mut *connection)
+        .await?;
+    sqlx::query(
+        "INSERT INTO evidence_first (id)
+         SELECT MIN(id) FROM corpus_evidence_translations
+         WHERE from_language_id = $1 AND to_language_id = $2 AND id <= $3
+         GROUP BY to_phrase",
+    )
+    .bind(pair.native_id)
+    .bind(pair.foreign_id)
+    .bind(upper)
+    .execute(&mut *connection)
+    .await?;
     sqlx::query("CREATE TEMP TABLE word_count_stage (word TEXT PRIMARY KEY, n BIGINT NOT NULL)")
         .execute(&mut *connection)
         .await?;
@@ -151,9 +168,12 @@ async fn scan_and_publish(
     let mut cursor = 0i32;
     loop {
         let rows: Vec<(i32, String, String)> = sqlx::query_as(
-            "SELECT id, from_phrase, to_phrase FROM corpus_evidence_translations
-             WHERE from_language_id = $1 AND to_language_id = $2 AND id > $3 AND id <= $4
-             ORDER BY id LIMIT $5",
+            "SELECT t.id, t.from_phrase, t.to_phrase
+             FROM evidence_first f
+             JOIN corpus_evidence_translations t ON t.id = f.id
+             WHERE t.from_language_id = $1 AND t.to_language_id = $2
+               AND f.id > $3 AND f.id <= $4
+             ORDER BY f.id LIMIT $5",
         )
         .bind(pair.native_id)
         .bind(pair.foreign_id)
@@ -193,17 +213,24 @@ fn page_evidence<'a>(
 ) -> Result<Vec<TokenEvidence<'a>>, WisecrowError> {
     let mut evidence = Vec::new();
     for (id, native, text) in rows {
+        let words: Vec<String> = tokenizer
+            .tokenize(text)
+            .iter()
+            .map(|token| crate::lang::normalise_for_match(token))
+            .filter(|word| {
+                crate::lang::is_meaningful_text(word, crate::lang::MAX_WORD_CHARS)
+                    && crate::lang::is_plausible_script(word, foreign_lang)
+            })
+            .collect();
+        if is_stray_letter_sentence(&words) {
+            continue;
+        }
         let mut counts = BTreeMap::<String, i64>::new();
-        for token in tokenizer.tokenize(text) {
-            let word = crate::lang::normalise_for_match(&token);
-            if crate::lang::is_meaningful_text(&word, crate::lang::MAX_WORD_CHARS)
-                && crate::lang::is_plausible_script(&word, foreign_lang)
-            {
-                let count = counts.entry(word).or_default();
-                *count = count
-                    .checked_add(1)
-                    .ok_or_else(|| WisecrowError::InvalidInput("Word count overflow".into()))?;
-            }
+        for word in words {
+            let count = counts.entry(word).or_default();
+            *count = count
+                .checked_add(1)
+                .ok_or_else(|| WisecrowError::InvalidInput("Word count overflow".into()))?;
         }
         evidence.extend(counts.into_iter().map(|(word, n)| TokenEvidence {
             word,
@@ -214,6 +241,26 @@ fn page_evidence<'a>(
         }));
     }
     Ok(evidence)
+}
+
+/// Fewest single non-ASCII letters that mark a sentence as decoding debris.
+const STRAY_LETTER_LIMIT: usize = 3;
+/// Fewest words before a majority of single letters marks a sentence.
+const MAJORITY_FLOOR: usize = 4;
+
+/// Recognises sentences that are corpus noise rather than language: text
+/// decoded through the wrong encoding becomes runs of single accented
+/// letters (`â ã å`), and mis-aligned rows from other languages carry `Â`
+/// separators. Genuine one-letter words (`a`, `e`, `à`) survive because a
+/// real sentence rarely holds three accented singles or a majority of singles.
+fn is_stray_letter_sentence(words: &[String]) -> bool {
+    let single = |word: &String| word.chars().count() == 1;
+    let stray = words
+        .iter()
+        .filter(|word| single(word) && !word.is_ascii())
+        .count();
+    let singles = words.iter().filter(|word| single(word)).count();
+    stray >= STRAY_LETTER_LIMIT || (words.len() >= MAJORITY_FLOOR && singles * 2 > words.len())
 }
 
 /// Merges one encoded page into the staging tables and trims each word to its
@@ -287,9 +334,20 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    #[ignore = "requires PostgreSQL"]
-    async fn page_boundaries_do_not_change_counts() -> Result<(), Box<dyn std::error::Error>> {
+    #[rstest::rstest]
+    #[case("Î â and and to ä õ â: ü :è, ó And and â, þ", false)]
+    #[case("ë ã å ã ï ã å ã æ ã ï ã", false)]
+    #[case("existir Â es Â la Â confianza Â en Â ti", false)]
+    #[case("A bheil e?", true)]
+    #[case("Tha e a' dol dhachaigh", true)]
+    #[case("Chaidh mi à Glaschu à Dùn Èideann", true)]
+    fn sentences_of_stray_letters_yield_no_evidence(#[case] foreign: &str, #[case] kept: bool) {
+        let rows = vec![(1, "native".to_owned(), foreign.to_owned())];
+        let evidence = page_evidence(&rows, &WhitespaceTokenizer, "gd").expect("tokenises");
+        assert_eq!(!evidence.is_empty(), kept, "{foreign}");
+    }
+
+    async fn seeded_pool(rows: &[(&str, &str)]) -> Result<PgPool, Box<dyn std::error::Error>> {
         let url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
             "postgres://wisecrow:wisecrow@localhost:5432/wisecrow_test".to_owned()
         });
@@ -303,13 +361,7 @@ mod tests {
         )
         .execute(&pool)
         .await?;
-        for (native, foreign) in [
-            ("the big house", "an taigh mòr"),
-            ("the small house", "an taigh beag"),
-            ("a warm house", "taigh blàth"),
-            ("a cold house", "taigh fuar"),
-            ("my house", "mo thaigh taigh"),
-        ] {
+        for (native, foreign) in rows {
             sqlx::query(
                 "INSERT INTO translations (from_language_id, to_language_id, from_phrase, to_phrase)
                  SELECT n.id, f.id, $1, $2 FROM languages n, languages f
@@ -320,6 +372,93 @@ mod tests {
             .execute(&pool)
             .await?;
         }
+        Ok(pool)
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn repeated_sentences_count_once() -> Result<(), Box<dyn std::error::Error>> {
+        // One mis-aligned line duplicated across many rows must not outrank
+        // words with genuine spread.
+        let pool = seeded_pool(&[
+            ("verse one", "Seo docamaideadh na brataich."),
+            ("verse two", "Seo docamaideadh na brataich."),
+            ("verse three", "Seo docamaideadh na brataich."),
+            ("verse four", "Seo docamaideadh na brataich."),
+            ("the big house", "an taigh mòr"),
+            ("the small house", "an taigh beag"),
+        ])
+        .await?;
+        let options = ExtractionOptions::new(500, 2)?;
+        let summary = extract_words_paged(&pool, "en", "gd", &options, 2).await?;
+        assert_eq!(
+            summary.scanned_rows, 3,
+            "distinct foreign sentences scanned"
+        );
+        let counts: Vec<(String, i64)> =
+            sqlx::query_as("SELECT word, occurrence_count FROM word_candidates ORDER BY word")
+                .fetch_all(&pool)
+                .await?;
+        assert_eq!(
+            counts,
+            vec![("an".to_owned(), 2), ("taigh".to_owned(), 2)],
+            "words seen in one sentence only fall under min_occurrences"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn re_extraction_drops_unselected_candidates_but_keeps_accepted(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let pool = seeded_pool(&[
+            ("the big house", "an taigh mòr"),
+            ("the small house", "an taigh beag"),
+        ])
+        .await?;
+        let options = ExtractionOptions::new(500, 2)?;
+        extract_words_paged(&pool, "en", "gd", &options, 2).await?;
+        // Two leftovers from an earlier run whose words the corpus no longer
+        // yields: one still pending, one already promoted.
+        sqlx::query(
+            "INSERT INTO word_candidates
+                 (native_language_id, foreign_language_id, word, surface,
+                  occurrence_count, source_upper_id, status)
+             SELECT n.id, f.id, w.word, w.word, 9000, 1, w.status
+             FROM languages n, languages f,
+                  (VALUES ('fuerza', 'pending'), ('là', 'accepted')) AS w(word, status)
+             WHERE n.code = 'en' AND f.code = 'gd'",
+        )
+        .execute(&pool)
+        .await?;
+        let summary = extract_words_paged(&pool, "en", "gd", &options, 2).await?;
+        assert_eq!(summary.candidates, 2);
+        let remaining: Vec<(String, String)> =
+            sqlx::query_as("SELECT word, status FROM word_candidates ORDER BY word")
+                .fetch_all(&pool)
+                .await?;
+        assert_eq!(
+            remaining,
+            vec![
+                ("an".to_owned(), "pending".to_owned()),
+                ("là".to_owned(), "accepted".to_owned()),
+                ("taigh".to_owned(), "pending".to_owned()),
+            ]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn page_boundaries_do_not_change_counts() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = seeded_pool(&[
+            ("the big house", "an taigh mòr"),
+            ("the small house", "an taigh beag"),
+            ("a warm house", "taigh blàth"),
+            ("a cold house", "taigh fuar"),
+            ("my house", "mo thaigh taigh"),
+        ])
+        .await?;
         let options = ExtractionOptions::new(500, 5)?;
         let summary = extract_words_paged(&pool, "en", "gd", &options, 2).await?;
         assert_eq!(

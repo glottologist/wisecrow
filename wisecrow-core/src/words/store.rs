@@ -9,9 +9,9 @@ use crate::glossing::ValidatedPresentation;
 
 /// Publishes the staged counts as candidates in one transaction: the top
 /// `limit` words at or above the occurrence threshold with at least two
-/// example sources are upserted, their examples replaced, and the ranks of
-/// any owned generated rows refreshed. Returns the number of candidates
-/// written.
+/// example sources are upserted, their examples replaced, the ranks of any
+/// owned generated rows refreshed, and unselected candidates that were never
+/// accepted removed. Returns the number of candidates written.
 ///
 /// # Errors
 ///
@@ -33,6 +33,20 @@ pub(crate) async fn publish_candidates(
     )
     .bind(i64::from(options.min_occurrences))
     .bind(i64::from(options.limit))
+    .execute(&mut *transaction)
+    .await?;
+    // A candidate the new selection no longer contains is stale: its count
+    // describes an earlier scan, and left in place it would queue ahead of
+    // genuine words for promotion. Accepted candidates stay because their
+    // promotions and cards refer to them.
+    sqlx::query(
+        "DELETE FROM word_candidates c
+         WHERE c.native_language_id = $1 AND c.foreign_language_id = $2
+           AND c.status <> 'accepted'
+           AND NOT EXISTS (SELECT 1 FROM selected_words_stage s WHERE s.word = c.word)",
+    )
+    .bind(pair.native_id)
+    .bind(pair.foreign_id)
     .execute(&mut *transaction)
     .await?;
     let upserted = sqlx::query(

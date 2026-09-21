@@ -79,6 +79,7 @@ impl PromotionOptions {
 /// What one extraction run scanned and published.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct ExtractionSummary {
+    /// Distinct foreign sentences read; repeated rows count once.
     pub scanned_rows: u64,
     pub candidates: u64,
 }

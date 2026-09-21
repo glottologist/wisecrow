@@ -1,3 +1,4 @@
+pub mod brand;
 pub mod fast;
 pub mod home;
 pub mod layout;

@@ -31,7 +31,13 @@ RUN cargo build --release --bin wisecrow
 # Fullstack web bundle. `Dioxus.toml` configures `out_dir = "dist"` inside
 # the wisecrow-web crate, so artifacts land in /build/wisecrow-web/dist.
 # Default features already enable TTS audio + Unsplash images (no rodio).
-RUN cd wisecrow-web \
+# A `dist` left over from a host build must not reach this stage: its server
+# binary links against the host's loader and a second server beside the
+# freshly bundled one makes the runtime CMD pick the wrong file. The
+# .dockerignore and the deploy rsync both exclude it; the removal here keeps
+# the bundle authoritative even when the context is assembled another way.
+RUN rm -rf wisecrow-web/dist \
+ && cd wisecrow-web \
  && dx bundle --release --platform web
 
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime

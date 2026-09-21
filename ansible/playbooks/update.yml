@@ -24,6 +24,12 @@
           # ships several gigabytes of build artefacts before it reaches the
           # source it exists to sync.
           - "--exclude=target-docker"
+          # A host-built `wisecrow-web/dist` carries a server binary linked
+          # against the host loader; shipped into the build context it sits
+          # beside the container's own bundle and the image starts the wrong
+          # one. The Dockerfile also removes the directory before bundling.
+          - "--exclude=dist"
+          - "--exclude=dist-*"
           - "--exclude=.git"
           - "--exclude=node_modules"
           - "--exclude=claude/"

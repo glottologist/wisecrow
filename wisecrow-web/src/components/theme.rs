@@ -189,6 +189,11 @@ mod tests {
             "input:-webkit-autofill",
             "scrollbar-color",
             ":root[data-theme=\"light\"] select",
+            "font-family: 'Outfit'",
+            "--on-accent",
+            ".brand-light",
+            ".brand-dark",
+            ".login-shell",
         ];
         let missing: Vec<&str> = required
             .into_iter()

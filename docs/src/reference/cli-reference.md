@@ -170,8 +170,10 @@ wisecrow extract-words -n <NATIVE> -f <FOREIGN> [--limit N] [--min-occurrences N
 Counts the words of every corpus sentence for the pair and publishes the most
 frequent as word candidates, each with up to three source sentences kept as
 evidence. Counting runs inside PostgreSQL temporary tables on one dedicated
-connection, so a corpus of millions of rows is never held in memory, and a
-re-run replaces a candidate's count rather than adding to it.
+connection, so a corpus of millions of rows is never held in memory. A re-run
+replaces a candidate's count rather than adding to it and removes candidates
+the new selection no longer contains, except accepted ones, whose promotions
+and cards remain.
 
 | Flag | Default | Description |
 |------|--------:|-------------|
@@ -179,7 +181,13 @@ re-run replaces a candidate's count rather than adding to it.
 | `--min-occurrences` | `5` | Occurrences a word needs, across at least two sentences (at least 2). |
 
 Rows that an earlier `promote-words` generated, and rows promoted as phrases,
-are not corpus text and are never counted.
+are not corpus text and are never counted. Two further gates keep corpus noise
+out of the counts: each distinct foreign sentence counts once, however many
+rows repeat it, and a sentence is skipped when it holds three or more single
+accented letters or, from four words upwards, a majority of one-letter tokens,
+the signature of text decoded through the wrong encoding or of mis-aligned
+rows from another language. The scanned figure in the log counts distinct
+sentences.
 
 ---
 

@@ -7,91 +7,109 @@
     padding: 0;
 }
 
+/*
+ * Wise Crow palette. Brand colours: cream #F7F4EC, ink #202A35, teal #246B60,
+ * sage #DCE8D8, apricot #F2B880. Every text token measures at least 4.5:1 on
+ * the page, surface and control backgrounds of its theme, and every border
+ * token at least 3:1, so the utility classes below stay accessible whichever
+ * surface they land on. Dark mode lifts teal to a pale tint and sets ink text
+ * on it (see --on-accent); apricot is the dark focus colour.
+ */
 :root,
 :root[data-theme="dark"] {
     color-scheme: dark;
-    --page-bg: #111827;
-    --surface-bg: #1f2937;
-    --control-bg: #374151;
-    --control-hover-bg: #4b5563;
-    --neutral-bg: #6b7280;
-    --overlay-bg: rgb(17 24 39 / 0.8);
-    --text-primary: #f9fafb;
-    --text-secondary: #d1d5db;
-    --text-muted: #9ca3af;
-    --text-subtle: #6b7280;
-    --text-faint: #4b5563;
-    --border-default: #374151;
-    --border-strong: #4b5563;
-    --focus-ring: #06b6d4;
-    --shadow-colour: rgb(0 0 0 / 0.24);
-    --red-text: #f87171;
-    --yellow-text: #facc15;
-    --emerald-text: #34d399;
-    --emerald-hover-text: #6ee7b7;
-    --cyan-text: #22d3ee;
-    --blue-text: #60a5fa;
-    --purple-text: #c084fc;
-    --amber-text: #fbbf24;
-    --emerald-500: #10b981;
-    --emerald-600: #059669;
-    --emerald-700: #047857;
-    --red-500: #ef4444;
-    --red-600: #dc2626;
-    --red-700: #b91c1c;
-    --orange-500: #f97316;
-    --orange-600: #ea580c;
-    --blue-500: #3b82f6;
-    --blue-600: #2563eb;
-    --cyan-500: #06b6d4;
-    --cyan-600: #0891b2;
-    --cyan-700: #0e7490;
-    --yellow-500: #eab308;
+    --page-bg: #172129;
+    --surface-bg: #202D36;
+    --control-bg: #2C403D;
+    --control-hover-bg: #253637;
+    --neutral-bg: #819B90;
+    --overlay-bg: rgb(23 33 41 / 0.82);
+    --text-primary: #F7F4EC;
+    --text-secondary: #DCE8D8;
+    --text-muted: #BDCFC8;
+    --text-subtle: #A9BCB5;
+    --text-faint: #9DB0A9;
+    --border-default: #7B8988;
+    --border-strong: #9DB0A9;
+    --focus-ring: #F2B880;
+    --on-accent: #172129;
+    --shadow-colour: rgb(0 0 0 / 0.3);
+    --red-text: #FFB5AA;
+    --yellow-text: #F2D27C;
+    --emerald-text: #A5D6C3;
+    --emerald-hover-text: #C0E5D5;
+    --cyan-text: #A5D6C3;
+    --blue-text: #8FC6EE;
+    --purple-text: #D0BEF5;
+    --amber-text: #F2B880;
+    --emerald-500: #C0E5D5;
+    --emerald-600: #A5D6C3;
+    --emerald-700: #C0E5D5;
+    --red-500: #FFC8C0;
+    --red-600: #FFB5AA;
+    --red-700: #FFC8C0;
+    --orange-500: #F6C89C;
+    --orange-600: #F2B880;
+    --blue-500: #A9D4F3;
+    --blue-600: #8FC6EE;
+    --cyan-500: #C0E5D5;
+    --cyan-600: #A5D6C3;
+    --cyan-700: #C0E5D5;
+    --yellow-500: #F2D27C;
 }
 
 :root[data-theme="light"] {
     color-scheme: light;
-    --page-bg: #f8fafc;
-    --surface-bg: #ffffff;
-    --control-bg: #e2e8f0;
-    --control-hover-bg: #cbd5e1;
-    --neutral-bg: #94a3b8;
-    --overlay-bg: rgb(248 250 252 / 0.88);
-    --text-primary: #0f172a;
-    --text-secondary: #334155;
-    --text-muted: #475569;
-    --text-subtle: #64748b;
-    --text-faint: #64748b;
-    --border-default: #cbd5e1;
-    --border-strong: #94a3b8;
-    --focus-ring: #0e7490;
-    --shadow-colour: rgb(15 23 42 / 0.14);
-    --red-text: #b91c1c;
-    --yellow-text: #a16207;
-    --emerald-text: #047857;
-    --emerald-hover-text: #065f46;
-    --cyan-text: #0e7490;
-    --blue-text: #1d4ed8;
-    --purple-text: #7e22ce;
-    --amber-text: #b45309;
-    --emerald-500: #047857;
-    --emerald-600: #047857;
-    --emerald-700: #065f46;
-    --red-500: #991b1b;
-    --red-600: #b91c1c;
-    --red-700: #991b1b;
-    --orange-500: #9a3412;
-    --orange-600: #c2410c;
-    --blue-500: #1e40af;
-    --blue-600: #1d4ed8;
-    --cyan-500: #0e7490;
-    --cyan-600: #0e7490;
-    --cyan-700: #155e75;
-    --yellow-500: #a16207;
+    --page-bg: #F7F4EC;
+    --surface-bg: #FFFDFA;
+    --control-bg: #DCE8D8;
+    --control-hover-bg: #EEF4EC;
+    --neutral-bg: #74877F;
+    --overlay-bg: rgb(247 244 236 / 0.88);
+    --text-primary: #202A35;
+    --text-secondary: #3F4C4A;
+    --text-muted: #4F5D5A;
+    --text-subtle: #4F5D5A;
+    --text-faint: #53615F;
+    --border-default: #7A8583;
+    --border-strong: #53615F;
+    --focus-ring: #246B60;
+    --on-accent: #FFFFFF;
+    --shadow-colour: rgb(32 42 53 / 0.12);
+    --red-text: #A53434;
+    --yellow-text: #7E4A0E;
+    --emerald-text: #246B60;
+    --emerald-hover-text: #1A5149;
+    --cyan-text: #246B60;
+    --blue-text: #1D5F8A;
+    --purple-text: #5E4390;
+    --amber-text: #7E4A0E;
+    --emerald-500: #1A5149;
+    --emerald-600: #246B60;
+    --emerald-700: #1A5149;
+    --red-500: #8F2C2C;
+    --red-600: #A53434;
+    --red-700: #8F2C2C;
+    --orange-500: #7E4A0E;
+    --orange-600: #9A5B12;
+    --blue-500: #174D70;
+    --blue-600: #1D5F8A;
+    --cyan-500: #1A5149;
+    --cyan-600: #246B60;
+    --cyan-700: #1A5149;
+    --yellow-500: #9A5B12;
+}
+
+@font-face {
+    font-family: 'Outfit';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url("outfit-latin.woff2") format("woff2");
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
     background-color: var(--page-bg);
     color: var(--text-primary);
@@ -234,7 +252,7 @@ input, select, textarea {
 .bg-cyan-600,
 .bg-cyan-700,
 .bg-yellow-500 {
-    color: #ffffff;
+    color: var(--on-accent);
 }
 
 /* Borders */
@@ -303,7 +321,7 @@ input[type="file"] {
 select {
     appearance: none;
     -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%239ca3af'%3E%3Cpath fill-rule='evenodd' d='M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z' clip-rule='evenodd'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23BDCFC8'%3E%3Cpath fill-rule='evenodd' d='M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z' clip-rule='evenodd'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 0.75rem center;
     background-size: 1.25em 1.25em;
@@ -311,7 +329,7 @@ select {
 }
 
 :root[data-theme="light"] select {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23475569'%3E%3Cpath fill-rule='evenodd' d='M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z' clip-rule='evenodd'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2353615F'%3E%3Cpath fill-rule='evenodd' d='M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z' clip-rule='evenodd'/%3E%3C/svg%3E");
 }
 
 select option {
@@ -492,4 +510,93 @@ audio {
 a {
     text-decoration: none;
     color: inherit;
+}
+
+/* Brand lockups: one image per theme, the stylesheet picks the visible one */
+.brand-lockup {
+    display: inline-flex;
+    align-items: center;
+}
+
+.brand-lockup img {
+    height: 100%;
+    width: auto;
+}
+
+.brand-light {
+    display: block;
+}
+
+.brand-dark {
+    display: none;
+}
+
+:root[data-theme="dark"] .brand-light {
+    display: none;
+}
+
+:root[data-theme="dark"] .brand-dark {
+    display: block;
+}
+
+.nav-brand-link {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 0.5rem;
+}
+
+.nav-brand-link:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 4px;
+}
+
+.nav-brand {
+    height: 2.75rem;
+}
+
+/* Sign-in page: card alone on small screens, illustration beside it from 1024px */
+.login-shell {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: center;
+    justify-items: center;
+    gap: 2rem;
+    width: 100%;
+    max-width: 64rem;
+    padding: 1.5rem;
+}
+
+.login-art {
+    display: none;
+}
+
+.login-card {
+    border: 1px solid var(--border-default);
+}
+
+.login-brand {
+    display: flex;
+    justify-content: center;
+}
+
+.login-brand .brand-lockup {
+    height: 9rem;
+}
+
+@media (min-width: 1024px) {
+    .login-shell {
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    }
+
+    .login-art {
+        display: block;
+        width: 100%;
+    }
+
+    .login-art img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 1.5rem;
+    }
 }

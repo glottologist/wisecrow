@@ -1,7 +1,7 @@
 # Introduction
 
 <p align="center">
-  <img src="../media/wisecrow-medium-res.png" alt="Wisecrow logo" width="200"/>
+  <img src="../media/wise-crow-stacked-ink.svg" alt="Wise Crow" width="240" style="background:#F7F4EC;border-radius:16px;padding:16px"/>
 </p>
 
 Wisecrow is an intensive language-cramming toolkit built around the idea that

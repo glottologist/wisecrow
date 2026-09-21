@@ -24,12 +24,18 @@ pub struct PresentationCandidate {
     pub surface: String,
 }
 
+/// One model entry. Text fields are optional at the parse boundary because the
+/// model nulls them on entries it declares unteachable; such an entry is
+/// rejected on its own rather than failing the whole batch.
 #[derive(Debug, serde::Deserialize)]
 struct PresentationEntry {
     word: String,
-    display_form: String,
-    translation: String,
+    #[serde(default)]
+    display_form: Option<String>,
+    #[serde(default)]
+    translation: Option<String>,
     teachable: bool,
+    #[serde(default)]
     image_query: Option<String>,
 }
 
@@ -375,9 +381,20 @@ fn pair_presentations(
     requested
         .iter()
         .filter_map(|candidate| {
-            offered
-                .remove(&candidate.word)
-                .and_then(|entry| validate_presentation(candidate, entry))
+            let Some(entry) = offered.remove(&candidate.word) else {
+                tracing::warn!(word = candidate.word, "model returned no entry for word");
+                return None;
+            };
+            let display_form = entry.display_form.clone(); // clone: kept for the rejection log after `entry` moves
+            let validated = validate_presentation(candidate, entry);
+            if validated.is_none() {
+                tracing::warn!(
+                    word = candidate.word,
+                    display_form = display_form.as_deref().unwrap_or("<null>"),
+                    "model entry failed the presentation contract"
+                );
+            }
+            validated
         })
         .collect()
 }
@@ -386,8 +403,8 @@ fn validate_presentation(
     candidate: &PresentationCandidate,
     entry: PresentationEntry,
 ) -> Option<ValidatedPresentation> {
-    let display_form = clean_required(entry.display_form)?;
-    let translation = clean_required(entry.translation)?;
+    let display_form = clean_required(entry.display_form?)?;
+    let translation = clean_required(entry.translation?)?;
     // Version 2 contract: the model may clean spelling but not substitute a
     // different word, and neither side may be punctuation or digits alone.
     let word = crate::lang::normalise_for_match(&entry.word);
@@ -451,12 +468,36 @@ mod tests {
         PresentationResponse {
             presentations: vec![PresentationEntry {
                 word: word.to_owned(),
-                display_form: display_form.to_owned(),
-                translation: translation.to_owned(),
+                display_form: Some(display_form.to_owned()),
+                translation: Some(translation.to_owned()),
                 teachable,
                 image_query: image_query.map(str::to_owned),
             }],
         }
+    }
+
+    #[test]
+    fn null_text_on_one_entry_drops_only_that_entry() {
+        let requested = [
+            candidate(),
+            PresentationCandidate {
+                word: "â".to_owned(),
+                surface: "â".to_owned(),
+            },
+        ];
+        let parsed: PresentationResponse = serde_json::from_str(
+            r#"{"presentations": [
+                {"word": "â", "display_form": null, "translation": null,
+                 "teachable": false, "image_query": null},
+                {"word": "chien", "display_form": "chien", "translation": "dog",
+                 "teachable": true}
+            ]}"#,
+        )
+        .expect("null text fields and a missing image_query parse");
+        let validated = pair_presentations(&requested, parsed);
+        assert_eq!(validated.len(), 1);
+        assert_eq!(validated[0].word, "chien");
+        assert_eq!(validated[0].image_query, None);
     }
 
     #[rstest]

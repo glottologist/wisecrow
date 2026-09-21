@@ -12,10 +12,12 @@ use dioxus::prelude::*;
 
 #[cfg(any(feature = "server", feature = "web"))]
 pub fn app() -> Element {
+    use components::brand::BrandHead;
     use components::theme::ThemeProvider;
 
     rsx! {
         document::Stylesheet { href: asset!("/assets/style.css") }
+        BrandHead {}
         ThemeProvider {
             Router::<router::Route> {}
         }

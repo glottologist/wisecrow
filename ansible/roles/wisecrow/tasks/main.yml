@@ -9,6 +9,8 @@
     delete: false
     rsync_opts:
       - "--exclude=target"
+      - "--exclude=dist"
+      - "--exclude=dist-*"
       - "--exclude=.git"
       - "--exclude=node_modules"
       - "--exclude=claude/"

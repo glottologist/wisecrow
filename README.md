@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/media/wisecrow-medium-res.png" alt="Wisecrow logo" width="200"/>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/wise-crow-stacked-cream.svg">
+    <img src="docs/media/wise-crow-stacked-ink.svg" alt="Wise Crow" width="240"/>
+  </picture>
 </p>
 
 <h1 align="center">wisecrow</h1>

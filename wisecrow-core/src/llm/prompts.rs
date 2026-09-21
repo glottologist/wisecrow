@@ -134,10 +134,12 @@ Return only a JSON object with this exact shape:
 }}
 
 - Return one entry per input key in the same order.
-- Preserve each requested word's normalized spelling in display_form; provide an English explanation for particles rather than replacing the word. Mark unsupported or corrupted entries unteachable.
-- Mark corrupt, ambiguous, subtitle-stage, or incomplete fragments unteachable.
+- display_form is the requested form itself with its normalized spelling preserved: keep lenited, mutated, inflected and bound forms exactly as requested and never substitute the lemma or expand to a longer expression. Explain the relationship in translation instead, for example "big (lenited form of mòr)" or "back (in air ais)".
+- translation is a short {native_lang_name} meaning of one to five words; provide an English explanation for particles rather than replacing the word.
+- teachable is true for every genuine {foreign_lang_name} word or standard form of one that a learner should recognise, including articles, particles, pronouns, prepositions, conjunctions, verb forms and mutated spellings. Whether a word is concrete or abstract has no bearing on teachable.
+- teachable is false only for corrupted text, words of another language, proper names, and fragments cut from a word by tokenisation.
 - Use an image query only for a concrete concept a stock photograph can teach.
-- Articles, prepositions, pronouns, abstract words, and unteachable entries use null.
+- Articles, prepositions, pronouns, abstract words, and unteachable entries use null for image_query only; display_form and translation are always strings, so an unteachable entry still carries its word and a short explanation of why it cannot be taught.
 - Do not copy a context-specific subtitle alignment as the canonical meaning."#
     ))
 }
@@ -256,6 +258,9 @@ mod tests {
             "translation",
             "teachable",
             "image_query",
+            "never substitute the lemma",
+            "teachable is true for every genuine French word",
+            "teachable is false only for corrupted text",
         ] {
             assert!(prompt.contains(required), "missing {required}");
         }

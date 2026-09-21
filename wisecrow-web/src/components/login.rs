@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::api::auth::login;
+use crate::components::brand::{BrandLockup, Lockup, LANDSCAPE_AVIF, LANDSCAPE_JPG};
 use crate::components::theme::ThemeSelector;
 use crate::router::Route;
 
@@ -16,8 +17,21 @@ pub fn LoginPage() -> Element {
             div { class: "login-theme-selector",
                 ThemeSelector {}
             }
-            div { class: "w-full max-w-sm bg-gray-800 rounded-xl p-8 space-y-4",
-                h1 { class: "text-2xl font-bold text-center text-emerald-400", "Wisecrow" }
+            div { class: "login-shell",
+                picture { class: "login-art",
+                    source { r#type: "image/avif", "srcset": LANDSCAPE_AVIF }
+                    img {
+                        src: LANDSCAPE_JPG,
+                        alt: "",
+                        width: "960",
+                        height: "640",
+                        loading: "lazy",
+                    }
+                }
+                div { class: "w-full max-w-sm bg-gray-800 rounded-xl p-8 space-y-4 login-card",
+                h1 { class: "login-brand",
+                    BrandLockup { lockup: Lockup::Stacked }
+                }
                 h2 { class: "text-lg text-center text-gray-300", "Sign in" }
 
                 if let Some(err) = error_msg() {
@@ -56,6 +70,7 @@ pub fn LoginPage() -> Element {
                         }
                     },
                     "Sign in"
+                }
                 }
             }
         }

@@ -5,7 +5,7 @@ out_dir = "dist"
 asset_dir = "assets"
 
 [web.app]
-title = "Wisecrow"
+title = "Wise Crow"
 
 [web.watcher]
 reload_html = true
