@@ -38,7 +38,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-e7485dfb.js";
+            window.path_to_searchindex_js = "searchindex-be6e4ce0.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d4c59dab.js"></script>
@@ -182,7 +182,7 @@
                     <main>
                         <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
 <p align="center">
-  <img src="../media/wisecrow-medium-res.png" alt="Wisecrow logo" width="200" />
+  <img src="../media/wise-crow-stacked-ink.svg" alt="Wise Crow" width="240" style="background:#F7F4EC;border-radius:16px;padding:16px" />
 </p>
 
 <p>Wisecrow is an intensive language-cramming toolkit built around the idea that
@@ -1910,8 +1910,10 @@ error rather than a silent no-op.</p>
 <p>Counts the words of every corpus sentence for the pair and publishes the most
 frequent as word candidates, each with up to three source sentences kept as
 evidence. Counting runs inside PostgreSQL temporary tables on one dedicated
-connection, so a corpus of millions of rows is never held in memory, and a
-re-run replaces a candidate’s count rather than adding to it.</p>
+connection, so a corpus of millions of rows is never held in memory. A re-run
+replaces a candidate’s count rather than adding to it and removes candidates
+the new selection no longer contains, except accepted ones, whose promotions
+and cards remain.</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -1924,7 +1926,13 @@ re-run replaces a candidate’s count rather than adding to it.</p>
 </table>
 </div>
 <p>Rows that an earlier <code>promote-words</code> generated, and rows promoted as phrases,
-are not corpus text and are never counted.</p>
+are not corpus text and are never counted. Two further gates keep corpus noise
+out of the counts: each distinct foreign sentence counts once, however many
+rows repeat it, and a sentence is skipped when it holds three or more single
+accented letters or, from four words upwards, a majority of one-letter tokens,
+the signature of text decoded through the wrong encoding or of mis-aligned
+rows from another language. The scanned figure in the log counts distinct
+sentences.</p>
 <hr>
 <h2 id="promote-words"><a class="header" href="#promote-words"><code>promote-words</code></a></h2>
 <pre><code class="language-sh">wisecrow promote-words -n &lt;NATIVE&gt; -f &lt;FOREIGN&gt; [--limit N] [--mode pending|retry-failed|all]
