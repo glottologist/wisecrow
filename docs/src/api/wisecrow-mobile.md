@@ -1,30 +1,46 @@
 # wisecrow-mobile
 
-`wisecrow-mobile` is the Dioxus mobile/desktop shell. It mirrors the web
-app's routes and types but ships only client-side server-function stubs —
-the real implementations live in `wisecrow-web`.
-
-> **Warning:** The mobile crate is a skeleton. It compiles and renders the
-> route tree but the server-function stubs return errors by design.
-> Treat this page as a starting point, not a deployment guide.
+`wisecrow-mobile` is the Dioxus shell for Android and the desktop. Unlike
+`wisecrow-web` it is offline first: every page reads the device's own SQLite
+database, and a sync engine reconciles that database with the server when a
+connection happens to be there. Nothing the learner does waits on the network.
 
 ## Crate structure
 
 ```text
 wisecrow-mobile/
-├── Cargo.toml
+├── migrations/          # SQLite migrations, applied on open
 ├── src/
-│   ├── main.rs           # launches the Dioxus app
-│   ├── router.rs         # Route enum (subset of wisecrow-web)
-│   ├── server_fns.rs     # client-side stubs returning ServerFnError
-│   └── components/       # mobile-friendly Dioxus components
+│   ├── main.rs          # launches the Dioxus app
+│   ├── lib.rs           # app() and app_with_store()
+│   ├── router.rs        # Route enum
+│   ├── application/     # ports: the traits the shell is written against
+│   ├── storage/         # SQLite adapter implementing those ports
+│   ├── transport/       # HttpMobileApi, the server adapter
+│   ├── sync/            # the phase machine
+│   ├── auth/            # token handling
+│   ├── platform/        # Android and desktop specifics
+│   └── components/      # Dioxus pages
 ```
+
+`application` declares traits and `storage` and `transport` implement them, so a
+test can drive the whole shell against an in-memory database and a recording
+server without touching either.
+
+```rust,ignore
+pub fn app() -> Element;
+pub fn app_with_store(store: Arc<dyn LocalStore>) -> Element;
+```
+
+The grammar pages draw entirely from the device's database and need it in
+context, which is what `app_with_store` provides; `app` remains for the launch
+paths that have not yet built one.
 
 ## Cargo features
 
 | Feature | Brings in |
 |---------|-----------|
-| `server`  | `dioxus/server` (no DB stack) |
+| `server`  | `dioxus/server` |
 | `desktop` | `dioxus/desktop` |
 | `mobile`  | `dioxus/mobile` |
 | `web`     | `dioxus/web` |
@@ -52,43 +68,117 @@ pub enum Route {
         LearnPage { native: String, foreign: String },
         #[route("/nback/:native/:foreign")]
         NbackPage { native: String, foreign: String },
+        #[route("/grammar/brainmap/:native/:foreign")]
+        GrammarBrainmapPage { native: String, foreign: String },
+        #[route("/grammar/:native/:foreign")]
+        GrammarSessionPage { native: String, foreign: String },
 }
 ```
 
-The mobile router does **not** yet expose the quiz route — quizzes require a
-PDF picker that has not been wired up.
+The mobile router does **not** expose the quiz route — quizzes require a PDF
+picker that has not been wired up.
 
-## Server function surface
-
-`server_fns.rs` declares the contract the mobile shell expects to talk to:
+## Application ports
 
 ```rust,ignore
-#[server] async fn list_languages() -> Result<Vec<LanguageInfo>, ServerFnError>;
-#[server] async fn create_session(user_id, native, foreign, deck_size, speed_ms) -> Result<SessionDto, _>;
-#[server] async fn resume_session(user_id, native, foreign) -> Result<Option<SessionDto>, _>;
-#[server] async fn answer_card(session_id, card_id, rating) -> Result<CardDto, _>;
-#[server] async fn pause_session(session_id) -> Result<(), _>;
-#[server] async fn complete_session(session_id) -> Result<(), _>;
-#[server] async fn list_users() -> Result<Vec<UserDto>, _>;
-#[server] async fn create_user(display_name) -> Result<UserDto, _>;
-#[server] async fn start_nback_session(config) -> Result<(i32, Vec<DnbTrialDto>), _>;
-#[server] async fn submit_nback_trial(session_id, trial_result, trial_dto) -> Result<DnbAdaptationDto, _>;
-#[server] async fn complete_nback_session(...) -> Result<DnbSessionResultsDto, _>;
-#[server] async fn generate_quiz(pdf_bytes, num_questions) -> Result<Vec<QuizItemDto>, _>;
-#[server] async fn generate_rule_quiz(lang, level, num_questions) -> Result<Vec<QuizItemDto>, _>;
+pub trait LocalStore:
+    ProfileRepository + CorpusRepository + LearningRepository
+    + ContentRepository + GrammarRepository + Send + Sync {}
 ```
 
-Every stub currently returns
-`ServerFnError::new("client-side stub")`. To put it into use, wire each
-function into a real Dioxus server-function on the server side (typically in
-`wisecrow-web`) and point the mobile build at the resulting endpoint.
+| Trait | Holds |
+|-------|-------|
+| `ProfileRepository` | Profiles, the active one, and per-profile identity. |
+| `CorpusRepository` | Vocabulary, card cursors and the sync phase machine. |
+| `LearningRepository` | Local sessions, answers and the review outbox. |
+| `ContentRepository` | N-back uploads, cached quizzes and the media cache. |
+| `GrammarRepository` | The grammar mirrors, the attempt outbox and their cursors. |
 
-## Wiring it up
+```rust,ignore
+#[async_trait]
+pub trait GrammarRepository: Send + Sync {
+    async fn apply_bank_page(&self, page: &GrammarBankChangePageDto) -> Result<(), MobileError>;
+    async fn apply_mastery_page(&self, page: &GrammarMasteryChangePageDto) -> Result<(), MobileError>;
+    async fn grammar_cursors(&self, language: &str) -> Result<GrammarCursors, MobileError>;
+    async fn grammar_items(&self, language: &str) -> Result<Vec<LocalGrammarItem>, MobileError>;
+    async fn grammar_rules(&self, language: &str) -> Result<Vec<LocalGrammarRule>, MobileError>;
+    async fn grammar_mastery(&self, language: &str) -> Result<Vec<LocalGrammarMastery>, MobileError>;
+    async fn queue_attempt(&self, attempt: &QueuedAttempt) -> Result<(), MobileError>;
+    async fn pending_attempts(&self, limit: u16) -> Result<Vec<QueuedAttempt>, MobileError>;
+    async fn apply_attempt_response(&self, ..) -> Result<(), MobileError>;
+}
+```
 
-A common pattern when graduating from skeleton to production:
+`queue_attempt` both writes the outbox row and moves the local mastery
+projection, so the learner sees their answer counted at once. That projection is
+provisional: it grades with the same `wisecrow-learning` reduction the server
+uses, and the server's own figures replace it when the feed next arrives. The
+domain types are in `application::grammar`:
 
-1. Stand up the `wisecrow-web` crate with `--features "server web"`.
-2. Set the mobile crate's API base URL to that server.
-3. Replace the stubs in `server_fns.rs` with thin HTTP calls (or use Dioxus'
-   shared `#[server]` mechanism if both crates compile together).
-4. Add a settings screen that captures the API URL and the user ID.
+```rust,ignore
+pub struct LocalGrammarRule;
+pub struct LocalGrammarItem { pub fn gradable(&self) -> GradableItem; }
+pub struct LocalGrammarMastery;
+pub struct QueuedAttempt {
+    pub fn submission(&self) -> Submission;
+    pub fn as_upload(&self) -> OfflineAttemptDto;
+}
+pub struct GrammarCursors { pub bank: i64, pub mastery: i64 }
+```
+
+## Server adapter
+
+`MobileApi` is the port and `transport::HttpMobileApi` the adapter. Protocol 2
+is asked for separately:
+
+```rust,ignore
+async fn capabilities_v2(&self) -> Result<Option<MobileCapabilitiesDto>, MobileError>;
+async fn grammar_bank_changes(&self, ..) -> Result<GrammarBankChangePageDto, MobileError>;
+async fn grammar_mastery_changes(&self, ..) -> Result<GrammarMasteryChangePageDto, MobileError>;
+async fn upload_grammar_attempts(&self, ..) -> Result<GrammarAttemptBatchResponseDto, MobileError>;
+```
+
+`capabilities_v2` returns `Ok(None)` against a server that does not offer
+protocol 2, which is not an error: such a server is simply one the device syncs
+vocabulary with and no more.
+
+## Sync phases
+
+A sync is a state machine persisted in `sync_state`, so a run killed by the
+scheduler resumes at the phase it reached rather than from the beginning.
+
+```rust,ignore
+pub enum SyncPhase {
+    Idle, Reviews, Nback, GrammarAttempts, Cards,
+    Snapshots, Deltas, GrammarBank, GrammarMastery, Finishing,
+}
+```
+
+| Phase | Direction | Work |
+|-------|-----------|------|
+| `Reviews` | up | The review outbox. |
+| `Nback` | up | Completed n-back sessions. |
+| `GrammarAttempts` | up | The grammar attempt outbox, oldest first. |
+| `Cards` | down | Card changes. |
+| `Snapshots` | down | First-run vocabulary for a pair. |
+| `Deltas` | down | Corpus changes since the cursor. |
+| `GrammarBank` | down | Item bank changes, per ready language. |
+| `GrammarMastery` | down | The learner's mastery figures. |
+
+The mastery feed covers the learner rather than a language, so one cursor serves
+it and any language the device follows reports the same position.
+
+Answers go up before anything comes down, so the mastery the device then pulls
+already accounts for them; a device that pulled first would paint figures it was
+about to invalidate. The three grammar phases do no work unless the server
+advertises protocol 2 and all of `GrammarBankSync`, `GrammarMasterySync` and
+`GrammarAttemptUpload`; they still advance, so a device talking to a version-1
+server walks the same machine and syncs vocabulary only. A partial offer is
+refused rather than half-taken: it would leave answers recorded on the device
+with nowhere to go. The bank is pulled only for pairs whose vocabulary
+sync has reached `Ready`.
+
+Cursors move only to the `next_cursor` the server returns. An empty page returns
+the cursor unchanged, and the device must not advance past it — see
+[the change feeds](../reference/database-schema.md#grammar-change-feeds) for what
+a client that did would lose.

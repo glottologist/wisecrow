@@ -1,7 +1,8 @@
 use dioxus::prelude::*;
 
-use super::rule_explanation;
+use super::{cloze_item, cloze_submission, rule_explanation, ItemIdentity};
 use wisecrow_dto::ClozeQuizDto;
+use wisecrow_learning::grading::{grade, Submission};
 
 #[derive(Clone, Copy, PartialEq)]
 enum ClozeState {
@@ -14,12 +15,14 @@ enum ClozeState {
 #[component]
 pub fn ClozeQuestion(
     quiz: ClozeQuizDto,
-    on_answer: EventHandler<bool>,
+    #[props(default)] identity: ItemIdentity,
+    on_answer: EventHandler<Submission>,
     on_next: EventHandler<()>,
 ) -> Element {
     let mut user_input = use_signal(String::new);
     let mut state = use_signal(|| ClozeState::Unanswered);
     let mut show_hint = use_signal(|| false);
+    let mut ordinal = use_signal(|| 0u32);
 
     let answer = quiz.answer.clone(); // clone: need owned String for closure capture below
 
@@ -66,15 +69,24 @@ pub fn ClozeQuestion(
                                 onclick: {
                                     let answer_for_check = answer.clone(); // clone: need second owned copy for separate closure
                                     move |_| {
-                                        let correct = user_input()
-                                            .trim()
-                                            .eq_ignore_ascii_case(answer_for_check.trim());
-                                        if correct {
+                                        let attempt = ordinal().saturating_add(1);
+                                        ordinal.set(attempt);
+                                        let submission = cloze_submission(
+                                            identity,
+                                            &user_input(),
+                                            show_hint(),
+                                            attempt,
+                                        );
+                                        let verdict = grade(
+                                            &cloze_item(&answer_for_check),
+                                            &submission,
+                                        );
+                                        if verdict.correct {
                                             state.set(ClozeState::Correct);
                                         } else {
                                             state.set(ClozeState::Incorrect);
                                         }
-                                        on_answer.call(correct);
+                                        on_answer.call(submission);
                                     }
                                 },
                                 "Check Answer"
@@ -82,8 +94,13 @@ pub fn ClozeQuestion(
                             button {
                                 class: "bg-gray-600 hover:bg-gray-500 rounded px-4 py-2 transition text-gray-300",
                                 onclick: move |_| {
+                                    let attempt = ordinal().saturating_add(1);
+                                    ordinal.set(attempt);
                                     state.set(ClozeState::Revealed);
-                                    on_answer.call(false);
+                                    // Revealing abandons the interaction. An empty answer is
+                                    // reported so that giving up is recorded as a failed
+                                    // attempt rather than silently dropped.
+                                    on_answer.call(cloze_submission(identity, "", show_hint(), attempt));
                                 },
                                 "Reveal Answer"
                             }
@@ -106,6 +123,7 @@ pub fn ClozeQuestion(
                                 user_input.set(String::new());
                                 state.set(ClozeState::Unanswered);
                                 show_hint.set(false);
+                                ordinal.set(0);
                                 on_next.call(());
                             },
                             "Next Question"
@@ -132,6 +150,7 @@ pub fn ClozeQuestion(
                                 user_input.set(String::new());
                                 state.set(ClozeState::Unanswered);
                                 show_hint.set(false);
+                                ordinal.set(0);
                                 on_next.call(());
                             },
                             "Next Question"
@@ -154,6 +173,7 @@ pub fn ClozeQuestion(
                                 user_input.set(String::new());
                                 state.set(ClozeState::Unanswered);
                                 show_hint.set(false);
+                                ordinal.set(0);
                                 on_next.call(());
                             },
                             "Next Question"

@@ -1,16 +1,23 @@
 use dioxus::prelude::*;
 
-use super::rule_explanation;
+use super::{choice_item, choice_submission, rule_explanation, ItemIdentity};
 use wisecrow_dto::MultipleChoiceQuizDto;
+use wisecrow_learning::grading::{grade, Submission};
 
 #[component]
 pub fn McQuestion(
     quiz: MultipleChoiceQuizDto,
-    on_answer: EventHandler<bool>,
+    #[props(default)] identity: ItemIdentity,
+    on_answer: EventHandler<Submission>,
     on_next: EventHandler<()>,
 ) -> Element {
     let mut selected: Signal<Option<usize>> = use_signal(|| None);
     let mut answered = use_signal(|| false);
+
+    // A multiple choice admits one submission, so every option's submission is
+    // known before any is clicked and the grader, not the component, decides
+    // which of them is right.
+    let gradable = choice_item(&quiz);
 
     rsx! {
         div { class: "bg-gray-800 rounded-xl p-8 space-y-6",
@@ -24,7 +31,8 @@ pub fn McQuestion(
                 for (i, option) in quiz.options.iter().enumerate() {
                     {
                         let num = i.saturating_add(1);
-                        let is_correct = i == quiz.correct_index;
+                        let submission = choice_submission(identity, i, 1);
+                        let is_correct = grade(&gradable, &submission).correct;
                         let is_selected = selected() == Some(i);
 
                         let btn_class = if answered() {
@@ -47,7 +55,6 @@ pub fn McQuestion(
                             " "
                         };
 
-                        let correct_idx = quiz.correct_index;
                         let option_text = option.clone(); // clone: need owned copy for closure capture
                         rsx! {
                             button {
@@ -58,7 +65,7 @@ pub fn McQuestion(
                                     if !answered() {
                                         selected.set(Some(i));
                                         answered.set(true);
-                                        on_answer.call(i == correct_idx);
+                                        on_answer.call(submission.clone()); // clone: the handler may be called again before re-render
                                     }
                                 },
                                 "{prefix} [{num}] {option_text}"

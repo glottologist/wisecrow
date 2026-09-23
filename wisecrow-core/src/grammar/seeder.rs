@@ -64,9 +64,10 @@ pub async fn seed_grammar(
 
         for rule_import in &imported {
             let new_rule = NewGrammarRule {
+                slug: crate::grammar::rules::slugify(&rule_import.title),
                 title: rule_import.title.clone(), // clone: building owned struct from borrowed import
                 explanation: rule_import.explanation.clone(), // clone: building owned struct from borrowed import
-                source: RuleSource::Ai,
+                source: RuleSource::Llm,
                 examples: rule_import
                     .examples
                     .iter()
@@ -89,6 +90,28 @@ pub async fn seed_grammar(
     }
 
     Ok(total)
+}
+
+/// Generates one level's worth of rules without persisting them.
+///
+/// [`crate::grammar::syllabus::refresh_syllabus`] needs the model's wording
+/// for points that already exist, which is the same request seeding makes but
+/// a different use of the answer.
+///
+/// # Errors
+///
+/// Returns an error when the model call fails or its answer will not parse.
+pub(crate) async fn generate_level_rules(
+    provider: &dyn LlmProvider,
+    lang_name: &str,
+    level_code: &str,
+) -> Result<Vec<(String, String)>, WisecrowError> {
+    let prompt = grammar_seed_prompt(lang_name, level_code, RULES_PER_LEVEL);
+    let response = provider.generate(&prompt, MAX_LLM_TOKENS).await?;
+    Ok(parse_llm_json(&response)?
+        .into_iter()
+        .map(|rule| (rule.title, rule.explanation))
+        .collect())
 }
 
 /// Parses JSON from an LLM response, tolerating markdown code fences.

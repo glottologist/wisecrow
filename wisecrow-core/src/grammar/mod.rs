@@ -1,7 +1,14 @@
 pub mod ai_exercises;
 pub mod gloss;
 pub mod graded_reader;
+pub mod items;
+pub mod mastery;
 pub mod pdf;
+pub mod placement;
 pub mod quiz;
 pub mod rules;
 pub mod seeder;
+pub mod selection;
+pub mod session;
+pub mod syllabus;
+pub mod sync;

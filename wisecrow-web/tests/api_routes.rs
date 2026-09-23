@@ -1,8 +1,11 @@
 #![cfg(feature = "server")]
 
-use axum::body::Body;
+use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
+use wisecrow_dto::{
+    MobileCapabilitiesDto, MobileFeatureDto, MOBILE_PROTOCOL_VERSION, MOBILE_PROTOCOL_VERSION_V2,
+};
 
 const AUTH_ROUTES: &[(&str, &str)] = &[("/api/mobile/me", "{}"), ("/api/mobile/logout", "{}")];
 const PUBLIC_AUTH_ROUTES: &[(&str, &str)] = &[
@@ -58,6 +61,29 @@ const QUIZ_ROUTES: &[(&str, &str)] = &[
         r#"{"lang":"de","level":"A1","num_questions":1}"#,
     ),
 ];
+const GRAMMAR_ROUTES: &[(&str, &str)] = &[
+    (
+        "/api/grammar/session/start",
+        r#"{"native":"en","foreign":"es","level":null}"#,
+    ),
+    (
+        "/api/grammar/session/submit",
+        r#"{"submission":{"session_id":"019131c0-7f68-7b31-a775-2d6f91aa3196","event_id":"019131c0-7f68-7b31-a775-2d6f91aa3197","item_id":1,"revision":1,"answer":"estoy","chose_option":false,"hint_shown":false,"ordinal":1,"occurred_at":"2026-09-23T00:00:00Z"}}"#,
+    ),
+    (
+        "/api/grammar/session/complete",
+        r#"{"session_id":"019131c0-7f68-7b31-a775-2d6f91aa3196"}"#,
+    ),
+    ("/api/grammar/brainmap", r#"{"native":"en","foreign":"es"}"#),
+    (
+        "/api/grammar/placement/start",
+        r#"{"native":"en","foreign":"es"}"#,
+    ),
+    (
+        "/api/grammar/placement/submit",
+        r#"{"attempt_id":"019131c0-7f68-7b31-a775-2d6f91aa3196","answers":[]}"#,
+    ),
+];
 const MEDIA_ROUTES: &[(&str, &str)] = &[
     ("/api/media/audio", r#"{"translation_id":1}"#),
     ("/api/media/image", r#"{"translation_id":1}"#),
@@ -75,6 +101,24 @@ async fn post_status(path: &str, body: &str) -> StatusCode {
         .status()
 }
 
+async fn post_json<T: serde::de::DeserializeOwned>(path: &str, body: &str) -> T {
+    let request = Request::post(path)
+        .header("content-type", "application/json")
+        .body(Body::from(String::from(body)))
+        .expect("request");
+    let response = wisecrow_web::server::build_router()
+        .oneshot(request)
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK, "{path}");
+    let bytes = to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .expect("body");
+    serde_json::from_slice(&bytes).unwrap_or_else(|error| {
+        panic!("{path}: {error}; body: {}", String::from_utf8_lossy(&bytes))
+    })
+}
+
 #[tokio::test]
 async fn stable_protected_routes_are_registered() {
     let routes = AUTH_ROUTES
@@ -82,6 +126,7 @@ async fn stable_protected_routes_are_registered() {
         .chain(LEARN_ROUTES)
         .chain(NBACK_ROUTES)
         .chain(QUIZ_ROUTES)
+        .chain(GRAMMAR_ROUTES)
         .chain(MEDIA_ROUTES);
     for &(path, body) in routes {
         assert_eq!(
@@ -115,6 +160,38 @@ async fn mobile_capabilities_route_is_public() {
             StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED
         ),
         "/api/mobile/capabilities"
+    );
+}
+
+/// Version 1 must keep answering 1 whatever version 2 says, because a deployed
+/// client compares the number for equality and refuses anything else.
+#[tokio::test]
+async fn version_one_discovery_is_unchanged_by_version_two() {
+    let v1: MobileCapabilitiesDto = post_json("/api/mobile/capabilities", "{}").await;
+    assert_eq!(v1.protocol_version, MOBILE_PROTOCOL_VERSION);
+    assert!(!v1.supported_features.iter().any(|feature| matches!(
+        feature,
+        MobileFeatureDto::GrammarBankSync
+            | MobileFeatureDto::GrammarMasterySync
+            | MobileFeatureDto::GrammarAttemptUpload
+    )));
+
+    let v2: MobileCapabilitiesDto = post_json("/api/mobile/v2/capabilities", "{}").await;
+    assert_eq!(v2.protocol_version, MOBILE_PROTOCOL_VERSION_V2);
+    for feature in [
+        MobileFeatureDto::GrammarBankSync,
+        MobileFeatureDto::GrammarMasterySync,
+        MobileFeatureDto::GrammarAttemptUpload,
+    ] {
+        assert!(
+            v2.supported_features.contains(&feature),
+            "version 2 must advertise {feature:?}"
+        );
+    }
+    assert!(
+        v2.supported_features
+            .contains(&MobileFeatureDto::CorpusSync),
+        "version 2 keeps everything version 1 offered"
     );
 }
 

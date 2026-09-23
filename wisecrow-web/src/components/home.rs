@@ -100,8 +100,35 @@ pub fn Home() -> Element {
                         class: "block w-full text-center bg-cyan-700 hover:bg-cyan-600 rounded-lg px-4 py-3 font-semibold transition mt-2",
                         "Fast download"
                     }
+                    Link {
+                        to: Route::GrammarPage {
+                            native: native(),
+                            foreign: foreign(),
+                        },
+                        class: "block w-full text-center bg-blue-600 hover:bg-blue-500 rounded-lg px-4 py-3 font-semibold transition mt-2",
+                        "Grammar practice"
+                    }
+                    div { class: "flex gap-2 mt-2",
+                        Link {
+                            to: Route::PlacementPage {
+                                native: native(),
+                                foreign: foreign(),
+                            },
+                            class: "flex-1 text-center bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-2 text-sm transition",
+                            "Find my level"
+                        }
+                        Link {
+                            to: Route::BrainmapPage {
+                                native: native(),
+                                foreign: foreign(),
+                            },
+                            class: "flex-1 text-center bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-2 text-sm transition",
+                            "Grammar map"
+                        }
+                    }
                     p { class: "text-xs text-gray-500 text-center mt-2",
-                        "Session rates cards. Fast plays both sides on a timer."
+                        "Session rates cards. Fast plays both sides on a timer. "
+                        "Grammar drills the points you keep missing."
                     }
                 }
             }

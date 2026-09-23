@@ -151,6 +151,9 @@ pub struct IngestArgs {
     /// differs from the application code (for example `zh_CN` for `zh`).
     #[arg(long, requires = "file")]
     pub tmx_target_lang: Option<String>,
+    /// Skip the syllabus check that otherwise runs once ingestion succeeds.
+    #[arg(long)]
+    pub no_syllabus: bool,
 }
 
 #[derive(Args)]
@@ -199,6 +202,70 @@ pub struct SeedGrammarArgs {
     pub lang: String,
     #[arg(short = 'L', long, value_delimiter = ',')]
     pub levels: Vec<String>,
+}
+
+#[derive(Args)]
+pub struct GenerateItemsArgs {
+    #[arg(short, long)]
+    pub lang: String,
+    #[arg(short = 'L', long)]
+    pub level: String,
+    /// Items to ask the model for per grammar point.
+    #[arg(long, default_value = "8")]
+    pub per_rule: u32,
+}
+
+#[derive(Args)]
+pub struct PromoteItemsArgs {
+    #[arg(short, long)]
+    pub lang: String,
+    #[arg(short = 'L', long)]
+    pub level: Option<String>,
+    /// Print the waiting candidates and change nothing.
+    #[arg(long)]
+    pub list: bool,
+    /// Candidate ids to make servable.
+    #[arg(long, value_delimiter = ',')]
+    pub accept: Vec<i32>,
+    /// Candidate ids to refuse.
+    #[arg(long, value_delimiter = ',')]
+    pub reject: Vec<i32>,
+    /// Active item ids to withdraw without deleting.
+    #[arg(long, value_delimiter = ',')]
+    pub retire: Vec<i32>,
+    /// Why the rejected items were refused.
+    #[arg(long, default_value = "rejected by reviewer")]
+    pub reason: String,
+    /// How many candidates --list shows.
+    #[arg(long, default_value = "20")]
+    pub limit: i64,
+}
+
+#[derive(Args)]
+pub struct EnsureSyllabusArgs {
+    /// Language whose syllabus gaps to fill. Omit with --all.
+    #[arg(short, long, required_unless_present = "all", conflicts_with = "all")]
+    pub lang: Option<String>,
+    /// Fill gaps for every language already present in the corpus.
+    #[arg(long)]
+    pub all: bool,
+}
+
+#[derive(Args)]
+pub struct RefreshSyllabusArgs {
+    /// Language whose machine-generated prose to rewrite. Curated points are
+    /// never touched.
+    #[arg(short, long)]
+    pub lang: String,
+}
+
+#[derive(Args)]
+pub struct ExportGrammarArgs {
+    #[arg(short, long)]
+    pub lang: String,
+    /// File to write. Prints to standard output when omitted.
+    #[arg(short, long)]
+    pub out: Option<std::path::PathBuf>,
 }
 
 #[derive(Args)]
@@ -576,6 +643,21 @@ pub enum Command {
     ScoreSentences(ScoreSentencesArgs),
     #[command(aliases = ["sg"])]
     SeedGrammar(SeedGrammarArgs),
+    /// Generate quiz items for every grammar point at a level.
+    #[command(aliases = ["gi"])]
+    GenerateItems(GenerateItemsArgs),
+    /// Review generated items: list, accept, reject or retire them.
+    #[command(aliases = ["pi"])]
+    PromoteItems(PromoteItemsArgs),
+    /// Fill any CEFR level that holds no grammar points for a language.
+    #[command(aliases = ["es"])]
+    EnsureSyllabus(EnsureSyllabusArgs),
+    /// Rewrite the prose of machine-generated grammar points.
+    #[command(aliases = ["rs"])]
+    RefreshSyllabus(RefreshSyllabusArgs),
+    /// Dump a language's syllabus as JSON for diffing or backup.
+    #[command(aliases = ["eg"])]
+    ExportGrammar(ExportGrammarArgs),
     #[command(aliases = ["s"])]
     Sync(SyncArgs),
     #[command(aliases = ["u"])]
@@ -620,6 +702,11 @@ mod tests {
                 | (Command::Preview(_), "Preview")
                 | (Command::Quiz(_), "Quiz")
                 | (Command::SeedGrammar(_), "SeedGrammar")
+                | (Command::EnsureSyllabus(_), "EnsureSyllabus")
+                | (Command::GenerateItems(_), "GenerateItems")
+                | (Command::PromoteItems(_), "PromoteItems")
+                | (Command::RefreshSyllabus(_), "RefreshSyllabus")
+                | (Command::ExportGrammar(_), "ExportGrammar")
                 | (Command::Sync(_), "Sync")
         )
     }
@@ -700,6 +787,16 @@ mod tests {
     #[case(&["wisecrow", "l"], "ListLanguages")]
     #[case(&["wisecrow", "seed-grammar", "--lang", "es", "--levels", "A1,A2"], "SeedGrammar")]
     #[case(&["wisecrow", "sg", "--lang", "es", "--levels", "A1"], "SeedGrammar")]
+    #[case(&["wisecrow", "generate-items", "--lang", "es", "--level", "B1"], "GenerateItems")]
+    #[case(&["wisecrow", "gi", "--lang", "es", "--level", "A1", "--per-rule", "12"], "GenerateItems")]
+    #[case(&["wisecrow", "promote-items", "--lang", "es", "--list"], "PromoteItems")]
+    #[case(&["wisecrow", "pi", "--lang", "es", "--accept", "1,2,3"], "PromoteItems")]
+    #[case(&["wisecrow", "ensure-syllabus", "--lang", "pl"], "EnsureSyllabus")]
+    #[case(&["wisecrow", "ensure-syllabus", "--all"], "EnsureSyllabus")]
+    #[case(&["wisecrow", "es", "--lang", "gd"], "EnsureSyllabus")]
+    #[case(&["wisecrow", "refresh-syllabus", "--lang", "pl"], "RefreshSyllabus")]
+    #[case(&["wisecrow", "export-grammar", "--lang", "es"], "ExportGrammar")]
+    #[case(&["wisecrow", "ingest", "-n", "en", "-f", "es", "--no-syllabus"], "Ingest")]
     #[case(&["wisecrow", "import-grammar", "--lang", "es", "--file", "rules.json"], "ImportGrammar")]
     #[case(&["wisecrow", "ig", "--lang", "es", "--file", "rules.json"], "ImportGrammar")]
     #[case(&["wisecrow", "import-pdf", "--lang", "es", "--level", "B1", "--file", "g.pdf"], "ImportPdf")]
@@ -790,6 +887,54 @@ mod tests {
             let is_known = SUPPORTED_LANGUAGE_INFO.iter().any(|(c, _)| *c == s);
             prop_assert_eq!(is_supported_language(&s), is_known);
         }
+    }
+
+    #[test]
+    fn promote_items_takes_comma_separated_id_lists() {
+        let cli = Cli::try_parse_from([
+            "wisecrow",
+            "promote-items",
+            "--lang",
+            "es",
+            "--accept",
+            "1,2",
+            "--reject",
+            "3",
+        ])
+        .expect("parses");
+        let Command::PromoteItems(args) = cli.command else {
+            panic!("expected PromoteItems");
+        };
+        assert_eq!(args.accept, vec![1, 2]);
+        assert_eq!(args.reject, vec![3]);
+        assert!(args.retire.is_empty());
+    }
+
+    #[test]
+    fn ensure_syllabus_requires_a_language_or_all_but_not_both() {
+        assert!(Cli::try_parse_from(["wisecrow", "ensure-syllabus"]).is_err());
+        assert!(
+            Cli::try_parse_from(["wisecrow", "ensure-syllabus", "--lang", "pl", "--all"]).is_err()
+        );
+
+        let cli = Cli::try_parse_from(["wisecrow", "ensure-syllabus", "--all"]).expect("parses");
+        let Command::EnsureSyllabus(args) = cli.command else {
+            panic!("expected EnsureSyllabus");
+        };
+        assert!(args.all && args.lang.is_none());
+    }
+
+    #[test]
+    fn ingest_defaults_to_seeding_the_syllabus() {
+        let cli =
+            Cli::try_parse_from(["wisecrow", "ingest", "-n", "en", "-f", "es"]).expect("parses");
+        let Command::Ingest(args) = cli.command else {
+            panic!("expected Ingest");
+        };
+        assert!(
+            !args.no_syllabus,
+            "a new language gets a syllabus unless the operator opts out"
+        );
     }
 
     #[test]

@@ -173,6 +173,7 @@ impl SyncClient {
                     .parse::<RuleSource>()
                     .unwrap_or(RuleSource::Manual);
                 let new_rule = NewGrammarRule {
+                    slug: crate::grammar::rules::slugify(&rule.title),
                     title: rule.title.clone(), // clone: building owned from borrowed sync data
                     explanation: rule.explanation.clone(), // clone: building owned from borrowed sync data
                     source,

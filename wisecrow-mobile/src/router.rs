@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 
+use crate::components::grammar::{GrammarBrainmapPage, GrammarSessionPage};
 use crate::components::home::Home;
 use crate::components::layout::Layout;
 use crate::components::learn::LearnPage;
@@ -15,4 +16,8 @@ pub enum Route {
         LearnPage { native: String, foreign: String },
         #[route("/nback/:native/:foreign")]
         NbackPage { native: String, foreign: String },
+        #[route("/grammar/brainmap/:native/:foreign")]
+        GrammarBrainmapPage { native: String, foreign: String },
+        #[route("/grammar/:native/:foreign")]
+        GrammarSessionPage { native: String, foreign: String },
 }

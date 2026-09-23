@@ -10132,6 +10132,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "unicode-normalization",
  "unicode-width 0.2.0",
  "url",
  "uuid",
@@ -10158,12 +10159,14 @@ name = "wisecrow-learning"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "getrandom 0.2.15",
  "num-traits",
  "proptest",
  "rand 0.8.5",
  "rs-fsrs",
  "rstest",
  "thiserror 2.0.18",
+ "unicode-normalization",
  "uuid",
 ]
 
@@ -10200,6 +10203,7 @@ dependencies = [
  "axum-extra",
  "axum-server",
  "base64 0.22.1",
+ "chrono",
  "config",
  "dioxus",
  "dotenvy",

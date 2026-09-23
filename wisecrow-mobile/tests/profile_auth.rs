@@ -11,13 +11,16 @@ use uuid::Uuid;
 use wisecrow_dto::{
     CachedQuizDto, CardChangePageDto, CardChangeRequestDto, CardSnapshotDto, CorpusChangePageDto,
     CorpusChangeRequestDto, CorpusPageDto, CorpusSnapshotRequestDto, DeviceRegistrationRequestDto,
+    GrammarAttemptBatchRequestDto, GrammarAttemptBatchResponseDto, GrammarBankChangePageDto,
+    GrammarBankChangeRequestDto, GrammarMasteryChangePageDto, GrammarMasteryChangeRequestDto,
     LanguageInfo, LanguagePairDto, MobileCapabilitiesDto, MobileSessionDto, NbackBatchRequestDto,
     NbackBatchResponseDto, NbackSessionUploadDto, RegisteredDeviceDto, ReviewBatchRequestDto,
     ReviewBatchResponseDto, ReviewEventDto, UserDto, MOBILE_PROTOCOL_VERSION,
 };
 use wisecrow_mobile::application::{
-    ApiFactory, ContentRepository, CorpusRepository, CredentialStore, LearningRepository,
-    LocalStore, MobileApi, MobileError, ProfileRepository, ProfileService,
+    ApiFactory, ContentRepository, CorpusRepository, CredentialStore, GrammarCursors,
+    GrammarRepository, LearningRepository, LocalGrammarItem, LocalGrammarMastery, LocalGrammarRule,
+    LocalStore, MobileApi, MobileError, ProfileRepository, ProfileService, QueuedAttempt,
 };
 use wisecrow_mobile::auth::AuthState;
 use wisecrow_mobile::storage::models::{
@@ -186,6 +189,27 @@ impl MobileApi for FakeApi {
         &self,
         _request: &NbackBatchRequestDto,
     ) -> Result<NbackBatchResponseDto, MobileError> {
+        Err(MobileError::Unsupported)
+    }
+    async fn capabilities_v2(&self) -> Result<Option<MobileCapabilitiesDto>, MobileError> {
+        Ok(None)
+    }
+    async fn grammar_bank_changes(
+        &self,
+        _request: &GrammarBankChangeRequestDto,
+    ) -> Result<GrammarBankChangePageDto, MobileError> {
+        Err(MobileError::Unsupported)
+    }
+    async fn grammar_mastery_changes(
+        &self,
+        _request: &GrammarMasteryChangeRequestDto,
+    ) -> Result<GrammarMasteryChangePageDto, MobileError> {
+        Err(MobileError::Unsupported)
+    }
+    async fn upload_grammar_attempts(
+        &self,
+        _request: &GrammarAttemptBatchRequestDto,
+    ) -> Result<GrammarAttemptBatchResponseDto, MobileError> {
         Err(MobileError::Unsupported)
     }
 }
@@ -727,5 +751,45 @@ fn test_user() -> UserDto {
     UserDto {
         id: 7,
         display_name: String::from("Test User"),
+    }
+}
+
+#[async_trait]
+impl GrammarRepository for FakeStore {
+    async fn apply_bank_page(&self, _page: &GrammarBankChangePageDto) -> Result<(), MobileError> {
+        Err(MobileError::Unsupported)
+    }
+    async fn apply_mastery_page(
+        &self,
+        _page: &GrammarMasteryChangePageDto,
+    ) -> Result<(), MobileError> {
+        Err(MobileError::Unsupported)
+    }
+    async fn grammar_cursors(&self, _language: &str) -> Result<GrammarCursors, MobileError> {
+        Err(MobileError::Unsupported)
+    }
+    async fn grammar_items(&self, _language: &str) -> Result<Vec<LocalGrammarItem>, MobileError> {
+        Err(MobileError::Unsupported)
+    }
+    async fn grammar_rules(&self, _language: &str) -> Result<Vec<LocalGrammarRule>, MobileError> {
+        Err(MobileError::Unsupported)
+    }
+    async fn grammar_mastery(
+        &self,
+        _language: &str,
+    ) -> Result<Vec<LocalGrammarMastery>, MobileError> {
+        Err(MobileError::Unsupported)
+    }
+    async fn queue_attempt(&self, _attempt: &QueuedAttempt) -> Result<(), MobileError> {
+        Err(MobileError::Unsupported)
+    }
+    async fn pending_attempts(&self, _limit: u16) -> Result<Vec<QueuedAttempt>, MobileError> {
+        Err(MobileError::Unsupported)
+    }
+    async fn apply_attempt_response(
+        &self,
+        _response: &GrammarAttemptBatchResponseDto,
+    ) -> Result<(), MobileError> {
+        Err(MobileError::Unsupported)
     }
 }

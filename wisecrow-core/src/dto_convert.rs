@@ -1,15 +1,23 @@
 use num_traits::ToPrimitive;
 use wisecrow_dto::{
-    AnnotatedTokenDto, CardDto, CardStatusDto, ClozeQuizDto, DnbAdaptationDto, DnbModeDto,
-    DnbSessionResultsDto, DnbTrialDto, GlossaryEntryDto, GradedReaderDto, LanguageInfo,
-    MultipleChoiceQuizDto, QuizItemDto, ReviewRatingDto, ScriptDirection, SessionDto,
-    TokenStatusDto, UserDto,
+    AnnotatedTokenDto, BrainmapCellDto, CardDto, CardStatusDto, ClozeQuizDto, DnbAdaptationDto,
+    DnbModeDto, DnbSessionResultsDto, DnbTrialDto, GlossaryEntryDto, GradedReaderDto,
+    GrammarItemDto, GrammarMasteryStateDto, GrammarOptionDto, LanguageInfo, MasteryBandDto,
+    MultipleChoiceQuizDto, OfflineGrammarItemDto, PlacementLevelDto, PlacementResultDto,
+    PlacementStateDto, PlacementStepDto, QuizItemDto, ReviewRatingDto, ScriptDirection, SessionDto,
+    SubmissionDto, TokenStatusDto, UserDto,
 };
+use wisecrow_learning::grading::{Answer, Submission};
+use wisecrow_learning::mastery::{band_from, Band};
 
 use crate::dnb::scoring::AdaptationState;
 use crate::dnb::{DnbMode, Trial};
 use crate::grammar::graded_reader::{GlossaryEntry, GradedReader};
+use crate::grammar::mastery::MasteryRow;
+use crate::grammar::placement::PlacementState;
 use crate::grammar::quiz::{ClozeQuiz, MultipleChoiceQuiz};
+use crate::grammar::selection::PracticeItem;
+use crate::grammar::sync::{BankItem, MasteryState};
 use crate::preview::annotate::{AnnotatedToken, Status};
 use crate::srs::scheduler::{CardState, CardStatus, ReviewRating};
 use crate::srs::session::Session;
@@ -255,4 +263,174 @@ pub fn quizzes_to_dto(cloze: &[ClozeQuiz], mc: &[MultipleChoiceQuiz]) -> Vec<Qui
     );
 
     items
+}
+
+/// Presents a served item without the means to answer it.
+///
+/// The answer and the correct option are deliberately dropped: the server
+/// regrades every submission against the stored revision, so sending them
+/// would buy the client nothing and give the exercise away.
+#[must_use]
+pub fn grammar_item(item: &PracticeItem) -> GrammarItemDto {
+    let options = item
+        .options
+        .as_ref()
+        .and_then(|value| serde_json::from_value::<Vec<(String, String)>>(value.clone()).ok()) // clone: deserialising consumes the value
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(id, text)| GrammarOptionDto { id, text })
+        .collect();
+
+    GrammarItemDto {
+        item_id: item.item_id,
+        revision: item.revision,
+        rule_id: item.rule_id,
+        rule_slug: item.slug.clone(), // clone: building owned DTO from borrowed domain type
+        rule_title: item.rule_title.clone(), // clone: building owned DTO
+        rule_explanation: item.explanation.clone(), // clone: building owned DTO
+        level: item.level.clone(),    // clone: building owned DTO
+        prompt: item.prompt.clone(),  // clone: building owned DTO
+        hint: item.hint.clone(),      // clone: building owned DTO
+        options,
+    }
+}
+
+/// Presents an item as a device holds it offline, answer and all.
+///
+/// This is the one place the answer crosses the wire. A device out of contact
+/// cannot ask the server whether the learner was right, and a practice session
+/// that cannot say so is not practice; the verdict it shows is provisional,
+/// and the server regrades the attempt when the outbox drains.
+#[must_use]
+pub fn offline_grammar_item(item: &BankItem) -> OfflineGrammarItemDto {
+    let options = item
+        .options
+        .as_ref()
+        .and_then(|value| serde_json::from_value::<Vec<(String, String)>>(value.clone()).ok()) // clone: deserialising consumes the value
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(id, text)| GrammarOptionDto { id, text })
+        .collect();
+    let accepted = serde_json::from_value::<Vec<String>>(item.accepted.clone()).unwrap_or_default(); // clone: deserialising consumes the value
+
+    OfflineGrammarItemDto {
+        item_id: item.item_id,
+        revision: item.revision,
+        rule_id: item.rule_id,
+        rule_slug: item.rule_slug.clone(), // clone: building owned DTO from borrowed domain type
+        rule_title: item.rule_title.clone(), // clone: building owned DTO
+        rule_explanation: item.rule_explanation.clone(), // clone: building owned DTO
+        level: item.level.clone(),         // clone: building owned DTO
+        language: item.language.clone(),   // clone: building owned DTO
+        prompt: item.prompt.clone(),       // clone: building owned DTO
+        hint: item.hint.clone(),           // clone: building owned DTO
+        options,
+        answer: item.answer.clone(), // clone: building owned DTO
+        accepted,
+        correct_option: item.correct_option.clone(), // clone: building owned DTO
+    }
+}
+
+/// Mirrors one mastery row onto a device.
+///
+/// The figures narrow to single precision for the reason the brainmap cell
+/// gives: `serde_json` without `float_roundtrip` can return a double one unit
+/// in the last place adrift, and a device comparing its copy with the server's
+/// would see a difference that is not there.
+#[must_use]
+pub fn grammar_mastery_state(state: &MasteryState) -> GrammarMasteryStateDto {
+    GrammarMasteryStateDto {
+        rule_id: state.rule_id,
+        rule_slug: state.rule_slug.clone(), // clone: building owned DTO from borrowed domain type
+        stability: state.stability as f32,
+        difficulty: state.difficulty as f32,
+        elapsed_days: state.elapsed_days,
+        scheduled_days: state.scheduled_days,
+        reps: state.reps,
+        lapses: state.lapses,
+        state: state.state,
+        accuracy: state.accuracy.map(|value| value as f32),
+        attempts: state.attempts,
+        last_review: state.last_review,
+        due: state.due,
+    }
+}
+
+/// Colours one grammar point for the brainmap.
+#[must_use]
+pub fn brainmap_cell(row: &MasteryRow) -> BrainmapCellDto {
+    let attempts = usize::try_from(row.attempts).unwrap_or(0);
+    BrainmapCellDto {
+        rule_id: row.rule_id,
+        slug: row.slug.clone(),   // clone: building owned DTO
+        title: row.title.clone(), // clone: building owned DTO
+        level: row.level.clone(), // clone: building owned DTO
+        band: mastery_band(band_from(row.accuracy.unwrap_or(0.0), attempts)),
+        accuracy: row.accuracy.and_then(|value| value.to_f32()),
+        attempts: row.attempts,
+        provenance: row.source.clone(), // clone: building owned DTO
+    }
+}
+
+const fn mastery_band(band: Band) -> MasteryBandDto {
+    match band {
+        Band::Unseen => MasteryBandDto::Unseen,
+        Band::Red => MasteryBandDto::Red,
+        Band::Amber => MasteryBandDto::Amber,
+        Band::Green => MasteryBandDto::Green,
+        Band::ProvisionalRed => MasteryBandDto::ProvisionalRed,
+        Band::ProvisionalAmber => MasteryBandDto::ProvisionalAmber,
+        Band::ProvisionalGreen => MasteryBandDto::ProvisionalGreen,
+    }
+}
+
+/// Reports where a placement run stands.
+#[must_use]
+pub fn placement_state(state: &PlacementState) -> PlacementStateDto {
+    match state {
+        PlacementState::Testing(step) => PlacementStateDto::Testing(PlacementStepDto {
+            attempt_id: step.attempt_id,
+            session_id: step.session_id,
+            level: step.level.clone(), // clone: building owned DTO
+            items: step.items.iter().map(grammar_item).collect(),
+        }),
+        PlacementState::Finished(outcome) => PlacementStateDto::Finished(PlacementResultDto {
+            attempt_id: outcome.attempt_id,
+            level_reached: outcome.level_reached.clone(), // clone: building owned DTO
+            tested: outcome
+                .tested
+                .iter()
+                .map(|score| PlacementLevelDto {
+                    level: score.level.clone(), // clone: building owned DTO
+                    correct: score.correct,
+                    asked: score.asked,
+                    passed: score.passed,
+                })
+                .collect(),
+            skipped: outcome.skipped.clone(), // clone: building owned DTO
+        }),
+    }
+}
+
+/// Turns a client's report into the submission the grader understands.
+///
+/// `chose_option` decides how the answer is read, because an option identifier
+/// and a typed word are both strings on the wire and grading them alike would
+/// let a learner type `o2` into a cloze.
+#[must_use]
+pub fn submission(dto: &SubmissionDto) -> Submission {
+    let answer = if dto.chose_option {
+        Answer::Option(dto.answer.clone()) // clone: the submission owns its answer
+    } else {
+        Answer::Text(dto.answer.clone()) // clone: the submission owns its answer
+    };
+    Submission {
+        item_id: dto.item_id,
+        revision: dto.revision,
+        session_id: dto.session_id,
+        event_id: dto.event_id,
+        answer,
+        hint_shown: dto.hint_shown,
+        ordinal: dto.ordinal,
+    }
 }

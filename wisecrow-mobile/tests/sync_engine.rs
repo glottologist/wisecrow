@@ -16,6 +16,8 @@ use wisecrow_dto::{
     CardChangeDto, CardChangePageDto, CardChangeRequestDto, CardSnapshotDto, CardStatusDto,
     CorpusChangeDto, CorpusChangeKindDto, CorpusChangePageDto, CorpusChangeRequestDto,
     CorpusPageDto, CorpusSnapshotRequestDto, CorpusTranslationDto, DeviceRegistrationRequestDto,
+    GrammarAttemptBatchRequestDto, GrammarAttemptBatchResponseDto, GrammarBankChangePageDto,
+    GrammarBankChangeRequestDto, GrammarMasteryChangePageDto, GrammarMasteryChangeRequestDto,
     LanguageInfo, LanguagePairDto, MobileCapabilitiesDto, MobileFeatureDto, MobileSessionDto,
     NbackBatchRequestDto, NbackBatchResponseDto, NbackModeDto, NbackSessionUploadDto,
     NbackUploadAckDto, NbackUploadStatusDto, RegisteredDeviceDto, ReviewBatchRequestDto,
@@ -504,6 +506,31 @@ impl MobileApi for ScriptedApi {
         &self,
         _request: &DeviceRegistrationRequestDto,
     ) -> Result<RegisteredDeviceDto, MobileError> {
+        Err(MobileError::Unsupported)
+    }
+
+    async fn capabilities_v2(&self) -> Result<Option<MobileCapabilitiesDto>, MobileError> {
+        Ok(None)
+    }
+
+    async fn grammar_bank_changes(
+        &self,
+        _request: &GrammarBankChangeRequestDto,
+    ) -> Result<GrammarBankChangePageDto, MobileError> {
+        Err(MobileError::Unsupported)
+    }
+
+    async fn grammar_mastery_changes(
+        &self,
+        _request: &GrammarMasteryChangeRequestDto,
+    ) -> Result<GrammarMasteryChangePageDto, MobileError> {
+        Err(MobileError::Unsupported)
+    }
+
+    async fn upload_grammar_attempts(
+        &self,
+        _request: &GrammarAttemptBatchRequestDto,
+    ) -> Result<GrammarAttemptBatchResponseDto, MobileError> {
         Err(MobileError::Unsupported)
     }
 }

@@ -8,17 +8,28 @@ use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 use wisecrow_dto::{
-    CardChangeRequestDto, CorpusChangeRequestDto, CorpusSnapshotRequestDto, MobileCapabilitiesDto,
-    MobileFeatureDto, NbackBatchRequestDto, NbackBatchResponseDto, ReviewBatchRequestDto,
-    ReviewBatchResponseDto, MOBILE_PROTOCOL_VERSION,
+    CardChangeRequestDto, CorpusChangeRequestDto, CorpusSnapshotRequestDto,
+    GrammarAttemptBatchRequestDto, GrammarBankChangeRequestDto, GrammarMasteryChangeRequestDto,
+    MobileCapabilitiesDto, MobileFeatureDto, NbackBatchRequestDto, NbackBatchResponseDto,
+    ReviewBatchRequestDto, ReviewBatchResponseDto, MOBILE_PROTOCOL_VERSION,
+    MOBILE_PROTOCOL_VERSION_V2,
 };
 
 use crate::{
-    application::{LocalStore, MobileApi, MobileError},
+    application::{LocalStore, MobileApi, MobileError, QueuedAttempt},
     storage::models::{PairStatus, ProfileIdentity, SyncErrorKind, SyncPhase},
 };
 
 const MAX_LOCAL_PAGE: u16 = 500;
+
+/// Every capability a server must advertise before the device will trust it
+/// with grammar. Two out of three is not a working protocol: a device that
+/// could download the bank but not upload its answers would lose them.
+const GRAMMAR_FEATURES: [MobileFeatureDto; 3] = [
+    MobileFeatureDto::GrammarBankSync,
+    MobileFeatureDto::GrammarMasterySync,
+    MobileFeatureDto::GrammarAttemptUpload,
+];
 const MEDIA_PREFETCH_FOREGROUND: u16 = 25;
 const MEDIA_PREFETCH_PERIODIC: u16 = 10;
 
@@ -97,10 +108,13 @@ impl SyncEngine {
                 .await?;
             phase = SyncPhase::Reviews;
         }
+        let grammar = self.negotiate_grammar().await?;
         phase = self
-            .run_upload_phases(phase, identity, &capabilities)
+            .run_upload_phases(phase, identity, &capabilities, grammar)
             .await?;
-        phase = self.run_download_phases(phase, &capabilities).await?;
+        phase = self
+            .run_download_phases(phase, &capabilities, grammar)
+            .await?;
         if phase != SyncPhase::Finishing {
             return Err(invalid_state());
         }
@@ -111,11 +125,32 @@ impl SyncEngine {
         })
     }
 
+    /// Asks whether this server speaks version 2, and means it.
+    ///
+    /// A server that has never heard of the endpoint is not a fault, and
+    /// neither is one that answers without the grammar capabilities: the
+    /// device then syncs vocabulary exactly as it always has and leaves
+    /// grammar alone. Only a server that both answers and advertises all three
+    /// is taken at its word.
+    async fn negotiate_grammar(&self) -> Result<bool, MobileError> {
+        self.check_cancellation()?;
+        let Some(capabilities) = self.api.capabilities_v2().await? else {
+            return Ok(false);
+        };
+        if capabilities.protocol_version != MOBILE_PROTOCOL_VERSION_V2 {
+            return Ok(false);
+        }
+        Ok(GRAMMAR_FEATURES
+            .iter()
+            .all(|feature| capabilities.supported_features.contains(feature)))
+    }
+
     async fn run_upload_phases(
         &self,
         mut phase: SyncPhase,
         identity: &ProfileIdentity,
         capabilities: &MobileCapabilitiesDto,
+        grammar: bool,
     ) -> Result<SyncPhase, MobileError> {
         if phase == SyncPhase::Reviews {
             self.upload_reviews(identity, capabilities.max_review_batch)
@@ -127,7 +162,16 @@ impl SyncEngine {
         if phase == SyncPhase::Nback {
             self.upload_nback(identity, capabilities.max_nback_batch)
                 .await?;
-            self.advance_phase(SyncPhase::Nback, SyncPhase::Cards)
+            self.advance_phase(SyncPhase::Nback, SyncPhase::GrammarAttempts)
+                .await?;
+            phase = SyncPhase::GrammarAttempts;
+        }
+        if phase == SyncPhase::GrammarAttempts {
+            if grammar {
+                self.upload_grammar_attempts(identity, capabilities.max_review_batch)
+                    .await?;
+            }
+            self.advance_phase(SyncPhase::GrammarAttempts, SyncPhase::Cards)
                 .await?;
             phase = SyncPhase::Cards;
         }
@@ -138,6 +182,7 @@ impl SyncEngine {
         &self,
         mut phase: SyncPhase,
         capabilities: &MobileCapabilitiesDto,
+        grammar: bool,
     ) -> Result<SyncPhase, MobileError> {
         if phase == SyncPhase::Cards {
             self.pull_cards(capabilities.max_snapshot_page).await?;
@@ -153,7 +198,25 @@ impl SyncEngine {
         }
         if phase == SyncPhase::Deltas {
             self.pull_deltas(capabilities.max_snapshot_page).await?;
-            self.advance_phase(SyncPhase::Deltas, SyncPhase::Finishing)
+            self.advance_phase(SyncPhase::Deltas, SyncPhase::GrammarBank)
+                .await?;
+            phase = SyncPhase::GrammarBank;
+        }
+        if phase == SyncPhase::GrammarBank {
+            if grammar {
+                self.pull_grammar_bank(capabilities.max_snapshot_page)
+                    .await?;
+            }
+            self.advance_phase(SyncPhase::GrammarBank, SyncPhase::GrammarMastery)
+                .await?;
+            phase = SyncPhase::GrammarMastery;
+        }
+        if phase == SyncPhase::GrammarMastery {
+            if grammar {
+                self.pull_grammar_mastery(capabilities.max_snapshot_page)
+                    .await?;
+            }
+            self.advance_phase(SyncPhase::GrammarMastery, SyncPhase::Finishing)
                 .await?;
             phase = SyncPhase::Finishing;
         }
@@ -230,6 +293,107 @@ impl SyncEngine {
             self.check_cancellation()?;
             self.store.apply_nback_response(&response).await?;
         }
+    }
+
+    /// Hands the outbox over, oldest answer first.
+    ///
+    /// The loop ends when the outbox is empty rather than after one batch,
+    /// because a device that has been away for a fortnight may hold more
+    /// answers than one batch carries. A response that clears nothing would
+    /// spin, so that case stops and leaves the answers for the next sync.
+    async fn upload_grammar_attempts(
+        &self,
+        identity: &ProfileIdentity,
+        server_limit: u16,
+    ) -> Result<(), MobileError> {
+        let limit = bounded_limit(server_limit)?;
+        loop {
+            self.check_cancellation()?;
+            let queued = self.store.pending_attempts(limit).await?;
+            if queued.is_empty() {
+                return Ok(());
+            }
+            let request = GrammarAttemptBatchRequestDto {
+                protocol_version: MOBILE_PROTOCOL_VERSION_V2,
+                device_id: identity.device_id,
+                attempts: queued.iter().map(QueuedAttempt::as_upload).collect(),
+            };
+            self.check_cancellation()?;
+            let response = self.api.upload_grammar_attempts(&request).await?;
+            if response.results.is_empty() {
+                return Ok(());
+            }
+            self.check_cancellation()?;
+            self.store.apply_attempt_response(&response).await?;
+        }
+    }
+
+    async fn pull_grammar_bank(&self, server_limit: u16) -> Result<(), MobileError> {
+        let limit = bounded_limit(server_limit)?;
+        for language in self.grammar_languages().await? {
+            loop {
+                self.check_cancellation()?;
+                let cursors = self.store.grammar_cursors(&language).await?;
+                let request = GrammarBankChangeRequestDto {
+                    protocol_version: MOBILE_PROTOCOL_VERSION_V2,
+                    language: language.clone(), // clone: each request owns its language code
+                    cursor: cursors.bank,
+                    limit,
+                };
+                let page = self.api.grammar_bank_changes(&request).await?;
+                let has_more = page.has_more;
+                self.check_cancellation()?;
+                self.store.apply_bank_page(&page).await?;
+                if !has_more {
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn pull_grammar_mastery(&self, server_limit: u16) -> Result<(), MobileError> {
+        let limit = bounded_limit(server_limit)?;
+        // The mastery feed covers the learner rather than a language, so one
+        // cursor serves it; any language the device follows reports the same
+        // position.
+        let Some(language) = self.grammar_languages().await?.into_iter().next() else {
+            return Ok(());
+        };
+        loop {
+            self.check_cancellation()?;
+            let cursors = self.store.grammar_cursors(&language).await?;
+            let request = GrammarMasteryChangeRequestDto {
+                protocol_version: MOBILE_PROTOCOL_VERSION_V2,
+                cursor: cursors.mastery,
+                limit,
+            };
+            let page = self.api.grammar_mastery_changes(&request).await?;
+            let has_more = page.has_more;
+            self.check_cancellation()?;
+            self.store.apply_mastery_page(&page).await?;
+            if !has_more {
+                return Ok(());
+            }
+        }
+    }
+
+    /// The foreign languages whose vocabulary the device already holds.
+    ///
+    /// Grammar follows vocabulary rather than being chosen separately: a
+    /// learner who has not downloaded a language is not studying it.
+    async fn grammar_languages(&self) -> Result<Vec<String>, MobileError> {
+        let mut languages: Vec<String> = self
+            .store
+            .sync_pairs()
+            .await?
+            .into_iter()
+            .filter(|state| state.status == PairStatus::Ready)
+            .map(|state| state.pair.foreign_lang)
+            .collect();
+        languages.sort();
+        languages.dedup();
+        Ok(languages)
     }
 
     async fn pull_cards(&self, server_limit: u16) -> Result<(), MobileError> {

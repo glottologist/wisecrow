@@ -6,6 +6,15 @@ description = "Dioxus fullstack web UI for Wisecrow"
 
 [dependencies]
 wisecrow-dto = { path = "../wisecrow-dto" }
+wisecrow-learning = { path = "../wisecrow-learning" }
+# Not server-only: the grammar routes name session and event identifiers in
+# their signatures, so the wasm client compiles them too. Its `v4` generator
+# reaches the browser's crypto API through the getrandom backend that
+# wisecrow-learning names for wasm targets.
+uuid = { version = "1", features = ["serde", "v4"] }
+# Both halves need it: the server stamps when it heard an answer, the client
+# stamps when the learner gave one.
+chrono = { version = "0.4", features = ["serde"] }
 dioxus = { version = "=0.7.9", features = ["router", "fullstack"] }
 serde = { version = "1.0", features = ["derive"] }
 tracing = "0.1"
@@ -32,9 +41,10 @@ tower-http = { version = "0.6", features = ["trace"], optional = true }
 governor = { version = "0.7", optional = true }
 rustls = { version = "0.23", optional = true }
 rustls-pemfile = { version = "2", optional = true }
-uuid = { version = "1", features = ["serde", "v4"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+# `v4` needs a source of randomness, and only the browser can supply one.
+uuid = { version = "1", features = ["js"] }
 gloo-timers = { version = "0.3", features = ["futures"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
@@ -52,7 +62,7 @@ web-sys = { version = "0.3", features = [
 # and Unsplash art without remembering extra --features flags. Disable with
 # `--no-default-features` if you need a minimal build.
 default = ["audio", "images"]
-server = ["dioxus/server", "dep:wisecrow-core", "dep:tokio", "dep:sqlx", "dep:dotenvy", "dep:config", "dep:tempfile", "dep:axum", "dep:axum-server", "dep:axum-extra", "dep:tower", "dep:tower-http", "dep:governor", "dep:rustls", "dep:rustls-pemfile", "dep:uuid"]
+server = ["dioxus/server", "dep:wisecrow-core", "dep:tokio", "dep:sqlx", "dep:dotenvy", "dep:config", "dep:tempfile", "dep:axum", "dep:axum-server", "dep:axum-extra", "dep:tower", "dep:tower-http", "dep:governor", "dep:rustls", "dep:rustls-pemfile"]
 web = ["dioxus/web"]
 # These deliberately do not imply `server`: dx enables that itself for the
 # server half, and implying it here would put `dioxus/server` into the client
@@ -61,7 +71,6 @@ audio = ["wisecrow-core/tts", "dep:base64"]
 images = ["wisecrow-core/images", "dep:base64", "dep:reqwest"]
 
 [dev-dependencies]
-wisecrow-learning = { path = "../wisecrow-learning" }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 rcgen = "0.13"
 rstest = "0.22"

@@ -2,8 +2,10 @@ use chrono::{DateTime, Utc};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
+pub mod grammar;
 pub mod mobile;
 
+pub use grammar::*;
 pub use mobile::*;
 
 /// Fraction `correct / total` in `[0.0, 1.0]`, returning `0.0` when `total` is

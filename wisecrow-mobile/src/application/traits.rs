@@ -7,12 +7,17 @@ use uuid::Uuid;
 use wisecrow_dto::{
     CachedQuizDto, CardChangePageDto, CardChangeRequestDto, CardSnapshotDto, CorpusChangePageDto,
     CorpusChangeRequestDto, CorpusPageDto, CorpusSnapshotRequestDto, CorpusTranslationDto,
-    DeviceRegistrationRequestDto, LanguageInfo, LanguagePairDto, MobileCapabilitiesDto,
+    DeviceRegistrationRequestDto, GrammarAttemptBatchRequestDto, GrammarAttemptBatchResponseDto,
+    GrammarBankChangePageDto, GrammarBankChangeRequestDto, GrammarMasteryChangePageDto,
+    GrammarMasteryChangeRequestDto, LanguageInfo, LanguagePairDto, MobileCapabilitiesDto,
     MobileSessionDto, NbackBatchRequestDto, NbackBatchResponseDto, NbackSessionUploadDto,
     RegisteredDeviceDto, ReviewBatchRequestDto, ReviewBatchResponseDto, ReviewEventDto, UserDto,
 };
 
 use super::error::MobileError;
+use super::grammar::{
+    GrammarCursors, LocalGrammarItem, LocalGrammarMastery, LocalGrammarRule, QueuedAttempt,
+};
 use crate::storage::models::{
     CorpusEstimate, LocalAnswer, LocalSession, LocalSessionRequest, MediaEntry, MediaRegistration,
     MediaType, PairStatus, PairSyncState, PickedFile, Profile, ProfileIdentity, SyncErrorKind,
@@ -122,13 +127,45 @@ pub trait ContentRepository: Send + Sync {
     ) -> Result<(), MobileError>;
 }
 
+#[async_trait]
+pub trait GrammarRepository: Send + Sync {
+    /// Mirrors a page of bank changes, dropping whatever the server withheld.
+    async fn apply_bank_page(&self, page: &GrammarBankChangePageDto) -> Result<(), MobileError>;
+    /// Mirrors a page of mastery changes.
+    async fn apply_mastery_page(
+        &self,
+        page: &GrammarMasteryChangePageDto,
+    ) -> Result<(), MobileError>;
+    async fn grammar_cursors(&self, language: &str) -> Result<GrammarCursors, MobileError>;
+    async fn grammar_items(&self, language: &str) -> Result<Vec<LocalGrammarItem>, MobileError>;
+    async fn grammar_rules(&self, language: &str) -> Result<Vec<LocalGrammarRule>, MobileError>;
+    async fn grammar_mastery(
+        &self,
+        language: &str,
+    ) -> Result<Vec<LocalGrammarMastery>, MobileError>;
+    /// Queues an answer. Queuing one already held changes nothing, so a retry
+    /// after a crash mid-write cannot double-count it.
+    async fn queue_attempt(&self, attempt: &QueuedAttempt) -> Result<(), MobileError>;
+    /// The queued answers, oldest first.
+    async fn pending_attempts(&self, limit: u16) -> Result<Vec<QueuedAttempt>, MobileError>;
+    /// Clears the answers the server has accounted for, and only those.
+    async fn apply_attempt_response(
+        &self,
+        response: &GrammarAttemptBatchResponseDto,
+    ) -> Result<(), MobileError>;
+}
+
 pub trait LocalStore:
-    ProfileRepository + CorpusRepository + LearningRepository + ContentRepository
+    ProfileRepository + CorpusRepository + LearningRepository + ContentRepository + GrammarRepository
 {
 }
 
 impl<T> LocalStore for T where
-    T: ProfileRepository + CorpusRepository + LearningRepository + ContentRepository
+    T: ProfileRepository
+        + CorpusRepository
+        + LearningRepository
+        + ContentRepository
+        + GrammarRepository
 {
 }
 
@@ -163,6 +200,22 @@ pub trait MobileApi: Send + Sync {
         &self,
         request: &NbackBatchRequestDto,
     ) -> Result<NbackBatchResponseDto, MobileError>;
+    /// The version-2 capabilities, or `None` where the server offers only
+    /// version 1. A server that has never heard of the endpoint is not a
+    /// fault: the device then syncs vocabulary and leaves grammar alone.
+    async fn capabilities_v2(&self) -> Result<Option<MobileCapabilitiesDto>, MobileError>;
+    async fn grammar_bank_changes(
+        &self,
+        request: &GrammarBankChangeRequestDto,
+    ) -> Result<GrammarBankChangePageDto, MobileError>;
+    async fn grammar_mastery_changes(
+        &self,
+        request: &GrammarMasteryChangeRequestDto,
+    ) -> Result<GrammarMasteryChangePageDto, MobileError>;
+    async fn upload_grammar_attempts(
+        &self,
+        request: &GrammarAttemptBatchRequestDto,
+    ) -> Result<GrammarAttemptBatchResponseDto, MobileError>;
 }
 
 pub trait ApiFactory: Send + Sync {

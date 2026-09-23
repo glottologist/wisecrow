@@ -1,7 +1,7 @@
 # CLI reference
 
-The `wisecrow` binary ships with nineteen subcommands. Every command has a
-short alias (in parentheses below) for shell ergonomics.
+The `wisecrow` binary ships with thirty subcommands. Most have a short alias
+(in parentheses below) for shell ergonomics.
 
 ## Synopsis
 
@@ -37,6 +37,17 @@ list.
 | [`preview`](#preview) | `pv` | yes (+ LLM if `--gloss-unknowns`) | Annotate subtitle file tokens with corpus + SRS state. |
 | [`user`](#user) | `u` | yes | Manage accounts and web login. |
 | [`sync-client`](#sync-client) | `sc` | yes | Manage per-client corpus-sync API keys. |
+| [`extract-phrases`](#extract-phrases) | — | yes | Mine frequent multi-word phrases into staging. |
+| [`translate-phrases`](#translate-phrases) | — | yes + LLM | Translate staged phrases and promote them into decks. |
+| [`score-sentences`](#score-sentences) | `ss` | yes | Rank stored sentences by the words they use. |
+| [`sentence-card`](#sentence-card) | `sent` | yes + LLM | Build a sentence card around a word within reach. |
+| [`gloss-deck`](#gloss-deck) | `gd` | yes + LLM | Give pending words their card presentations. |
+| [`prune`](#prune) | `pr` | yes | Demote pairs whose prompt holds no recognised word. |
+| [`ensure-syllabus`](#ensure-syllabus) | `es` | yes + LLM | Fill any CEFR level with no grammar points. |
+| [`refresh-syllabus`](#refresh-syllabus) | `rs` | yes + LLM | Rewrite machine-generated grammar prose. |
+| [`export-grammar`](#export-grammar) | `eg` | yes | Dump a language's syllabus as JSON. |
+| [`generate-items`](#generate-items) | `gi` | yes + LLM | Generate quiz items for a level's grammar points. |
+| [`promote-items`](#promote-items) | `pi` | yes | Review generated items before they are served. |
 
 ## Common options
 
@@ -502,3 +513,158 @@ Issues per-client keys for the corpus-sync endpoints. `add` prints the key
 once. Pullers send it as the `x-api-key` header; keys are individually
 revocable and compared in constant time. See
 [Sync workflow](../guides/sync-workflow.md).
+
+---
+
+## `extract-phrases`
+
+```sh
+wisecrow extract-phrases --lang <CODE>
+```
+
+Mines the corpus for frequent multi-word phrases and stages them. Staging is
+separate from the decks so that a phrase is translated and reviewed before a
+learner ever meets it; [`translate-phrases`](#translate-phrases) is what moves
+it on.
+
+---
+
+## `translate-phrases`
+
+```sh
+wisecrow translate-phrases --lang <CODE> --native-lang <CODE> [--limit N] [--refresh]
+```
+
+Translates staged phrases with the configured model and promotes them into the
+decks. `--limit` caps how many are sent in one run (default 100). `--refresh`
+re-glosses phrases already translated, updating the linked rows in place rather
+than adding duplicates.
+
+---
+
+## `score-sentences`
+
+```sh
+wisecrow score-sentences --lang <CODE>
+```
+
+Scores every stored sentence of a language by the words it uses, which is what
+[`sentence-card`](#sentence-card) draws on. The language's words must already
+be ranked — run [`frequency`](#frequency) with `--from-corpus` first — because
+an unranked word carries no weight to score with.
+
+---
+
+## `sentence-card`
+
+```sh
+wisecrow sentence-card --lang <CODE> --native-lang <CODE> --user-id <ID> [--word <WORD>]
+```
+
+Builds a sentence card around one word the learner is close to knowing. With
+no `--word`, the next word the deck would serve is used, which is the loop the
+word deck and the sentence deck are meant to form.
+
+---
+
+## `gloss-deck`
+
+```sh
+wisecrow gloss-deck --lang <CODE> --native-lang <CODE> [--limit N] [--offset N] [--dry-run]
+```
+
+Gives pending words the presentations their cards are built from. `--limit`
+bounds one window (1–1000); rows that are punctuation, digits or the wrong
+script are reported and skipped, so fewer than the limit may be enriched.
+`--offset` steps past a rejected window during an inspection pass; restart from
+zero once entries have been written, since accepted words leave the pending
+list. `--dry-run` lists the window without calling the model.
+
+---
+
+## `prune`
+
+```sh
+wisecrow prune --lang <CODE> [--native-lang <CODE>] [--dry-run]
+```
+
+Demotes translation pairs whose prompt holds no recognised word — corpus
+corruption such as `Bthey` or `andthatthe`, which no ordering rule inside the
+deck query can catch. Run it with `--dry-run` first: a corpus that turns out to
+be mostly the wrong language loses most of its rows, and that is better seen
+than discovered.
+
+---
+
+## `ensure-syllabus`
+
+```sh
+wisecrow ensure-syllabus --lang <CODE>
+wisecrow ensure-syllabus --all
+```
+
+Fills any CEFR level that holds no grammar points for a language, so that every
+ingested language has a syllabus to practise against rather than only the ones
+someone remembered to seed. `--all` does the same for every language already
+present in the corpus. Points it generates are marked `llm`; a level that
+already holds points is left alone.
+
+---
+
+## `refresh-syllabus`
+
+```sh
+wisecrow refresh-syllabus --lang <CODE>
+```
+
+Rewrites the title and explanation of machine-generated grammar points, for
+when a better model or a better prompt would produce clearer prose. Points from
+a curated inventory are never touched: their wording is the reason they were
+curated.
+
+---
+
+## `export-grammar`
+
+```sh
+wisecrow export-grammar --lang <CODE> [--out FILE]
+```
+
+Dumps a language's syllabus as JSON, in the shape
+[`import-grammar`](#import-grammar) accepts, for diffing or backup. Prints to
+standard output when `--out` is omitted.
+
+---
+
+## `generate-items`
+
+```sh
+wisecrow generate-items --lang <CODE> --level <CEFR> [--per-rule N]
+```
+
+Generates quiz items for every grammar point at a level and stores them as
+candidates. Nothing generated here is served: items enter the bank at
+`candidate` status and reach learners only through
+[`promote-items`](#promote-items). Generation is therefore an accumulating
+investment rather than a cost paid on every request, and a subtly wrong item
+gets a human reading before it can write a false signal into anyone's mastery.
+
+`--per-rule` sets how many items to ask the model for per point (default 8).
+
+---
+
+## `promote-items`
+
+```sh
+wisecrow promote-items --lang <CODE> [--level <CEFR>] --list [--limit N]
+wisecrow promote-items --lang <CODE> --accept <ID>...
+wisecrow promote-items --lang <CODE> --reject <ID>... [--reason TEXT]
+wisecrow promote-items --lang <CODE> --retire <ID>...
+```
+
+Reviews what [`generate-items`](#generate-items) produced. `--list` prints the
+waiting candidates and changes nothing. `--accept` makes them servable,
+`--reject` refuses them with a reason, and `--retire` withdraws an active item
+without deleting it — an attempt uploaded from a device that has been offline
+for a fortnight must still be gradeable against the item as the learner saw it,
+so nothing in the bank is ever hard-deleted.

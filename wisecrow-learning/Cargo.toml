@@ -11,8 +11,16 @@ num-traits = "0.2"
 rand = "0.8"
 rs-fsrs = "1.2"
 thiserror = "2"
+unicode-normalization = "0.1"
 uuid = "1"
 
 [dev-dependencies]
 proptest = "1.5"
 rstest = "0.22"
+
+# `rand` reaches WebAssembly through getrandom, which refuses to build for
+# wasm32-unknown-unknown unless told to draw from the browser's crypto API.
+# The web client links this crate for grading, so the backend is named here
+# rather than left for each consumer to rediscover as a compile error.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }

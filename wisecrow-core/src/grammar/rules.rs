@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+use unicode_normalization::UnicodeNormalization;
+
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 
@@ -71,6 +73,10 @@ pub enum RuleSource {
     Manual,
     Ai,
     Pdf,
+    /// Seeded by a language model: a best guess, not an authority.
+    Llm,
+    /// Imported from a curated CEFR inventory.
+    Reference,
 }
 
 impl RuleSource {
@@ -80,6 +86,8 @@ impl RuleSource {
             Self::Manual => "manual",
             Self::Ai => "ai",
             Self::Pdf => "pdf",
+            Self::Llm => "llm",
+            Self::Reference => "reference",
         }
     }
 }
@@ -92,6 +100,8 @@ impl FromStr for RuleSource {
             "manual" => Ok(Self::Manual),
             "ai" => Ok(Self::Ai),
             "pdf" => Ok(Self::Pdf),
+            "llm" => Ok(Self::Llm),
+            "reference" => Ok(Self::Reference),
             _ => Err(WisecrowError::InvalidInput(format!(
                 "Unknown rule source: {s}"
             ))),
@@ -104,6 +114,9 @@ pub struct GrammarRule {
     pub id: i32,
     pub language_id: i32,
     pub cefr_level_id: i32,
+    /// Stable identity, unique per language. Mastery is keyed on it, so it is
+    /// assigned once and never rewritten.
+    pub slug: String,
     pub title: String,
     pub explanation: String,
     pub source: RuleSource,
@@ -122,6 +135,7 @@ pub struct RuleExample {
 
 #[derive(Debug, Clone)]
 pub struct NewGrammarRule {
+    pub slug: String,
     pub title: String,
     pub explanation: String,
     pub source: RuleSource,
@@ -135,11 +149,50 @@ pub struct NewRuleExample {
     pub is_correct: bool,
 }
 
+/// Derives a stable identity from a title.
+///
+/// Accents are folded away so that a re-wording which merely adds or drops a
+/// diacritic keeps the same identity, and any character that is neither a
+/// letter nor a digit becomes a separator. Scripts without a Latin form, such
+/// as Chinese, keep their own characters rather than slugifying to nothing.
+#[must_use]
+pub fn slugify(title: &str) -> String {
+    let folded: String = title
+        .nfd()
+        .filter(|character| !is_combining_mark(*character))
+        .collect::<String>()
+        .to_lowercase();
+
+    let mut slug = String::with_capacity(folded.len());
+    let mut pending_separator = false;
+    for character in folded.chars() {
+        if character.is_alphanumeric() {
+            if pending_separator && !slug.is_empty() {
+                slug.push('-');
+            }
+            pending_separator = false;
+            slug.push(character);
+        } else {
+            pending_separator = true;
+        }
+    }
+
+    slug.chars().take(SLUG_MAX_CHARS).collect()
+}
+
+fn is_combining_mark(character: char) -> bool {
+    matches!(character as u32, 0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x20D0..=0x20FF)
+}
+
+/// Longest slug the `grammar_rules.slug` column accepts.
+const SLUG_MAX_CHARS: usize = 96;
+
 pub struct RuleRepository;
 
 impl RuleRepository {
     /// Inserts a grammar rule and its examples for a given language and CEFR level.
-    /// Uses upsert on (language_id, cefr_level_id, title).
+    /// Uses upsert on (language_id, slug): titles are model output and change
+    /// whenever the prompt does, so they cannot key a learner's history.
     pub async fn upsert_rule(
         pool: &PgPool,
         language_id: i32,
@@ -147,16 +200,19 @@ impl RuleRepository {
         rule: &NewGrammarRule,
     ) -> Result<i32, WisecrowError> {
         let row = sqlx::query_scalar::<_, i32>(
-            "INSERT INTO grammar_rules (language_id, cefr_level_id, title, explanation, source)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (language_id, cefr_level_id, title)
-             DO UPDATE SET explanation = EXCLUDED.explanation,
+            "INSERT INTO grammar_rules (language_id, cefr_level_id, slug, title, explanation, source)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (language_id, slug)
+             DO UPDATE SET cefr_level_id = EXCLUDED.cefr_level_id,
+                           title = EXCLUDED.title,
+                           explanation = EXCLUDED.explanation,
                            source = EXCLUDED.source,
                            updated_at = CURRENT_TIMESTAMP
              RETURNING id",
         )
         .bind(language_id)
         .bind(cefr_level_id)
+        .bind(&rule.slug)
         .bind(&rule.title)
         .bind(&rule.explanation)
         .bind(rule.source.as_str())
@@ -199,16 +255,17 @@ impl RuleRepository {
                 String,
                 String,
                 String,
+                String,
                 DateTime<Utc>,
                 DateTime<Utc>,
             ),
         >(
-            "SELECT gr.id, gr.language_id, gr.cefr_level_id, gr.title, gr.explanation, gr.source,
-                    gr.created_at, gr.updated_at
+            "SELECT gr.id, gr.language_id, gr.cefr_level_id, gr.slug, gr.title, gr.explanation,
+                    gr.source, gr.created_at, gr.updated_at
              FROM grammar_rules gr
              JOIN cefr_levels cl ON cl.id = gr.cefr_level_id
              WHERE gr.language_id = $1 AND cl.code = $2
-             ORDER BY gr.title",
+             ORDER BY cl.sort_order, gr.slug",
         )
         .bind(language_id)
         .bind(cefr_level_code)
@@ -216,7 +273,8 @@ impl RuleRepository {
         .await?;
 
         let mut rules = Vec::with_capacity(rows.len());
-        for (id, lang_id, level_id, title, explanation, source_str, created, updated) in rows {
+        for (id, lang_id, level_id, slug, title, explanation, source_str, created, updated) in rows
+        {
             let examples = sqlx::query_as::<_, (i32, String, Option<String>, bool)>(
                 "SELECT id, sentence, translation, is_correct
                  FROM rule_examples WHERE rule_id = $1 ORDER BY id",
@@ -237,6 +295,7 @@ impl RuleRepository {
                 id,
                 language_id: lang_id,
                 cefr_level_id: level_id,
+                slug,
                 title,
                 explanation,
                 source: source_str.parse().unwrap_or(RuleSource::Manual),
@@ -290,6 +349,7 @@ pub async fn import_from_json(
         let cefr_level_id =
             RuleRepository::ensure_cefr_level(pool, &rule_import.cefr_level).await?;
         let new_rule = NewGrammarRule {
+            slug: slugify(&rule_import.title),
             title: rule_import.title.clone(), // clone: building owned struct from borrowed import
             explanation: rule_import.explanation.clone(), // clone: building owned struct from borrowed import
             source: RuleSource::Manual,
@@ -325,8 +385,10 @@ pub async fn import_from_pdf(
         let title = section.title.as_deref().unwrap_or("Untitled Rule");
 
         for rule_text in &section.rules {
+            let pdf_title = format!("{title}: {}", truncate(rule_text, 100));
             let new_rule = NewGrammarRule {
-                title: format!("{title}: {}", truncate(rule_text, 100)),
+                slug: slugify(&pdf_title),
+                title: pdf_title,
                 explanation: rule_text.clone(), // clone: building owned struct from borrowed extraction
                 source: RuleSource::Pdf,
                 examples: section

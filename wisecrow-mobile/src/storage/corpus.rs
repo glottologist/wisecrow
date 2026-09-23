@@ -1006,9 +1006,12 @@ fn sync_phase_value(phase: SyncPhase) -> &'static str {
         SyncPhase::Idle => "idle",
         SyncPhase::Reviews => "reviews",
         SyncPhase::Nback => "nback",
+        SyncPhase::GrammarAttempts => "grammar_attempts",
         SyncPhase::Cards => "cards",
         SyncPhase::Snapshots => "snapshots",
         SyncPhase::Deltas => "deltas",
+        SyncPhase::GrammarBank => "grammar_bank",
+        SyncPhase::GrammarMastery => "grammar_mastery",
         SyncPhase::Finishing => "finishing",
     }
 }
@@ -1018,9 +1021,12 @@ fn parse_sync_phase(value: &str) -> Result<SyncPhase, MobileError> {
         "idle" => Ok(SyncPhase::Idle),
         "reviews" => Ok(SyncPhase::Reviews),
         "nback" => Ok(SyncPhase::Nback),
+        "grammar_attempts" => Ok(SyncPhase::GrammarAttempts),
         "cards" => Ok(SyncPhase::Cards),
         "snapshots" => Ok(SyncPhase::Snapshots),
         "deltas" => Ok(SyncPhase::Deltas),
+        "grammar_bank" => Ok(SyncPhase::GrammarBank),
+        "grammar_mastery" => Ok(SyncPhase::GrammarMastery),
         "finishing" => Ok(SyncPhase::Finishing),
         _ => Err(invalid_state()),
     }

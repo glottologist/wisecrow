@@ -1,5 +1,6 @@
 mod content;
 mod corpus;
+mod grammar;
 mod learning;
 pub mod models;
 mod profile;

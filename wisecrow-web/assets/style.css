@@ -137,6 +137,7 @@ input, select, textarea {
 .max-w-6xl { max-width: 72rem; }
 .max-w-2xl { max-width: 42rem; }
 .max-w-lg { max-width: 32rem; }
+.max-w-4xl { max-width: 56rem; }
 .max-w-md { max-width: 28rem; }
 .max-w-sm { max-width: 24rem; }
 .mx-auto { margin-left: auto; margin-right: auto; }
@@ -160,6 +161,8 @@ input, select, textarea {
 .h-2 { height: 0.5rem; }
 
 /* Spacing */
+.p-3 { padding: 0.75rem; }
+.py-12 { padding-top: 3rem; padding-bottom: 3rem; }
 .gap-2 { gap: 0.5rem; }
 .gap-3 { gap: 0.75rem; }
 .gap-4 { gap: 1rem; }
@@ -599,4 +602,68 @@ a {
         height: auto;
         border-radius: 1.5rem;
     }
+}
+
+/* Brainmap bands.
+ *
+ * A filled band is a settled judgement; a dashed outline is a provisional one,
+ * drawn from fewer than three attempts. Grey means the point has never been
+ * asked about, and must never read as either knowledge or failure. The colours
+ * come from the theme tokens, so both palettes stay legible.
+ */
+.band {
+    border-width: 2px;
+    border-style: solid;
+    border-radius: 0.5rem;
+}
+
+.band-unseen {
+    background-color: transparent;
+    color: var(--text-muted);
+    border-color: var(--border-default);
+}
+
+.band-green {
+    background-color: var(--emerald-700);
+    color: var(--on-accent);
+    border-color: var(--emerald-700);
+}
+
+.band-amber {
+    background-color: var(--orange-600);
+    color: var(--on-accent);
+    border-color: var(--orange-600);
+}
+
+.band-red {
+    background-color: var(--red-700);
+    color: var(--on-accent);
+    border-color: var(--red-700);
+}
+
+.band-provisional-green,
+.band-provisional-amber,
+.band-provisional-red {
+    background-color: transparent;
+    border-style: dashed;
+}
+
+.band-provisional-green {
+    color: var(--emerald-text);
+    border-color: var(--emerald-600);
+}
+
+.band-provisional-amber {
+    color: var(--amber-text);
+    border-color: var(--orange-600);
+}
+
+.band-provisional-red {
+    color: var(--red-text);
+    border-color: var(--red-600);
+}
+
+/* The grid loosens to three columns once there is room for them. */
+@media (min-width: 768px) {
+    .md\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }

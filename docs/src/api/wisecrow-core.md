@@ -329,6 +329,115 @@ pub mod quiz { pub struct ClozeQuiz; pub struct MultipleChoiceQuiz; }
 pub mod pdf { pub fn extract(path: &Path) -> Result<ExtractedContent, WisecrowError>; }
 ```
 
+The CEFR mastery work adds seven modules beneath the same root. They divide by
+the question they answer: what the learner should meet, what they are asked,
+what they know, and what a device is owed.
+
+```rust,ignore
+pub mod syllabus {
+    pub const ALL_LEVELS: [&str; 6];
+    pub struct EnsureSummary; pub struct SyllabusEntry;
+    pub async fn ensure_syllabus(pool, provider, lang_code) -> Result<EnsureSummary, WisecrowError>;
+    pub async fn ensure_all_syllabuses(pool, provider) -> Result<EnsureSummary, WisecrowError>;
+    pub async fn refresh_syllabus(pool, provider, lang_code) -> Result<usize, WisecrowError>;
+    pub async fn export_syllabus(pool, lang_code) -> Result<String, WisecrowError>;
+    pub async fn import_syllabus(pool, lang_code, document) -> Result<usize, WisecrowError>;
+}
+
+pub mod items {
+    pub const BLANK: &str = "___";
+    pub enum ItemDraft { Cloze { .. }, MultipleChoice { .. } }
+    pub enum GateFailure { .. }
+    pub fn gate(draft: &ItemDraft) -> Option<GateFailure>;
+    pub struct StoredItem { pub fn gradable(&self) -> Result<GradableItem, WisecrowError>; }
+    pub struct ItemRepository;
+    impl ItemRepository {
+        pub async fn insert_candidates(pool, rule_id, &[ItemDraft])
+            -> Result<InsertSummary, WisecrowError>;
+        pub async fn insert_candidates_with_vocabulary(pool, rule_id, &[ItemDraft], in_level)
+            -> Result<InsertSummary, WisecrowError>;
+        pub async fn active_items_for_rule(pool, rule_id) -> Result<Vec<StoredItem>, WisecrowError>;
+        pub async fn candidates_for_language(pool, lang_code, level_code, limit)
+            -> Result<Vec<StoredItem>, WisecrowError>;
+        pub async fn promote(pool, item_id) -> Result<(), WisecrowError>;
+        pub async fn reject(pool, item_id, reason) -> Result<(), WisecrowError>;
+        pub async fn retire(pool, item_id) -> Result<(), WisecrowError>;
+    }
+}
+
+pub mod session {
+    pub const SESSION_LENGTH: i64 = 12;
+    pub enum SessionKind { Practice, Placement }
+    pub struct GrammarSession; pub struct SubmissionContext;
+    pub struct GrammarSessionManager;
+    impl GrammarSessionManager {
+        pub async fn create(pool, user_id, lang_code, level_code, kind, limit)
+            -> Result<Option<GrammarSession>, WisecrowError>;
+        pub async fn open(transaction, user_id, language_id, level_id, kind)
+            -> Result<Uuid, WisecrowError>;
+        pub async fn adopt(transaction, user_id, session_id, language_id, level_id, kind)
+            -> Result<(), WisecrowError>;
+        pub async fn submit(pool, user_id, &Submission, SubmissionContext)
+            -> Result<Verdict, WisecrowError>;
+        pub async fn submit_in_transaction(transaction, user_id, &Submission, SubmissionContext)
+            -> Result<Verdict, WisecrowError>;
+        pub async fn complete(pool, user_id, session_id) -> Result<(), WisecrowError>;
+    }
+    pub async fn session_identity(pool, lang_code, level_code) -> Result<(i32, Option<i32>), WisecrowError>;
+}
+
+pub mod mastery {
+    pub enum AttemptSource { Web, Mobile }
+    pub struct AttemptRecord; pub struct MasteryRow;
+    pub struct MasteryRepository;
+    impl MasteryRepository {
+        pub async fn record_attempt(pool, user_id, &AttemptRecord) -> Result<(), WisecrowError>;
+        pub async fn refresh_projection(pool, user_id, rule_id) -> Result<(), WisecrowError>;
+        pub async fn replay_from_baseline(pool, user_id, rule_id)
+            -> Result<Option<Projection>, WisecrowError>;
+        pub async fn mastery_for_language(pool, user_id, lang_code)
+            -> Result<Vec<MasteryRow>, WisecrowError>;
+    }
+}
+
+pub mod selection {
+    pub struct PracticeItem;
+    pub async fn select_practice(pool, user_id, lang_code, level_code, limit)
+        -> Result<Vec<PracticeItem>, WisecrowError>;
+    pub async fn record_exposure(pool, user_id, item_id) -> Result<(), WisecrowError>;
+}
+
+pub mod placement {
+    pub const PLACEMENT_SAMPLE: i64 = 6;
+    pub const PLACEMENT_PASS: f64 = 0.60;
+    pub const PLACEMENT_MIN_ITEMS: usize = 4;
+    pub const PLACEMENT_MAX_FAILURES: usize = 2;
+    pub struct PlacementStep; pub struct LevelScore; pub struct PlacementOutcome;
+    pub enum PlacementState { Testing(PlacementStep), Finished(PlacementOutcome) }
+    pub async fn start(pool, user_id, lang_code) -> Result<PlacementState, WisecrowError>;
+    pub async fn submit(pool, user_id, attempt_id, &[Submission], SubmissionContext)
+        -> Result<PlacementState, WisecrowError>;
+}
+
+pub mod sync {
+    pub enum ChangeOperation { Upsert, Delete }
+    pub struct GrammarChange; pub struct QuizItemChange; pub struct ChangePage<T>;
+    pub struct BankItem; pub struct MasteryState;
+    pub async fn visible_grammar_changes(pool, user_id, cursor, limit)
+        -> Result<ChangePage<GrammarChange>, WisecrowError>;
+    pub async fn visible_item_changes(pool, language_code, cursor, limit)
+        -> Result<ChangePage<QuizItemChange>, WisecrowError>;
+    pub async fn bank_items(pool, item_ids) -> Result<Vec<BankItem>, WisecrowError>;
+    pub async fn mastery_states(pool, user_id, rule_ids) -> Result<Vec<MasteryState>, WisecrowError>;
+}
+```
+
+`sync` is the device-facing half. Its two readers serve only rows whose writing
+transaction has finished — see [the change feeds](../reference/database-schema.md#grammar-change-feeds)
+for why a `BIGSERIAL` cursor alone loses changes — and `ChangePage::next_cursor`
+is the caller's own cursor when the page is empty. `bank_items` serves active
+items only, and is the one path by which an answer reaches a device.
+
 Source: `wisecrow-core/src/grammar/`.
 
 ## `llm`
@@ -425,5 +534,11 @@ to serde DTOs in `wisecrow-dto`. Notable helpers:
 - `grammar_rule_to_dto(&GrammarRule, cefr_level_code) -> GrammarRuleDto`
 - `quizzes_to_dto(&[ClozeQuiz], &[MultipleChoiceQuiz]) -> Vec<QuizItemDto>`
 - `adaptation_to_dto(&AdaptationState, &[CompletedTrial], terminated) -> DnbAdaptationDto`
+- `grammar_item(&PracticeItem) -> GrammarItemDto` (the served shape, answers withheld)
+- `offline_grammar_item(&BankItem) -> OfflineGrammarItemDto` (the device shape, answers included)
+- `grammar_mastery_state(&MasteryState) -> GrammarMasteryStateDto`
+- `brainmap_cell(&MasteryRow) -> BrainmapCellDto`
+- `placement_state(&PlacementState) -> PlacementStateDto`
+- `submission(&SubmissionDto) -> Submission`
 
 Source: `wisecrow-core/src/dto_convert.rs`.

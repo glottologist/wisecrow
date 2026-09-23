@@ -1,0 +1,14 @@
+{
+  "protocol_version": 1,
+  "supported_features": [
+    "CorpusSync",
+    "CardSync",
+    "ReviewUpload",
+    "NbackUpload",
+    "QuizCache"
+  ],
+  "max_snapshot_page": 500,
+  "max_review_batch": 500,
+  "max_nback_batch": 20,
+  "server_version": "0.1.0"
+}

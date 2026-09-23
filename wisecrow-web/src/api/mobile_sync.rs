@@ -5,7 +5,7 @@ use wisecrow_dto::{
     NbackBatchResponseDto, RegisteredDeviceDto, ReviewBatchRequestDto, ReviewBatchResponseDto,
 };
 #[cfg(feature = "server")]
-use wisecrow_dto::{MobileFeatureDto, MOBILE_PROTOCOL_VERSION};
+use wisecrow_dto::{MobileFeatureDto, MOBILE_PROTOCOL_VERSION, MOBILE_PROTOCOL_VERSION_V2};
 
 /// Returns the public protocol capabilities of this server build.
 ///
@@ -22,6 +22,38 @@ pub async fn mobile_capabilities() -> Result<MobileCapabilitiesDto, ServerFnErro
             MobileFeatureDto::ReviewUpload,
             MobileFeatureDto::NbackUpload,
             MobileFeatureDto::QuizCache,
+        ],
+        max_snapshot_page: 500,
+        max_review_batch: 500,
+        max_nback_batch: 20,
+        server_version: String::from(env!("CARGO_PKG_VERSION")),
+    })
+}
+
+/// Returns the version-2 capabilities of this server build.
+///
+/// It sits beside the version-1 endpoint rather than replacing it. Both ends
+/// compare protocol versions for equality, so a deployed client that asked the
+/// old endpoint and received a 2 would refuse to sync at all; a client that
+/// knows about version 2 asks here instead, and one that does not carries on
+/// exactly as before, with vocabulary but no grammar.
+///
+/// # Errors
+///
+/// This endpoint currently has no failure path.
+#[post("/api/mobile/v2/capabilities")]
+pub async fn mobile_capabilities_v2() -> Result<MobileCapabilitiesDto, ServerFnError> {
+    Ok(MobileCapabilitiesDto {
+        protocol_version: MOBILE_PROTOCOL_VERSION_V2,
+        supported_features: vec![
+            MobileFeatureDto::CorpusSync,
+            MobileFeatureDto::CardSync,
+            MobileFeatureDto::ReviewUpload,
+            MobileFeatureDto::NbackUpload,
+            MobileFeatureDto::QuizCache,
+            MobileFeatureDto::GrammarBankSync,
+            MobileFeatureDto::GrammarMasterySync,
+            MobileFeatureDto::GrammarAttemptUpload,
         ],
         max_snapshot_page: 500,
         max_review_batch: 500,

@@ -4,10 +4,23 @@ use uuid::Uuid;
 
 use crate::{CardStatusDto, DnbSessionResultsDto, QuizItemDto};
 
-/// Mobile protocol version supported by this build.
+/// Mobile protocol version every deployed client already speaks.
+///
+/// It is frozen. A client compares versions for equality, so raising this
+/// number would make every installed app refuse to sync; version 2 is
+/// advertised beside it at its own endpoint instead.
 pub const MOBILE_PROTOCOL_VERSION: u16 = 1;
 
+/// Mobile protocol version that adds the grammar feeds.
+pub const MOBILE_PROTOCOL_VERSION_V2: u16 = 2;
+
 /// One independently negotiable mobile capability.
+///
+/// `Unknown` is what a client of this build makes of a capability a newer
+/// server advertises. Without it, one added name would fail the whole
+/// capabilities payload to deserialise and the client would not sync at all —
+/// the very outcome negotiating capabilities is meant to avoid. A server never
+/// sends it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MobileFeatureDto {
     CorpusSync,
@@ -15,6 +28,11 @@ pub enum MobileFeatureDto {
     ReviewUpload,
     NbackUpload,
     QuizCache,
+    GrammarBankSync,
+    GrammarMasterySync,
+    GrammarAttemptUpload,
+    #[serde(other)]
+    Unknown,
 }
 
 /// Public server capabilities needed during mobile onboarding.
@@ -356,6 +374,58 @@ mod tests {
         let json = serde_json::to_vec(value).expect("serialize");
         let decoded: T = serde_json::from_slice(&json).expect("deserialize");
         assert_eq!(&decoded, value);
+    }
+
+    /// A payload frozen from the version-1 server, kept so that a change to
+    /// these types cannot quietly stop a deployed client from onboarding.
+    #[test]
+    fn the_frozen_version_one_payload_still_negotiates() {
+        const FROZEN: &str = include_str!("../tests/fixtures/mobile_v1_capabilities.json");
+        let capabilities: MobileCapabilitiesDto =
+            serde_json::from_str(FROZEN).expect("the frozen payload must still deserialise");
+        assert_eq!(capabilities.protocol_version, MOBILE_PROTOCOL_VERSION);
+        assert_eq!(
+            capabilities.supported_features,
+            vec![
+                MobileFeatureDto::CorpusSync,
+                MobileFeatureDto::CardSync,
+                MobileFeatureDto::ReviewUpload,
+                MobileFeatureDto::NbackUpload,
+                MobileFeatureDto::QuizCache,
+            ]
+        );
+        assert_eq!(capabilities.max_snapshot_page, 500);
+    }
+
+    /// A capability this build has never heard of must not cost it the rest of
+    /// the payload.
+    #[test]
+    fn an_unrecognised_capability_degrades_rather_than_fails() {
+        #[derive(Deserialize)]
+        struct Wrapper {
+            feature: MobileFeatureDto,
+        }
+
+        let wrapper: Wrapper =
+            serde_json::from_str(r#"{"feature":"SomethingNew"}"#).expect("unknown names decode");
+        assert_eq!(wrapper.feature, MobileFeatureDto::Unknown);
+
+        let capabilities: MobileCapabilitiesDto = serde_json::from_str(
+            r#"{"protocol_version":9,"supported_features":["CorpusSync","SomethingNew"],
+                 "max_snapshot_page":1,"max_review_batch":1,"max_nback_batch":1,
+                 "server_version":"9.9.9"}"#,
+        )
+        .expect("a future server's capabilities still decode");
+        assert_eq!(
+            capabilities.supported_features,
+            vec![MobileFeatureDto::CorpusSync, MobileFeatureDto::Unknown]
+        );
+    }
+
+    #[test]
+    fn version_two_is_advertised_beside_version_one_rather_than_replacing_it() {
+        assert_eq!(MOBILE_PROTOCOL_VERSION, 1);
+        assert_eq!(MOBILE_PROTOCOL_VERSION_V2, 2);
     }
 
     fn pair() -> LanguagePairDto {

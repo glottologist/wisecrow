@@ -59,9 +59,14 @@ pub enum SyncPhase {
     Idle,
     Reviews,
     Nback,
+    /// Answers taken offline go before anything is downloaded, so that the
+    /// mastery the device then pulls already accounts for them.
+    GrammarAttempts,
     Cards,
     Snapshots,
     Deltas,
+    GrammarBank,
+    GrammarMastery,
     Finishing,
 }
 

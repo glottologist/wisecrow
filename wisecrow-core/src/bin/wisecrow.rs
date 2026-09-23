@@ -9,15 +9,17 @@ use tokio::{
     signal::unix::{signal, SignalKind},
     task::JoinHandle,
 };
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use wisecrow::{
     cli::{
-        is_supported_language, Cli, Command, DownloadAllArgs, ExtractPhrasesArgs, ExtractWordsArgs,
-        FrequencyArgs, GenerateExercisesArgs, GlossArgs, GlossDeckArgs, GradedReaderArgs,
+        is_supported_language, Cli, Command, DownloadAllArgs, EnsureSyllabusArgs,
+        ExportGrammarArgs, ExtractPhrasesArgs, ExtractWordsArgs, FrequencyArgs,
+        GenerateExercisesArgs, GenerateItemsArgs, GlossArgs, GlossDeckArgs, GradedReaderArgs,
         GradedReaderFormat, ImportGrammarArgs, ImportPdfArgs, IngestArgs, LanguageArgs, LearnArgs,
-        NbackArgs, PrefetchMediaArgs, PreviewArgs, PromoteMode, PromoteWordsArgs, PruneArgs,
-        QuizArgs, ScoreSentencesArgs, SeedGrammarArgs, SentenceCardArgs, SyncArgs, SyncClientCmd,
-        TranslatePhrasesArgs, UserCmd, SUPPORTED_LANGUAGE_INFO,
+        NbackArgs, PrefetchMediaArgs, PreviewArgs, PromoteItemsArgs, PromoteMode, PromoteWordsArgs,
+        PruneArgs, QuizArgs, RefreshSyllabusArgs, ScoreSentencesArgs, SeedGrammarArgs,
+        SentenceCardArgs, SyncArgs, SyncClientCmd, TranslatePhrasesArgs, UserCmd,
+        SUPPORTED_LANGUAGE_INFO,
     },
     config::Config,
     downloader::DownloadConfig,
@@ -313,6 +315,9 @@ async fn download_language_pair(
 }
 
 async fn handle_ingest(args: IngestArgs) -> Result<(), Error> {
+    let foreign_lang = args.langs.foreign_lang.clone(); // clone: args.langs moves into the job below
+    let seed_syllabus = !args.no_syllabus;
+
     if let Some(path) = args.file {
         let native = &args.langs.native_lang;
         let foreign = &args.langs.foreign_lang;
@@ -321,7 +326,11 @@ async fn handle_ingest(args: IngestArgs) -> Result<(), Error> {
             IngestLanguage::new(native, args.tmx_source_lang.as_deref().unwrap_or(native))?,
             IngestLanguage::new(foreign, args.tmx_target_lang.as_deref().unwrap_or(foreign))?,
         )?;
-        return handle_ingest_file(&path, &languages).await;
+        handle_ingest_file(&path, &languages).await?;
+        if seed_syllabus {
+            ensure_syllabus_after_ingest(&foreign_lang).await;
+        }
+        return Ok(());
     }
 
     let job = prepare_job(args.langs)?;
@@ -336,7 +345,142 @@ async fn handle_ingest(args: IngestArgs) -> Result<(), Error> {
             file,
         ));
     }
-    run_until_done_or_signal(handles).await
+    run_until_done_or_signal(handles).await?;
+    if seed_syllabus {
+        ensure_syllabus_after_ingest(&foreign_lang).await;
+    }
+    Ok(())
+}
+
+/// Gives a freshly ingested language its syllabus.
+///
+/// A failure here is reported and swallowed by design: the corpus is already
+/// in the database, and an unavailable model should leave a gap for the next
+/// `ensure-syllabus --all` to close rather than fail an ingest that worked.
+async fn ensure_syllabus_after_ingest(foreign_lang: &str) {
+    let outcome = async {
+        let (config, pool) = load_config_and_pool().await?;
+        let provider = wisecrow::llm::create_provider(&config)?;
+        wisecrow::grammar::syllabus::ensure_syllabus(&pool, provider.as_ref(), foreign_lang).await
+    }
+    .await;
+
+    match outcome {
+        Ok(summary) => info!(
+            "Syllabus for {foreign_lang}: {} levels filled, {} points added",
+            summary.levels_filled, summary.points_added
+        ),
+        Err(error) => warn!(
+            "Ingest succeeded but the syllabus for {foreign_lang} could not be seeded: {error}. \
+             Run `wisecrow ensure-syllabus --all` to close the gap."
+        ),
+    }
+}
+
+async fn handle_generate_items(args: GenerateItemsArgs) -> Result<(), Error> {
+    let (config, pool) = load_config_and_pool().await?;
+    let provider = wisecrow::llm::create_provider(&config)?;
+    let summary = wisecrow::grammar::ai_exercises::generate_and_store(
+        &pool,
+        provider.as_ref(),
+        &args.lang,
+        &args.level,
+        args.per_rule,
+    )
+    .await?;
+    info!(
+        "Generated {} candidate items ({} duplicates, {} refused by the gates). \
+         Review them with `wisecrow promote-items --lang {} --list`",
+        summary.inserted, summary.duplicates, summary.gated, args.lang
+    );
+    Ok(())
+}
+
+async fn handle_promote_items(args: PromoteItemsArgs) -> Result<(), Error> {
+    use wisecrow::grammar::items::ItemRepository;
+
+    let (_config, pool) = load_config_and_pool().await?;
+
+    if args.list {
+        let candidates = ItemRepository::candidates_for_language(
+            &pool,
+            &args.lang,
+            args.level.as_deref(),
+            args.limit,
+        )
+        .await?;
+        for item in &candidates {
+            let level_note = item
+                .out_of_level_words
+                .map_or_else(String::new, |count| format!(" [{count} words above level]"));
+            println!(
+                "{:>6}  {:<16} {}{}",
+                item.id, item.kind, item.prompt, level_note
+            );
+        }
+        info!("{} candidates awaiting review", candidates.len());
+        return Ok(());
+    }
+
+    for id in &args.accept {
+        ItemRepository::promote(&pool, *id).await?;
+    }
+    for id in &args.reject {
+        ItemRepository::reject(&pool, *id, &args.reason).await?;
+    }
+    for id in &args.retire {
+        ItemRepository::retire(&pool, *id).await?;
+    }
+
+    info!(
+        "{} promoted, {} rejected, {} retired",
+        args.accept.len(),
+        args.reject.len(),
+        args.retire.len()
+    );
+    Ok(())
+}
+
+async fn handle_ensure_syllabus(args: EnsureSyllabusArgs) -> Result<(), Error> {
+    let (config, pool) = load_config_and_pool().await?;
+    let provider = wisecrow::llm::create_provider(&config)?;
+
+    let summary = match args.lang {
+        Some(ref lang) => {
+            wisecrow::grammar::syllabus::ensure_syllabus(&pool, provider.as_ref(), lang).await?
+        }
+        None => {
+            wisecrow::grammar::syllabus::ensure_all_syllabuses(&pool, provider.as_ref()).await?
+        }
+    };
+
+    info!(
+        "Syllabus check complete: {} levels filled, {} already populated, {} points added",
+        summary.levels_filled, summary.levels_skipped, summary.points_added
+    );
+    Ok(())
+}
+
+async fn handle_refresh_syllabus(args: RefreshSyllabusArgs) -> Result<(), Error> {
+    let (config, pool) = load_config_and_pool().await?;
+    let provider = wisecrow::llm::create_provider(&config)?;
+    let refreshed =
+        wisecrow::grammar::syllabus::refresh_syllabus(&pool, provider.as_ref(), &args.lang).await?;
+    info!("Rewrote prose for {refreshed} machine-generated grammar points");
+    Ok(())
+}
+
+async fn handle_export_grammar(args: ExportGrammarArgs) -> Result<(), Error> {
+    let (_config, pool) = load_config_and_pool().await?;
+    let document = wisecrow::grammar::syllabus::export_syllabus(&pool, &args.lang).await?;
+    match args.out {
+        Some(path) => {
+            std::fs::write(&path, document)?;
+            info!("Wrote the {} syllabus to {}", args.lang, path.display());
+        }
+        None => println!("{document}"),
+    }
+    Ok(())
 }
 
 /// Ingests a corpus file already on disk. This is the route for translation
@@ -1036,6 +1180,11 @@ async fn main() -> Result<(), Error> {
         Command::Preview(args) => handle_preview(args).await?,
         Command::Quiz(args) => handle_quiz(args)?,
         Command::SeedGrammar(args) => handle_seed_grammar(args).await?,
+        Command::EnsureSyllabus(args) => handle_ensure_syllabus(args).await?,
+        Command::GenerateItems(args) => handle_generate_items(args).await?,
+        Command::PromoteItems(args) => handle_promote_items(args).await?,
+        Command::RefreshSyllabus(args) => handle_refresh_syllabus(args).await?,
+        Command::ExportGrammar(args) => handle_export_grammar(args).await?,
         Command::Sync(args) => handle_sync(args).await?,
         Command::User { command } => handle_user(command).await?,
         Command::SyncClient { command } => handle_sync_client(command).await?,
