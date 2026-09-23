@@ -38,7 +38,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-be6e4ce0.js";
+            window.path_to_searchindex_js = "searchindex-88760e4e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d4c59dab.js"></script>
@@ -1662,6 +1662,53 @@ select a fixed-size cohort of cards (due first, then unlearned vocabulary),
 record positions in <code>session_cards</code>, and let the user pause and resume.</p>
 <p>The session selection ordering is deterministic and ranks <strong>Relearning &gt;
 Learning &gt; New &gt; Review</strong>, so cards in the riskiest states are surfaced first.</p>
+<h2 id="grammar-mastery"><a class="header" href="#grammar-mastery">Grammar mastery</a></h2>
+<p>Grammar is scheduled by the same FSRS code, over a different record. The whole
+subsystem rests on one decision: <code>grammar_attempts</code> is the record, and every
+number a learner sees is a projection of it.</p>
+<p><strong>The syllabus.</strong> Every ingested language gets a CEFR-pinned syllabus, either
+from a curated inventory or generated to fill the gaps
+(<a href="#ensure-syllabus"><code>ensure-syllabus</code></a>). Points are identified
+by slug, not by title, so prose can be improved without orphaning the attempts
+recorded against them.</p>
+<p><strong>The bank.</strong> Exercises are generated once and stored
+(<a href="#generate-items"><code>generate-items</code></a>), then reviewed before
+they are served (<a href="#promote-items"><code>promote-items</code></a>). Generation
+is an accumulating investment rather than a cost paid per request, and the
+review step exists because a subtly broken item does not merely teach the wrong
+thing — it writes a false signal into the learner’s mastery and makes selection
+drill a point they already know.</p>
+<p><strong>Grading.</strong> <code>wisecrow-learning::grading</code> is the only code that decides whether
+an answer is right, and all three clients call it. Text is compared after NFC
+composition, full lowercasing and whitespace collapse — accent-sensitive, since
+an accent is usually the thing being taught. The server regrades every
+submission against the stored item revision rather than trusting the client;
+that is a correctness measure before it is an anti-tampering one, because the
+stored row is the only copy all three parties can see.</p>
+<p><strong>Interactions.</strong> Within one session the first item served for a point opens an
+interaction, and every submission against it belongs to that interaction.
+Correct on the first submission with no hint rates <code>Good</code>; correct later or
+after a hint rates <code>Hard</code>; closing without a correct answer rates <code>Again</code>.
+<code>Easy</code> is unused: nothing in a cloze answer distinguishes effortless recall
+from merely correct recall. The reduction is a function of the whole stream
+rather than of arrival order, so an attempt arriving late from a device that
+was offline — even one older than attempts already processed — re-forms its
+interaction and yields what it would have had it never been delayed.</p>
+<p><strong>Two projections.</strong> FSRS answers “when is this due”; an exponentially weighted
+accuracy answers “how often do you get this wrong”. Retrievability is right for
+scheduling and wrong for a brainmap, where red means repeated error rather than
+decay. Both are derived from the one stream, so they cannot drift apart. The
+band policy is in <a href="#grammar_mastery-and-grammar_review_baselines">Database schema</a>.</p>
+<p><strong>Selection.</strong> A practice session serves, in order: points that are due,
+ordered by how overdue; points never attempted, in syllabus order; then the
+rest by ascending accuracy, so the points a learner keeps failing surface ahead
+of the ones they merely have not seen lately. Within a point, the item served
+is the active one least recently shown to that learner.</p>
+<p><strong>Placement.</strong> A placement run climbs level by level on an ordinary grammar
+session, so its answers are graded and recorded exactly like practice. It stops
+after two consecutive levels go badly, and marks only the points it actually
+asked about — the rest of the map stays unmarked rather than being inferred
+from a neighbouring success.</p>
 <h2 id="dual-n-back-1"><a class="header" href="#dual-n-back-1">Dual n-back</a></h2>
 <p>Independent of the SRS, the <code>dnb</code> module implements an adaptive dual n-back
 trainer that uses the user’s own vocabulary as audio + visual stimuli. It is
@@ -1708,6 +1755,47 @@ server:</p>
 </div>
 <p>The cursor is the remote primary key (<code>after_id</code>); successful runs update
 <code>sync_metadata.last_synced_at</code> per <code>(remote_url, table_name)</code>.</p>
+<h3 id="mobile-protocol-versions"><a class="header" href="#mobile-protocol-versions">Mobile protocol versions</a></h3>
+<p>The mobile protocol is negotiated, not assumed. Both ends compare the version
+number for equality, so raising it would make every installed app refuse to
+sync. Version 2 is therefore advertised <strong>beside</strong> version 1 rather than
+replacing it:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Endpoint</th><th style="text-align: right">Answers</th><th>Adds</th></tr>
+</thead>
+<tbody>
+<tr><td><code>/api/mobile/capabilities</code></td><td style="text-align: right">1</td><td>—</td></tr>
+<tr><td><code>/api/mobile/v2/capabilities</code></td><td style="text-align: right">2</td><td><code>GrammarBankSync</code>, <code>GrammarMasterySync</code>, <code>GrammarAttemptUpload</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>A device asks the version-2 endpoint first. A server that has never heard of it,
+or that answers without all three grammar capabilities, is not a fault: the
+device syncs vocabulary exactly as before and leaves grammar alone. Two out of
+three is refused as well, because a device that could download the bank but not
+upload its answers would lose them.</p>
+<p><code>MobileFeatureDto</code> carries an <code>Unknown</code> fallback variant, so a capability a
+newer server advertises cannot fail the whole payload to deserialise — the very
+outcome negotiating capabilities exists to avoid.</p>
+<p><strong>Known limitation.</strong> A version-1 client sees vocabulary only. Grammar practice,
+placement and the brainmap require version 2 on both ends.</p>
+<h3 id="grammar-sync-phases"><a class="header" href="#grammar-sync-phases">Grammar sync phases</a></h3>
+<p>The engine’s phase machine gained three steps, each resumable on its own so
+that a sync killed midway restarts where it stopped:</p>
+<pre><code class="language-text">Idle → Reviews → Nback → GrammarAttempts
+     → Cards → Snapshots → Deltas → GrammarBank → GrammarMastery → Finishing
+</code></pre>
+<p>The outbox goes before anything is downloaded, so the mastery the device then
+pulls already accounts for the answers it took offline.</p>
+<p>The device mirrors the bank with the answer included — it has to mark an answer
+with no network, and a practice session that cannot say whether the learner was
+right is not practice. That verdict is provisional: the server regrades every
+answer when the outbox drains, and the mastery feed then overwrites whatever
+the device projected for itself. The device projects only the accuracy that
+colours its map, folding each answer forward with the same reduction the server
+applies over the whole stream; the FSRS schedule is the server’s alone.</p>
 <h2 id="tui"><a class="header" href="#tui">TUI</a></h2>
 <p>The TUI uses <a href="https://ratatui.rs"><code>ratatui</code></a> with a tick rate of 100 ms. The
 <code>learn</code> command’s <code>app::run_tui</code> owns:</p>
@@ -1740,8 +1828,8 @@ never use <code>format!()</code> for URL parts.</p>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="cli-reference"><a class="header" href="#cli-reference">CLI reference</a></h1>
-<p>The <code>wisecrow</code> binary ships with nineteen subcommands. Every command has a
-short alias (in parentheses below) for shell ergonomics.</p>
+<p>The <code>wisecrow</code> binary ships with thirty subcommands. Most have a short alias
+(in parentheses below) for shell ergonomics.</p>
 <h2 id="synopsis"><a class="header" href="#synopsis">Synopsis</a></h2>
 <pre><code class="language-text">wisecrow &lt;COMMAND&gt; [ARGS...]
 </code></pre>
@@ -1775,6 +1863,17 @@ list.</p>
 <tr><td><a href="#preview"><code>preview</code></a></td><td><code>pv</code></td><td style="text-align: center">yes (+ LLM if <code>--gloss-unknowns</code>)</td><td>Annotate subtitle file tokens with corpus + SRS state.</td></tr>
 <tr><td><a href="#user"><code>user</code></a></td><td><code>u</code></td><td style="text-align: center">yes</td><td>Manage accounts and web login.</td></tr>
 <tr><td><a href="#sync-client"><code>sync-client</code></a></td><td><code>sc</code></td><td style="text-align: center">yes</td><td>Manage per-client corpus-sync API keys.</td></tr>
+<tr><td><a href="#extract-phrases"><code>extract-phrases</code></a></td><td>—</td><td style="text-align: center">yes</td><td>Mine frequent multi-word phrases into staging.</td></tr>
+<tr><td><a href="#translate-phrases"><code>translate-phrases</code></a></td><td>—</td><td style="text-align: center">yes + LLM</td><td>Translate staged phrases and promote them into decks.</td></tr>
+<tr><td><a href="#score-sentences"><code>score-sentences</code></a></td><td><code>ss</code></td><td style="text-align: center">yes</td><td>Rank stored sentences by the words they use.</td></tr>
+<tr><td><a href="#sentence-card"><code>sentence-card</code></a></td><td><code>sent</code></td><td style="text-align: center">yes + LLM</td><td>Build a sentence card around a word within reach.</td></tr>
+<tr><td><a href="#gloss-deck"><code>gloss-deck</code></a></td><td><code>gd</code></td><td style="text-align: center">yes + LLM</td><td>Give pending words their card presentations.</td></tr>
+<tr><td><a href="#prune"><code>prune</code></a></td><td><code>pr</code></td><td style="text-align: center">yes</td><td>Demote pairs whose prompt holds no recognised word.</td></tr>
+<tr><td><a href="#ensure-syllabus"><code>ensure-syllabus</code></a></td><td><code>es</code></td><td style="text-align: center">yes + LLM</td><td>Fill any CEFR level with no grammar points.</td></tr>
+<tr><td><a href="#refresh-syllabus"><code>refresh-syllabus</code></a></td><td><code>rs</code></td><td style="text-align: center">yes + LLM</td><td>Rewrite machine-generated grammar prose.</td></tr>
+<tr><td><a href="#export-grammar"><code>export-grammar</code></a></td><td><code>eg</code></td><td style="text-align: center">yes</td><td>Dump a language’s syllabus as JSON.</td></tr>
+<tr><td><a href="#generate-items"><code>generate-items</code></a></td><td><code>gi</code></td><td style="text-align: center">yes + LLM</td><td>Generate quiz items for a level’s grammar points.</td></tr>
+<tr><td><a href="#promote-items"><code>promote-items</code></a></td><td><code>pi</code></td><td style="text-align: center">yes</td><td>Review generated items before they are served.</td></tr>
 </tbody>
 </table>
 </div>
@@ -2186,6 +2285,105 @@ wisecrow sync-client revoke --name &lt;NAME&gt;
 once. Pullers send it as the <code>x-api-key</code> header; keys are individually
 revocable and compared in constant time. See
 <a href="#sync-workflow">Sync workflow</a>.</p>
+<hr>
+<h2 id="extract-phrases"><a class="header" href="#extract-phrases"><code>extract-phrases</code></a></h2>
+<pre><code class="language-sh">wisecrow extract-phrases --lang &lt;CODE&gt;
+</code></pre>
+<p>Mines the corpus for frequent multi-word phrases and stages them. Staging is
+separate from the decks so that a phrase is translated and reviewed before a
+learner ever meets it; <a href="#translate-phrases"><code>translate-phrases</code></a> is what moves
+it on.</p>
+<hr>
+<h2 id="translate-phrases"><a class="header" href="#translate-phrases"><code>translate-phrases</code></a></h2>
+<pre><code class="language-sh">wisecrow translate-phrases --lang &lt;CODE&gt; --native-lang &lt;CODE&gt; [--limit N] [--refresh]
+</code></pre>
+<p>Translates staged phrases with the configured model and promotes them into the
+decks. <code>--limit</code> caps how many are sent in one run (default 100). <code>--refresh</code>
+re-glosses phrases already translated, updating the linked rows in place rather
+than adding duplicates.</p>
+<hr>
+<h2 id="score-sentences"><a class="header" href="#score-sentences"><code>score-sentences</code></a></h2>
+<pre><code class="language-sh">wisecrow score-sentences --lang &lt;CODE&gt;
+</code></pre>
+<p>Scores every stored sentence of a language by the words it uses, which is what
+<a href="#sentence-card"><code>sentence-card</code></a> draws on. The language’s words must already
+be ranked — run <a href="#frequency"><code>frequency</code></a> with <code>--from-corpus</code> first — because
+an unranked word carries no weight to score with.</p>
+<hr>
+<h2 id="sentence-card"><a class="header" href="#sentence-card"><code>sentence-card</code></a></h2>
+<pre><code class="language-sh">wisecrow sentence-card --lang &lt;CODE&gt; --native-lang &lt;CODE&gt; --user-id &lt;ID&gt; [--word &lt;WORD&gt;]
+</code></pre>
+<p>Builds a sentence card around one word the learner is close to knowing. With
+no <code>--word</code>, the next word the deck would serve is used, which is the loop the
+word deck and the sentence deck are meant to form.</p>
+<hr>
+<h2 id="gloss-deck"><a class="header" href="#gloss-deck"><code>gloss-deck</code></a></h2>
+<pre><code class="language-sh">wisecrow gloss-deck --lang &lt;CODE&gt; --native-lang &lt;CODE&gt; [--limit N] [--offset N] [--dry-run]
+</code></pre>
+<p>Gives pending words the presentations their cards are built from. <code>--limit</code>
+bounds one window (1–1000); rows that are punctuation, digits or the wrong
+script are reported and skipped, so fewer than the limit may be enriched.
+<code>--offset</code> steps past a rejected window during an inspection pass; restart from
+zero once entries have been written, since accepted words leave the pending
+list. <code>--dry-run</code> lists the window without calling the model.</p>
+<hr>
+<h2 id="prune"><a class="header" href="#prune"><code>prune</code></a></h2>
+<pre><code class="language-sh">wisecrow prune --lang &lt;CODE&gt; [--native-lang &lt;CODE&gt;] [--dry-run]
+</code></pre>
+<p>Demotes translation pairs whose prompt holds no recognised word — corpus
+corruption such as <code>Bthey</code> or <code>andthatthe</code>, which no ordering rule inside the
+deck query can catch. Run it with <code>--dry-run</code> first: a corpus that turns out to
+be mostly the wrong language loses most of its rows, and that is better seen
+than discovered.</p>
+<hr>
+<h2 id="ensure-syllabus"><a class="header" href="#ensure-syllabus"><code>ensure-syllabus</code></a></h2>
+<pre><code class="language-sh">wisecrow ensure-syllabus --lang &lt;CODE&gt;
+wisecrow ensure-syllabus --all
+</code></pre>
+<p>Fills any CEFR level that holds no grammar points for a language, so that every
+ingested language has a syllabus to practise against rather than only the ones
+someone remembered to seed. <code>--all</code> does the same for every language already
+present in the corpus. Points it generates are marked <code>llm</code>; a level that
+already holds points is left alone.</p>
+<hr>
+<h2 id="refresh-syllabus"><a class="header" href="#refresh-syllabus"><code>refresh-syllabus</code></a></h2>
+<pre><code class="language-sh">wisecrow refresh-syllabus --lang &lt;CODE&gt;
+</code></pre>
+<p>Rewrites the title and explanation of machine-generated grammar points, for
+when a better model or a better prompt would produce clearer prose. Points from
+a curated inventory are never touched: their wording is the reason they were
+curated.</p>
+<hr>
+<h2 id="export-grammar"><a class="header" href="#export-grammar"><code>export-grammar</code></a></h2>
+<pre><code class="language-sh">wisecrow export-grammar --lang &lt;CODE&gt; [--out FILE]
+</code></pre>
+<p>Dumps a language’s syllabus as JSON, in the shape
+<a href="#import-grammar"><code>import-grammar</code></a> accepts, for diffing or backup. Prints to
+standard output when <code>--out</code> is omitted.</p>
+<hr>
+<h2 id="generate-items"><a class="header" href="#generate-items"><code>generate-items</code></a></h2>
+<pre><code class="language-sh">wisecrow generate-items --lang &lt;CODE&gt; --level &lt;CEFR&gt; [--per-rule N]
+</code></pre>
+<p>Generates quiz items for every grammar point at a level and stores them as
+candidates. Nothing generated here is served: items enter the bank at
+<code>candidate</code> status and reach learners only through
+<a href="#promote-items"><code>promote-items</code></a>. Generation is therefore an accumulating
+investment rather than a cost paid on every request, and a subtly wrong item
+gets a human reading before it can write a false signal into anyone’s mastery.</p>
+<p><code>--per-rule</code> sets how many items to ask the model for per point (default 8).</p>
+<hr>
+<h2 id="promote-items"><a class="header" href="#promote-items"><code>promote-items</code></a></h2>
+<pre><code class="language-sh">wisecrow promote-items --lang &lt;CODE&gt; [--level &lt;CEFR&gt;] --list [--limit N]
+wisecrow promote-items --lang &lt;CODE&gt; --accept &lt;ID&gt;...
+wisecrow promote-items --lang &lt;CODE&gt; --reject &lt;ID&gt;... [--reason TEXT]
+wisecrow promote-items --lang &lt;CODE&gt; --retire &lt;ID&gt;...
+</code></pre>
+<p>Reviews what <a href="#generate-items"><code>generate-items</code></a> produced. <code>--list</code> prints the
+waiting candidates and changes nothing. <code>--accept</code> makes them servable,
+<code>--reject</code> refuses them with a reason, and <code>--retire</code> withdraws an active item
+without deleting it — an attempt uploaded from a device that has been offline
+for a fortnight must still be gradeable against the item as the learner saw it,
+so nothing in the bank is ever hard-deleted.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="configuration-reference"><a class="header" href="#configuration-reference">Configuration reference</a></h1>
 <p>Wisecrow’s configuration surface is small and entirely environment-driven.
@@ -2336,9 +2534,15 @@ files live at <code>wisecrow-core/migrations/</code> and run in numeric order.</
 <tr><td><code>009_dnb.sql</code></td><td><code>dnb_sessions</code> and <code>dnb_trials</code>.</td></tr>
 <tr><td><code>010_glosses.sql</code></td><td><code>glosses</code> cache for Leipzig interlinear glosses.</td></tr>
 <tr><td><code>011_card_user_scoping.sql</code></td><td>Adds <code>cards.user_id</code>, replaces unique key with <code>(translation_id, user_id)</code>.</td></tr>
+<tr><td><code>028_grammar_syllabus_identity.sql</code></td><td><code>grammar_rule_aliases</code>; gives <code>grammar_rules</code> a stable <code>slug</code> and provenance.</td></tr>
+<tr><td><code>029_quiz_item_bank.sql</code></td><td><code>quiz_items</code>, <code>quiz_item_exposures</code> — the persisted exercise bank.</td></tr>
+<tr><td><code>030_grammar_mastery.sql</code></td><td><code>grammar_sessions</code>, <code>grammar_attempts</code>, <code>grammar_mastery</code>, <code>grammar_review_baselines</code>, <code>placement_attempts</code>.</td></tr>
+<tr><td><code>031_grammar_change_feeds.sql</code></td><td><code>grammar_changes</code>, <code>quiz_item_changes</code> — commit-order-safe feeds for devices.</td></tr>
 </tbody>
 </table>
 </div>
+<p>Migrations 012–027 are omitted here; they add the media, phrase, word-candidate
+and mobile-sync tables described in their own sections.</p>
 <h2 id="core-tables"><a class="header" href="#core-tables">Core tables</a></h2>
 <h3 id="languages"><a class="header" href="#languages"><code>languages</code></a></h3>
 <pre><code class="language-sql">CREATE TABLE languages (
@@ -2457,6 +2661,233 @@ idempotent.</p>
 </code></pre>
 <p>Examples can be incorrect on purpose — they power “spot the mistake”
 multiple-choice quizzes.</p>
+<h3 id="grammar_rule_aliases"><a class="header" href="#grammar_rule_aliases"><code>grammar_rule_aliases</code></a></h3>
+<pre><code class="language-sql">CREATE TABLE grammar_rule_aliases (
+    rule_id INTEGER NOT NULL REFERENCES grammar_rules(id) ON DELETE CASCADE,
+    slug    VARCHAR(128) NOT NULL,
+    PRIMARY KEY (rule_id, slug)
+);
+</code></pre>
+<p>A grammar point is identified by its slug rather than by its title, because a
+title is prose and prose gets rewritten. When
+<a href="#refresh-syllabus"><code>refresh-syllabus</code></a> improves the wording of
+a machine-generated point, the old slug is kept here so that attempts recorded
+against it still find their point.</p>
+<h3 id="provenance"><a class="header" href="#provenance">Provenance</a></h3>
+<p><code>grammar_rules.source</code> records where a point came from, and a learner may
+reasonably trust the tiers differently:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Source</th><th>Meaning</th><th>Shown as</th></tr>
+</thead>
+<tbody>
+<tr><td><code>reference</code></td><td>Imported from a curated inventory.</td><td>Curated</td></tr>
+<tr><td><code>manual</code></td><td>Entered by hand.</td><td>Curated</td></tr>
+<tr><td><code>llm</code>, <code>ai</code>, <code>pdf</code></td><td>Generated or extracted.</td><td>Generated</td></tr>
+</tbody>
+</table>
+</div>
+<p><a href="#refresh-syllabus"><code>refresh-syllabus</code></a> rewrites only the
+generated tiers; curated wording is the reason it was curated.</p>
+<h2 id="quiz-item-bank"><a class="header" href="#quiz-item-bank">Quiz item bank</a></h2>
+<h3 id="quiz_items"><a class="header" href="#quiz_items"><code>quiz_items</code></a></h3>
+<pre><code class="language-sql">CREATE TABLE quiz_items (
+    id             SERIAL PRIMARY KEY,
+    rule_id        INTEGER NOT NULL REFERENCES grammar_rules(id) ON DELETE CASCADE,
+    revision       INTEGER NOT NULL DEFAULT 1,
+    kind           VARCHAR(16) NOT NULL CHECK (kind IN ('cloze', 'multiple_choice')),
+    prompt         TEXT NOT NULL,
+    answer         TEXT,
+    accepted       JSONB NOT NULL DEFAULT '[]'::jsonb,
+    options        JSONB,
+    correct_option VARCHAR(32),
+    status         VARCHAR(16) NOT NULL DEFAULT 'candidate'
+                   CHECK (status IN ('candidate', 'active', 'rejected', 'retired')),
+    content_sha256 CHAR(64) NOT NULL,
+    UNIQUE (rule_id, content_sha256)
+);
+</code></pre>
+<p>Content is immutable once written, enforced by a trigger: an attempt uploaded
+from a device that has been offline for a fortnight must be gradeable against
+the item as the learner actually saw it, and an edit would silently change the
+answer underneath it. Editing means inserting a new revision and retiring the
+old row, so nothing is ever hard-deleted. <code>status</code> moves only through
+<a href="#promote-items"><code>promote-items</code></a>.</p>
+<p>Options carry stable identifiers (<code>o1</code>…<code>oN</code>) rather than positions, so a
+shuffled presentation cannot change which answer was given.</p>
+<h3 id="quiz_item_exposures"><a class="header" href="#quiz_item_exposures"><code>quiz_item_exposures</code></a></h3>
+<p>Records which items a learner has already been shown, so that selection spreads
+exposure across the bank rather than drilling one sentence.</p>
+<h2 id="grammar-mastery-tables"><a class="header" href="#grammar-mastery-tables">Grammar mastery tables</a></h2>
+<h3 id="grammar_sessions"><a class="header" href="#grammar_sessions"><code>grammar_sessions</code></a></h3>
+<p>A sitting, <code>practice</code> or <code>placement</code>. It is a first-class row because the rating
+rule depends on it: within one session the first item served for a point opens
+an interaction, and without a session identifier “the first attempt” cannot be
+told from a retry.</p>
+<h3 id="grammar_attempts"><a class="header" href="#grammar_attempts"><code>grammar_attempts</code></a></h3>
+<pre><code class="language-sql">CREATE TABLE grammar_attempts (
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    event_id      UUID NOT NULL,
+    session_id    UUID NOT NULL REFERENCES grammar_sessions(id) ON DELETE CASCADE,
+    device_id     UUID,
+    rule_id       INTEGER NOT NULL REFERENCES grammar_rules(id) ON DELETE CASCADE,
+    item_id       INTEGER NOT NULL REFERENCES quiz_items(id) ON DELETE RESTRICT,
+    item_revision INTEGER NOT NULL,
+    ordinal       SMALLINT NOT NULL,
+    correct       BOOLEAN NOT NULL,
+    hint_shown    BOOLEAN NOT NULL DEFAULT FALSE,
+    occurred_at   TIMESTAMP WITH TIME ZONE NOT NULL,
+    source        VARCHAR(16) NOT NULL CHECK (source IN ('web', 'mobile')),
+    PRIMARY KEY (user_id, event_id)
+);
+</code></pre>
+<p>This is the record; everything else about mastery is a projection of it. The
+event identifier is generated by the client, so a device uploading after a
+fortnight offline writes each attempt exactly once. <code>occurred_at</code> is when the
+learner answered, which is not when the server heard about it.</p>
+<h3 id="grammar_mastery-and-grammar_review_baselines"><a class="header" href="#grammar_mastery-and-grammar_review_baselines"><code>grammar_mastery</code> and <code>grammar_review_baselines</code></a></h3>
+<p>Two projections of that one stream. <code>grammar_mastery</code> holds the FSRS card state
+and an exponentially weighted accuracy; <code>grammar_review_baselines</code> records where
+replay starts, captured once per point before the first attempt it covers and
+never moved. Replay from a baseline must reproduce the projection exactly,
+whatever order the attempts arrived in.</p>
+<p>Holding both scheduling and accuracy risks them drifting apart; deriving both
+from one stream makes drift impossible.</p>
+<p>The policy that colours the brainmap:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th style="text-align: right">Accuracy</th><th>Attempts ≥ 3</th><th>Fewer than 3</th></tr>
+</thead>
+<tbody>
+<tr><td style="text-align: right">≥ 0.85</td><td>Green</td><td>Provisional green</td></tr>
+<tr><td style="text-align: right">≥ 0.60</td><td>Amber</td><td>Provisional amber</td></tr>
+<tr><td style="text-align: right">below</td><td>Red</td><td>Provisional red</td></tr>
+<tr><td style="text-align: right"><em>no attempts</em></td><td>Unseen</td><td>Unseen</td></tr>
+</tbody>
+</table>
+</div>
+<p>Accuracy is exponentially weighted with α = 0.3 — roughly a five-attempt memory
+— and the series starts at the first outcome rather than at one half, which
+would paint every freshly attempted point amber whatever the learner answered.
+A provisional band renders outlined rather than filled, because one unlucky
+answer should not present as settled knowledge of failure. A point with no
+attempts is never coloured as known, or as failed.</p>
+<h3 id="placement_attempts"><a class="header" href="#placement_attempts"><code>placement_attempts</code></a></h3>
+<p>One placement run, riding on an ordinary grammar session so that its answers are
+graded and recorded exactly like any other practice. It carries no level of its
+own, because a run walks several; <code>level_reached</code> is null for a learner who did
+not pass A1.</p>
+<h2 id="grammar-change-feeds"><a class="header" href="#grammar-change-feeds">Grammar change feeds</a></h2>
+<h3 id="grammar_changes-and-quiz_item_changes"><a class="header" href="#grammar_changes-and-quiz_item_changes"><code>grammar_changes</code> and <code>quiz_item_changes</code></a></h3>
+<pre><code class="language-sql">CREATE TABLE grammar_changes (
+    sequence   BIGSERIAL PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    rule_id    INTEGER NOT NULL,
+    operation  CHAR(1) NOT NULL CHECK (operation IN ('U', 'D')),
+    xact_id    BIGINT NOT NULL DEFAULT pg_current_xact_id()::TEXT::BIGINT,
+    changed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+</code></pre>
+<p><code>BIGSERIAL</code> allocates its number when the row is inserted, not when the
+transaction commits, so two writers commit out of order routinely. A client that
+advanced its cursor past a number committed early would never ask for a lower
+number committed late, and that change would be lost to it for good.</p>
+<p>Recording the writing transaction closes the gap. Readers filter with</p>
+<pre><code class="language-sql">WHERE xact_id &lt; pg_snapshot_xmin(pg_current_snapshot())::TEXT::BIGINT
+</code></pre>
+<p>which serves only rows whose transaction finished before every transaction still
+in flight. The cost is latency, never correctness: a change waits for its
+neighbours rather than arriving early and alone. An empty page therefore leaves
+the client’s cursor exactly where it was.</p>
+<p>Triggers on <code>grammar_mastery</code> and <code>quiz_items</code> populate the feeds.</p>
+<blockquote>
+<p>The older <code>corpus_changes</code> and <code>card_changes</code> feeds from migration 022 carry
+the same hazard and have not yet been repaired.</p>
+</blockquote>
+<h2 id="mobile-offline-store"><a class="header" href="#mobile-offline-store">Mobile offline store</a></h2>
+<p><code>wisecrow-mobile</code> keeps its own SQLite database, migrated from
+<code>wisecrow-mobile/migrations/</code>. Every table is keyed by <code>(profile_id, user_id)</code>
+and cascades from <code>profile_users</code>, so signing a profile out removes its copy of
+the material with it. <code>002_grammar.sql</code> adds the grammar half.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Table</th><th>Owner</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td><code>grammar_rules</code></td><td>server</td><td>Mirror of the syllabus points the device has been served.</td></tr>
+<tr><td><code>grammar_items</code></td><td>server</td><td>Mirror of the item bank, answers included.</td></tr>
+<tr><td><code>grammar_mastery</code></td><td>server</td><td>Mirror of the mastery projection, overwritten by each page.</td></tr>
+<tr><td><code>grammar_attempt_outbox</code></td><td>device</td><td>Answers waiting to be told to the server.</td></tr>
+<tr><td><code>grammar_sync_state</code></td><td>device</td><td>How far each feed has been followed, per language.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The mirrors and the outbox move in opposite directions. A mirror row is only
+ever replaced by what the server sends, and its cursor only ever moves forward
+over changes the server has declared visible. An outbox row is written by the
+device and deleted only once the server has acknowledged the answer it holds.</p>
+<h3 id="grammar_items"><a class="header" href="#grammar_items"><code>grammar_items</code></a></h3>
+<pre><code class="language-sql">CREATE TABLE grammar_items (
+    profile_id     TEXT NOT NULL,
+    user_id        INTEGER NOT NULL,
+    item_id        INTEGER NOT NULL,
+    rule_id        INTEGER NOT NULL,
+    revision       INTEGER NOT NULL,
+    language       TEXT NOT NULL,
+    prompt         TEXT NOT NULL,
+    hint           TEXT,
+    options        TEXT NOT NULL DEFAULT '[]',
+    answer         TEXT,
+    accepted       TEXT NOT NULL DEFAULT '[]',
+    correct_option TEXT,
+    PRIMARY KEY (profile_id, user_id, item_id),
+    FOREIGN KEY (profile_id, user_id)
+        REFERENCES profile_users(profile_id, user_id) ON DELETE CASCADE
+);
+</code></pre>
+<p>This is the one place an answer travels to a device. The web presentation never
+carries one, but a device out of contact still has to tell the learner whether
+they were right. The verdict it shows is provisional: the server regrades every
+answer when the outbox drains, and the mastery it returns is what counts.
+<code>options</code> and <code>accepted</code> are JSON arrays; <code>correct_option</code> being present is what
+makes an item multiple choice rather than a cloze.</p>
+<h3 id="grammar_attempt_outbox"><a class="header" href="#grammar_attempt_outbox"><code>grammar_attempt_outbox</code></a></h3>
+<pre><code class="language-sql">CREATE TABLE grammar_attempt_outbox (
+    profile_id   TEXT NOT NULL,
+    user_id      INTEGER NOT NULL,
+    event_id     TEXT NOT NULL,
+    session_id   TEXT NOT NULL,
+    item_id      INTEGER NOT NULL,
+    revision     INTEGER NOT NULL,
+    answer       TEXT NOT NULL,
+    chose_option INTEGER NOT NULL CHECK (chose_option IN (0, 1)),
+    hint_shown   INTEGER NOT NULL CHECK (hint_shown IN (0, 1)),
+    ordinal      INTEGER NOT NULL CHECK (ordinal &gt;= 1),
+    occurred_at  TEXT NOT NULL,
+    language     TEXT NOT NULL,
+    level        TEXT,
+    queued_at    INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, user_id, event_id),
+    FOREIGN KEY (profile_id, user_id)
+        REFERENCES profile_users(profile_id, user_id) ON DELETE CASCADE
+);
+</code></pre>
+<p><code>event_id</code> is the idempotency key the server deduplicates on, so a batch replayed
+after a lost response is accepted once and reported <code>Duplicate</code> thereafter.
+<code>queued_at</code> is a monotonic counter within the device and orders the drain, which
+<code>occurred_at</code> alone cannot: the server’s rating rule turns on which answer came
+first within a session, and two answers can share a timestamp.</p>
+<h3 id="grammar_sync_state"><a class="header" href="#grammar_sync_state"><code>grammar_sync_state</code></a></h3>
+<p>One row per learner per language, holding <code>bank_cursor</code> and <code>mastery_cursor</code>.
+A cursor advances only to the <code>next_cursor</code> the server returns, and an empty
+page returns the cursor unchanged — see the change feeds above for why a client
+that advanced past an empty page would silently lose work.</p>
+<p><code>002_grammar.sql</code> also rebuilds <code>sync_state</code> to widen its <code>phase</code> check with
+<code>grammar_attempts</code>, <code>grammar_bank</code> and <code>grammar_mastery</code>. SQLite cannot alter a
+constraint in place, so the table is recreated and its rows carried across.</p>
 <h2 id="dual-n-back-tables"><a class="header" href="#dual-n-back-tables">Dual n-back tables</a></h2>
 <h3 id="dnb_sessions"><a class="header" href="#dnb_sessions"><code>dnb_sessions</code></a></h3>
 <p>Stores the start, peak, and end <code>n_level</code> plus the rolling accuracy figures.
@@ -3109,6 +3540,110 @@ pub mod seeder { pub async fn seed_grammar(...) -&gt; Result&lt;usize, WisecrowE
 pub mod ai_exercises { pub async fn generate_exercises(...) -&gt; Result&lt;(Vec&lt;ClozeQuiz&gt;, Vec&lt;MultipleChoiceQuiz&gt;), WisecrowError&gt;; }
 pub mod quiz { pub struct ClozeQuiz; pub struct MultipleChoiceQuiz; }
 pub mod pdf { pub fn extract(path: &amp;Path) -&gt; Result&lt;ExtractedContent, WisecrowError&gt;; }</code></pre>
+<p>The CEFR mastery work adds seven modules beneath the same root. They divide by
+the question they answer: what the learner should meet, what they are asked,
+what they know, and what a device is owed.</p>
+<pre><code class="language-rust ignore">pub mod syllabus {
+    pub const ALL_LEVELS: [&amp;str; 6];
+    pub struct EnsureSummary; pub struct SyllabusEntry;
+    pub async fn ensure_syllabus(pool, provider, lang_code) -&gt; Result&lt;EnsureSummary, WisecrowError&gt;;
+    pub async fn ensure_all_syllabuses(pool, provider) -&gt; Result&lt;EnsureSummary, WisecrowError&gt;;
+    pub async fn refresh_syllabus(pool, provider, lang_code) -&gt; Result&lt;usize, WisecrowError&gt;;
+    pub async fn export_syllabus(pool, lang_code) -&gt; Result&lt;String, WisecrowError&gt;;
+    pub async fn import_syllabus(pool, lang_code, document) -&gt; Result&lt;usize, WisecrowError&gt;;
+}
+
+pub mod items {
+    pub const BLANK: &amp;str = "___";
+    pub enum ItemDraft { Cloze { .. }, MultipleChoice { .. } }
+    pub enum GateFailure { .. }
+    pub fn gate(draft: &amp;ItemDraft) -&gt; Option&lt;GateFailure&gt;;
+    pub struct StoredItem { pub fn gradable(&amp;self) -&gt; Result&lt;GradableItem, WisecrowError&gt;; }
+    pub struct ItemRepository;
+    impl ItemRepository {
+        pub async fn insert_candidates(pool, rule_id, &amp;[ItemDraft])
+            -&gt; Result&lt;InsertSummary, WisecrowError&gt;;
+        pub async fn insert_candidates_with_vocabulary(pool, rule_id, &amp;[ItemDraft], in_level)
+            -&gt; Result&lt;InsertSummary, WisecrowError&gt;;
+        pub async fn active_items_for_rule(pool, rule_id) -&gt; Result&lt;Vec&lt;StoredItem&gt;, WisecrowError&gt;;
+        pub async fn candidates_for_language(pool, lang_code, level_code, limit)
+            -&gt; Result&lt;Vec&lt;StoredItem&gt;, WisecrowError&gt;;
+        pub async fn promote(pool, item_id) -&gt; Result&lt;(), WisecrowError&gt;;
+        pub async fn reject(pool, item_id, reason) -&gt; Result&lt;(), WisecrowError&gt;;
+        pub async fn retire(pool, item_id) -&gt; Result&lt;(), WisecrowError&gt;;
+    }
+}
+
+pub mod session {
+    pub const SESSION_LENGTH: i64 = 12;
+    pub enum SessionKind { Practice, Placement }
+    pub struct GrammarSession; pub struct SubmissionContext;
+    pub struct GrammarSessionManager;
+    impl GrammarSessionManager {
+        pub async fn create(pool, user_id, lang_code, level_code, kind, limit)
+            -&gt; Result&lt;Option&lt;GrammarSession&gt;, WisecrowError&gt;;
+        pub async fn open(transaction, user_id, language_id, level_id, kind)
+            -&gt; Result&lt;Uuid, WisecrowError&gt;;
+        pub async fn adopt(transaction, user_id, session_id, language_id, level_id, kind)
+            -&gt; Result&lt;(), WisecrowError&gt;;
+        pub async fn submit(pool, user_id, &amp;Submission, SubmissionContext)
+            -&gt; Result&lt;Verdict, WisecrowError&gt;;
+        pub async fn submit_in_transaction(transaction, user_id, &amp;Submission, SubmissionContext)
+            -&gt; Result&lt;Verdict, WisecrowError&gt;;
+        pub async fn complete(pool, user_id, session_id) -&gt; Result&lt;(), WisecrowError&gt;;
+    }
+    pub async fn session_identity(pool, lang_code, level_code) -&gt; Result&lt;(i32, Option&lt;i32&gt;), WisecrowError&gt;;
+}
+
+pub mod mastery {
+    pub enum AttemptSource { Web, Mobile }
+    pub struct AttemptRecord; pub struct MasteryRow;
+    pub struct MasteryRepository;
+    impl MasteryRepository {
+        pub async fn record_attempt(pool, user_id, &amp;AttemptRecord) -&gt; Result&lt;(), WisecrowError&gt;;
+        pub async fn refresh_projection(pool, user_id, rule_id) -&gt; Result&lt;(), WisecrowError&gt;;
+        pub async fn replay_from_baseline(pool, user_id, rule_id)
+            -&gt; Result&lt;Option&lt;Projection&gt;, WisecrowError&gt;;
+        pub async fn mastery_for_language(pool, user_id, lang_code)
+            -&gt; Result&lt;Vec&lt;MasteryRow&gt;, WisecrowError&gt;;
+    }
+}
+
+pub mod selection {
+    pub struct PracticeItem;
+    pub async fn select_practice(pool, user_id, lang_code, level_code, limit)
+        -&gt; Result&lt;Vec&lt;PracticeItem&gt;, WisecrowError&gt;;
+    pub async fn record_exposure(pool, user_id, item_id) -&gt; Result&lt;(), WisecrowError&gt;;
+}
+
+pub mod placement {
+    pub const PLACEMENT_SAMPLE: i64 = 6;
+    pub const PLACEMENT_PASS: f64 = 0.60;
+    pub const PLACEMENT_MIN_ITEMS: usize = 4;
+    pub const PLACEMENT_MAX_FAILURES: usize = 2;
+    pub struct PlacementStep; pub struct LevelScore; pub struct PlacementOutcome;
+    pub enum PlacementState { Testing(PlacementStep), Finished(PlacementOutcome) }
+    pub async fn start(pool, user_id, lang_code) -&gt; Result&lt;PlacementState, WisecrowError&gt;;
+    pub async fn submit(pool, user_id, attempt_id, &amp;[Submission], SubmissionContext)
+        -&gt; Result&lt;PlacementState, WisecrowError&gt;;
+}
+
+pub mod sync {
+    pub enum ChangeOperation { Upsert, Delete }
+    pub struct GrammarChange; pub struct QuizItemChange; pub struct ChangePage&lt;T&gt;;
+    pub struct BankItem; pub struct MasteryState;
+    pub async fn visible_grammar_changes(pool, user_id, cursor, limit)
+        -&gt; Result&lt;ChangePage&lt;GrammarChange&gt;, WisecrowError&gt;;
+    pub async fn visible_item_changes(pool, language_code, cursor, limit)
+        -&gt; Result&lt;ChangePage&lt;QuizItemChange&gt;, WisecrowError&gt;;
+    pub async fn bank_items(pool, item_ids) -&gt; Result&lt;Vec&lt;BankItem&gt;, WisecrowError&gt;;
+    pub async fn mastery_states(pool, user_id, rule_ids) -&gt; Result&lt;Vec&lt;MasteryState&gt;, WisecrowError&gt;;
+}</code></pre>
+<p><code>sync</code> is the device-facing half. Its two readers serve only rows whose writing
+transaction has finished — see <a href="#grammar-change-feeds">the change feeds</a>
+for why a <code>BIGSERIAL</code> cursor alone loses changes — and <code>ChangePage::next_cursor</code>
+is the caller’s own cursor when the page is empty. <code>bank_items</code> serves active
+items only, and is the one path by which an answer reaches a device.</p>
 <p>Source: <code>wisecrow-core/src/grammar/</code>.</p>
 <h2 id="llm-1"><a class="header" href="#llm-1"><code>llm</code></a></h2>
 <pre><code class="language-rust ignore">#[async_trait]
@@ -3181,6 +3716,12 @@ to serde DTOs in <code>wisecrow-dto</code>. Notable helpers:</p>
 <li><code>grammar_rule_to_dto(&amp;GrammarRule, cefr_level_code) -&gt; GrammarRuleDto</code></li>
 <li><code>quizzes_to_dto(&amp;[ClozeQuiz], &amp;[MultipleChoiceQuiz]) -&gt; Vec&lt;QuizItemDto&gt;</code></li>
 <li><code>adaptation_to_dto(&amp;AdaptationState, &amp;[CompletedTrial], terminated) -&gt; DnbAdaptationDto</code></li>
+<li><code>grammar_item(&amp;PracticeItem) -&gt; GrammarItemDto</code> (the served shape, answers withheld)</li>
+<li><code>offline_grammar_item(&amp;BankItem) -&gt; OfflineGrammarItemDto</code> (the device shape, answers included)</li>
+<li><code>grammar_mastery_state(&amp;MasteryState) -&gt; GrammarMasteryStateDto</code></li>
+<li><code>brainmap_cell(&amp;MasteryRow) -&gt; BrainmapCellDto</code></li>
+<li><code>placement_state(&amp;PlacementState) -&gt; PlacementStateDto</code></li>
+<li><code>submission(&amp;SubmissionDto) -&gt; Submission</code></li>
 </ul>
 <p>Source: <code>wisecrow-core/src/dto_convert.rs</code>.</p>
 <div style="break-before: page; page-break-before: always;"></div>
@@ -3309,6 +3850,107 @@ pub struct RuleExampleImport {
 }</code></pre>
 <p><code>GrammarRuleImport</code> is the file format consumed by
 <code>wisecrow import-grammar --file rules.json</code>.</p>
+<h2 id="grammar-sessions-and-mastery"><a class="header" href="#grammar-sessions-and-mastery">Grammar sessions and mastery</a></h2>
+<p><code>wisecrow-dto/src/grammar.rs</code> carries the CEFR grammar shapes. The served item
+withholds the answer; grading is the server’s, and a browser that could read the
+answer out of the payload would not be tested by it.</p>
+<pre><code class="language-rust ignore">pub struct GrammarItemDto {
+    pub item_id: i32, pub revision: i32,
+    pub rule_id: i32, pub rule_slug: String, pub rule_title: String, pub rule_explanation: String,
+    pub level: String, pub prompt: String, pub hint: Option&lt;String&gt;,
+    pub options: Vec&lt;GrammarOptionDto&gt;,       // empty for a cloze
+}
+pub struct GrammarOptionDto { pub id: String, pub text: String }
+pub struct GrammarSessionDto { pub session_id: Uuid, pub items: Vec&lt;GrammarItemDto&gt; }
+
+pub struct SubmissionDto {
+    pub session_id: Uuid, pub event_id: Uuid,
+    pub item_id: i32, pub revision: i32,
+    pub answer: String, pub chose_option: bool, pub hint_shown: bool,
+    pub ordinal: u32, pub occurred_at: DateTime&lt;Utc&gt;,
+}
+pub struct VerdictDto { pub event_id: Uuid, pub correct: bool, /* .. */ }</code></pre>
+<p><code>event_id</code> is the idempotency key: the same answer sent twice is recorded once.
+<code>revision</code> is checked on submission, so an item edited between serving and
+answering is refused rather than graded against a question the learner never saw.</p>
+<p>The brainmap paints one cell per point, banded by what is known and how firmly:</p>
+<pre><code class="language-rust ignore">pub enum MasteryBandDto {
+    Unseen, Red, Amber, Green,
+    ProvisionalRed, ProvisionalAmber, ProvisionalGreen,
+}
+pub struct BrainmapCellDto {
+    pub rule_id: i32, pub slug: String, pub title: String, pub level: String,
+    pub band: MasteryBandDto, pub accuracy: Option&lt;f32&gt;, pub attempts: i32,
+    pub provenance: String, /* .. */
+}
+pub struct BrainmapDto { pub language: String, pub cells: Vec&lt;BrainmapCellDto&gt; }</code></pre>
+<p>A <code>Provisional</code> band is one drawn from too few attempts to be trusted; the
+<a href="#grammar_mastery-and-grammar_review_baselines">policy table</a>
+gives the thresholds. <code>BrainmapDto::language</code> is the language’s name, not its
+code.</p>
+<p>Placement is a state machine the client drives one level at a time:</p>
+<pre><code class="language-rust ignore">pub enum PlacementStateDto { Testing(PlacementStepDto), Finished(PlacementResultDto) }
+pub struct PlacementStepDto { pub attempt_id: Uuid, pub session_id: Uuid, pub level: String,
+                              pub items: Vec&lt;GrammarItemDto&gt; }
+pub struct PlacementLevelDto { pub level: String, pub correct: i64, pub asked: i64, pub passed: bool }
+pub struct PlacementResultDto { pub attempt_id: Uuid, pub level_reached: Option&lt;String&gt;,
+                                pub tested: Vec&lt;PlacementLevelDto&gt;, pub skipped: Vec&lt;String&gt; }</code></pre>
+<p><code>level_reached</code> is <code>None</code> when the learner did not pass A1 — the map is then
+drawn from nothing but the attempts themselves.</p>
+<h2 id="grammar-sync-dtos-protocol-2"><a class="header" href="#grammar-sync-dtos-protocol-2">Grammar sync DTOs (protocol 2)</a></h2>
+<p>The device-facing shapes. A device holds answers because it must grade offline,
+so <code>OfflineGrammarItemDto</code> is the one served shape that carries them:</p>
+<pre><code class="language-rust ignore">pub enum GrammarChangeOperationDto { Upsert, Delete }
+
+pub struct OfflineGrammarItemDto {
+    /* GrammarItemDto's fields, plus: */
+    pub language: String,
+    pub answer: Option&lt;String&gt;,          // cloze
+    pub accepted: Vec&lt;String&gt;,           // further accepted spellings
+    pub correct_option: Option&lt;String&gt;,  // multiple choice
+}
+
+pub struct GrammarBankChangeRequestDto { pub protocol_version: u16, pub language: String,
+                                         pub cursor: i64, pub limit: u16 }
+pub struct GrammarBankChangeDto { pub sequence: i64, pub item_id: i32,
+                                  pub operation: GrammarChangeOperationDto,
+                                  pub item: Option&lt;OfflineGrammarItemDto&gt; }
+pub struct GrammarBankChangePageDto { pub protocol_version: u16, pub language: String,
+                                      pub changes: Vec&lt;GrammarBankChangeDto&gt;,
+                                      pub next_cursor: i64, pub has_more: bool }
+
+pub struct GrammarMasteryStateDto { pub rule_id: i32, pub rule_slug: String,
+                                    pub stability: f32, pub difficulty: f32,
+                                    pub elapsed_days: i32, pub scheduled_days: i32,
+                                    pub reps: i32, pub lapses: i32, pub state: i16,
+                                    pub accuracy: Option&lt;f32&gt;, pub attempts: i32,
+                                    pub last_review: Option&lt;DateTime&lt;Utc&gt;&gt;, pub due: DateTime&lt;Utc&gt; }
+pub struct GrammarMasteryChangeRequestDto { pub protocol_version: u16, pub cursor: i64, pub limit: u16 }
+pub struct GrammarMasteryChangeDto { pub sequence: i64, pub rule_id: i32,
+                                     pub operation: GrammarChangeOperationDto,
+                                     pub mastery: Option&lt;GrammarMasteryStateDto&gt; }
+pub struct GrammarMasteryChangePageDto { pub protocol_version: u16,
+                                         pub changes: Vec&lt;GrammarMasteryChangeDto&gt;,
+                                         pub next_cursor: i64, pub has_more: bool }</code></pre>
+<p><code>item</code> and <code>mastery</code> are absent on a <code>Delete</code>, and the figures are <code>f32</code> because
+a device stores them in SQLite <code>REAL</code> and no more precision survives the trip.</p>
+<p>Answers travel the other way in batches:</p>
+<pre><code class="language-rust ignore">pub struct OfflineAttemptDto { /* SubmissionDto's fields, plus language and level */ }
+pub struct GrammarAttemptBatchRequestDto { pub protocol_version: u16, pub device_id: Uuid,
+                                           pub attempts: Vec&lt;OfflineAttemptDto&gt; }
+pub enum OfflineAttemptStatusDto {
+    Accepted(VerdictDto),
+    Duplicate(VerdictDto),
+    Rejected { event_id: Uuid, reason: String },
+}
+pub struct GrammarAttemptBatchResponseDto { pub protocol_version: u16,
+                                            pub results: Vec&lt;OfflineAttemptStatusDto&gt; }</code></pre>
+<p>Each answer is judged on its own, so one refusal does not cost the batch.
+<code>Duplicate</code> carries the stored verdict rather than an error, which is what lets
+a device that never received the first acknowledgement converge on a replay.
+<code>OfflineAttemptDto</code> names its language and level because the session it belongs
+to may not exist on the server yet: the upload adopts the device’s <code>session_id</code>
+if no row holds it, and rejects it if another learner does.</p>
 <h2 id="sync-dtos"><a class="header" href="#sync-dtos">Sync DTOs</a></h2>
 <pre><code class="language-rust ignore">pub struct SyncLanguageDto    { pub id: i32, pub code: String, pub name: String }
 pub struct SyncTranslationDto { pub id: i32, pub from_language_code: String, pub from_phrase: String,
@@ -3320,6 +3962,23 @@ pub struct SyncProgressDto    { pub table: String, pub synced: usize, pub total:
 <p>These mirror the production schema closely but use codes instead of foreign
 keys so a sync can succeed against a server with a different <code>languages.id</code>
 mapping.</p>
+<h2 id="mobile-protocol-negotiation"><a class="header" href="#mobile-protocol-negotiation">Mobile protocol negotiation</a></h2>
+<pre><code class="language-rust ignore">pub const MOBILE_PROTOCOL_VERSION: u16 = 1;     // frozen
+pub const MOBILE_PROTOCOL_VERSION_V2: u16 = 2;  // adds the grammar feeds
+
+pub enum MobileFeatureDto {
+    CorpusSync, CardSync, ReviewUpload, NbackUpload, QuizCache,
+    GrammarBankSync, GrammarMasterySync, GrammarAttemptUpload,
+    #[serde(other)] Unknown,
+}</code></pre>
+<p>Version 1 is frozen and a fixture pins its payload, because a device in the
+field cannot be asked to upgrade before it may sync. Version 2 is advertised
+beside it, not in place of it, and the grammar capabilities are negotiated
+individually: a client offered none of them syncs vocabulary and nothing else.</p>
+<p><code>Unknown</code> is the reason a version-3 capability will not break this build. Without
+<code>#[serde(other)]</code> one unrecognised name would fail the whole capabilities payload
+to deserialise, and the client would stop syncing altogether — the exact outcome
+negotiating capabilities exists to prevent. A server never sends it.</p>
 <h2 id="dual-n-back-3"><a class="header" href="#dual-n-back-3">Dual n-back</a></h2>
 <pre><code class="language-rust ignore">pub enum DnbModeDto { AudioWritten, WordTranslation, AudioImage }
 
@@ -3403,15 +4062,27 @@ dx serve
 <h2 id="routes"><a class="header" href="#routes">Routes</a></h2>
 <pre><code class="language-rust ignore">#[derive(Clone, Routable, Debug, PartialEq)]
 pub enum Route {
+    #[route("/login")]
+    LoginPage {},
     #[layout(Layout)]
         #[route("/")]
         Home {},
-        #[route("/learn/:user_id/:native/:foreign")]
-        LearnPage { user_id: i32, native: String, foreign: String },
+        #[route("/learn/:native/:foreign")]
+        LearnPage { native: String, foreign: String },
         #[route("/nback/:native/:foreign")]
         NbackPage { native: String, foreign: String },
+        #[route("/fast/:native/:foreign")]
+        FastPage { native: String, foreign: String },
         #[route("/quiz")]
         QuizPage {},
+        #[route("/grammar/placement/:native/:foreign")]
+        PlacementPage { native: String, foreign: String },
+        #[route("/grammar/brainmap/:native/:foreign")]
+        BrainmapPage { native: String, foreign: String },
+        #[route("/grammar/:native/:foreign")]
+        GrammarPage { native: String, foreign: String },
+        #[route("/:..segments")]
+        NotFound { segments: Vec&lt;String&gt; },
 }</code></pre>
 <div class="table-wrapper">
 <table>
@@ -3419,13 +4090,21 @@ pub enum Route {
 <tr><th>Route</th><th>Purpose</th></tr>
 </thead>
 <tbody>
-<tr><td><code>/</code></td><td>Landing / language picker / user selector.</td></tr>
-<tr><td><code>/learn/:user_id/:native/:foreign</code></td><td>The flashcard session UI.</td></tr>
+<tr><td><code>/login</code></td><td>Sign-in, outside the layout so the chrome does not offer links a signed-out reader cannot follow.</td></tr>
+<tr><td><code>/</code></td><td>Landing / language picker.</td></tr>
+<tr><td><code>/learn/:native/:foreign</code></td><td>The flashcard session UI.</td></tr>
 <tr><td><code>/nback/:native/:foreign</code></td><td>The dual n-back trainer.</td></tr>
+<tr><td><code>/fast/:native/:foreign</code></td><td>The auto-advancing deck.</td></tr>
 <tr><td><code>/quiz</code></td><td>Stand-alone quiz (PDF upload or rule-based generation).</td></tr>
+<tr><td><code>/grammar/:native/:foreign</code></td><td>A grammar practice session, twelve items drawn by mastery.</td></tr>
+<tr><td><code>/grammar/placement/:native/:foreign</code></td><td>The placement test, one CEFR level at a time.</td></tr>
+<tr><td><code>/grammar/brainmap/:native/:foreign</code></td><td>The brainmap: every syllabus point, banded by what is known.</td></tr>
+<tr><td><code>/:..segments</code></td><td>Not found. Declared last, inside the layout, so a wrong URL keeps the site’s chrome.</td></tr>
 </tbody>
 </table>
 </div>
+<p>The four-segment grammar routes are declared before the three-segment one only
+for readability. They cannot collide: the router matches on segment count first.</p>
 <h2 id="server-functions"><a class="header" href="#server-functions">Server functions</a></h2>
 <p>The server module groups the database-touching server functions. All take
 <code>wisecrow-dto</code> types so the WASM bundle can call them without depending on
@@ -3445,6 +4124,44 @@ declarations.</p>
 </tbody>
 </table>
 </div>
+<h3 id="endpoints"><a class="header" href="#endpoints">Endpoints</a></h3>
+<p>Dioxus server functions take a single argument, so a request body is wrapped:
+<code>{"request": { .. }}</code>, not the payload flat.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Endpoint</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td><code>/api/auth/login</code>, <code>/api/auth/logout</code></td><td>Browser session cookies.</td></tr>
+<tr><td><code>/api/learn/*</code></td><td>Language list, session create/resume/pause/complete, card answer, fast deck.</td></tr>
+<tr><td><code>/api/nback/{start,trial,complete}</code></td><td>The dual n-back trainer.</td></tr>
+<tr><td><code>/api/quiz/{pdf,rule}</code></td><td>Ad-hoc quiz generation.</td></tr>
+<tr><td><code>/api/media/{audio,image}</code></td><td>Cached pronunciation and imagery.</td></tr>
+<tr><td><code>/api/grammar/session/{start,submit,complete}</code></td><td>A grammar practice session.</td></tr>
+<tr><td><code>/api/grammar/placement/{start,submit}</code></td><td>A placement run, level by level.</td></tr>
+<tr><td><code>/api/grammar/brainmap</code></td><td>Every syllabus point with its band.</td></tr>
+<tr><td><code>/api/mobile/{login,me,logout}</code></td><td>Device tokens.</td></tr>
+<tr><td><code>/api/mobile/capabilities</code>, <code>/api/mobile/v2/capabilities</code></td><td>Protocol negotiation.</td></tr>
+<tr><td><code>/api/mobile/devices/register</code></td><td>Device enrolment.</td></tr>
+<tr><td><code>/api/mobile/corpus/{snapshot,changes}</code>, <code>/api/mobile/cards/changes</code></td><td>Vocabulary feeds (protocol 1).</td></tr>
+<tr><td><code>/api/mobile/{reviews,nback}/upload</code></td><td>Review and n-back events (protocol 1).</td></tr>
+<tr><td><code>/api/mobile/v2/grammar/bank/changes</code></td><td>The item bank feed, answers included.</td></tr>
+<tr><td><code>/api/mobile/v2/grammar/mastery/changes</code></td><td>The mastery feed for the calling learner.</td></tr>
+<tr><td><code>/api/mobile/v2/grammar/attempts/upload</code></td><td>Offline answers, judged one at a time.</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>/api/grammar/*</code> serves items with the answers stripped: the server grades, so a
+browser cannot read the answer out of the payload it was tested with. The
+<code>/api/mobile/v2/*</code> bank feed is the exception and carries them, because a device
+out of contact has to grade for itself — see
+<a href="#grammar-sync-dtos-protocol-2">the DTO reference</a>.</p>
+<p>The attempts upload adopts the session identifier the device chose, so a session
+begun offline needs no round trip before its answers can be recorded. It
+resolves the language and level before opening its transaction: a query issued on
+the pool while a transaction is held takes a second connection, and under a small
+pool that is how a request comes to wait on itself.</p>
 <h2 id="configuration-4"><a class="header" href="#configuration-4">Configuration</a></h2>
 <p>The server crate reuses <code>wisecrow-core</code>’s configuration loader, so the same
 <code>WISECROW__*</code> variables apply. The pool is initialised once at start-up
@@ -3457,23 +4174,33 @@ in <code>main.rs</code>:</p>
 launch(app);</code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="wisecrow-mobile-1"><a class="header" href="#wisecrow-mobile-1">wisecrow-mobile</a></h1>
-<p><code>wisecrow-mobile</code> is the Dioxus mobile/desktop shell. It mirrors the web
-app’s routes and types but ships only client-side server-function stubs —
-the real implementations live in <code>wisecrow-web</code>.</p>
-<blockquote>
-<p><strong>Warning:</strong> The mobile crate is a skeleton. It compiles and renders the
-route tree but the server-function stubs return errors by design.
-Treat this page as a starting point, not a deployment guide.</p>
-</blockquote>
+<p><code>wisecrow-mobile</code> is the Dioxus shell for Android and the desktop. Unlike
+<code>wisecrow-web</code> it is offline first: every page reads the device’s own SQLite
+database, and a sync engine reconciles that database with the server when a
+connection happens to be there. Nothing the learner does waits on the network.</p>
 <h2 id="crate-structure-1"><a class="header" href="#crate-structure-1">Crate structure</a></h2>
 <pre><code class="language-text">wisecrow-mobile/
-├── Cargo.toml
+├── migrations/          # SQLite migrations, applied on open
 ├── src/
-│   ├── main.rs           # launches the Dioxus app
-│   ├── router.rs         # Route enum (subset of wisecrow-web)
-│   ├── server_fns.rs     # client-side stubs returning ServerFnError
-│   └── components/       # mobile-friendly Dioxus components
+│   ├── main.rs          # launches the Dioxus app
+│   ├── lib.rs           # app() and app_with_store()
+│   ├── router.rs        # Route enum
+│   ├── application/     # ports: the traits the shell is written against
+│   ├── storage/         # SQLite adapter implementing those ports
+│   ├── transport/       # HttpMobileApi, the server adapter
+│   ├── sync/            # the phase machine
+│   ├── auth/            # token handling
+│   ├── platform/        # Android and desktop specifics
+│   └── components/      # Dioxus pages
 </code></pre>
+<p><code>application</code> declares traits and <code>storage</code> and <code>transport</code> implement them, so a
+test can drive the whole shell against an in-memory database and a recording
+server without touching either.</p>
+<pre><code class="language-rust ignore">pub fn app() -&gt; Element;
+pub fn app_with_store(store: Arc&lt;dyn LocalStore&gt;) -&gt; Element;</code></pre>
+<p>The grammar pages draw entirely from the device’s database and need it in
+context, which is what <code>app_with_store</code> provides; <code>app</code> remains for the launch
+paths that have not yet built one.</p>
 <h2 id="cargo-features-2"><a class="header" href="#cargo-features-2">Cargo features</a></h2>
 <div class="table-wrapper">
 <table>
@@ -3481,7 +4208,7 @@ Treat this page as a starting point, not a deployment guide.</p>
 <tr><th>Feature</th><th>Brings in</th></tr>
 </thead>
 <tbody>
-<tr><td><code>server</code></td><td><code>dioxus/server</code> (no DB stack)</td></tr>
+<tr><td><code>server</code></td><td><code>dioxus/server</code></td></tr>
 <tr><td><code>desktop</code></td><td><code>dioxus/desktop</code></td></tr>
 <tr><td><code>mobile</code></td><td><code>dioxus/mobile</code></td></tr>
 <tr><td><code>web</code></td><td><code>dioxus/web</code></td></tr>
@@ -3506,37 +4233,105 @@ pub enum Route {
         LearnPage { native: String, foreign: String },
         #[route("/nback/:native/:foreign")]
         NbackPage { native: String, foreign: String },
+        #[route("/grammar/brainmap/:native/:foreign")]
+        GrammarBrainmapPage { native: String, foreign: String },
+        #[route("/grammar/:native/:foreign")]
+        GrammarSessionPage { native: String, foreign: String },
 }</code></pre>
-<p>The mobile router does <strong>not</strong> yet expose the quiz route — quizzes require a
-PDF picker that has not been wired up.</p>
-<h2 id="server-function-surface"><a class="header" href="#server-function-surface">Server function surface</a></h2>
-<p><code>server_fns.rs</code> declares the contract the mobile shell expects to talk to:</p>
-<pre><code class="language-rust ignore">#[server] async fn list_languages() -&gt; Result&lt;Vec&lt;LanguageInfo&gt;, ServerFnError&gt;;
-#[server] async fn create_session(user_id, native, foreign, deck_size, speed_ms) -&gt; Result&lt;SessionDto, _&gt;;
-#[server] async fn resume_session(user_id, native, foreign) -&gt; Result&lt;Option&lt;SessionDto&gt;, _&gt;;
-#[server] async fn answer_card(session_id, card_id, rating) -&gt; Result&lt;CardDto, _&gt;;
-#[server] async fn pause_session(session_id) -&gt; Result&lt;(), _&gt;;
-#[server] async fn complete_session(session_id) -&gt; Result&lt;(), _&gt;;
-#[server] async fn list_users() -&gt; Result&lt;Vec&lt;UserDto&gt;, _&gt;;
-#[server] async fn create_user(display_name) -&gt; Result&lt;UserDto, _&gt;;
-#[server] async fn start_nback_session(config) -&gt; Result&lt;(i32, Vec&lt;DnbTrialDto&gt;), _&gt;;
-#[server] async fn submit_nback_trial(session_id, trial_result, trial_dto) -&gt; Result&lt;DnbAdaptationDto, _&gt;;
-#[server] async fn complete_nback_session(...) -&gt; Result&lt;DnbSessionResultsDto, _&gt;;
-#[server] async fn generate_quiz(pdf_bytes, num_questions) -&gt; Result&lt;Vec&lt;QuizItemDto&gt;, _&gt;;
-#[server] async fn generate_rule_quiz(lang, level, num_questions) -&gt; Result&lt;Vec&lt;QuizItemDto&gt;, _&gt;;</code></pre>
-<p>Every stub currently returns
-<code>ServerFnError::new("client-side stub")</code>. To put it into use, wire each
-function into a real Dioxus server-function on the server side (typically in
-<code>wisecrow-web</code>) and point the mobile build at the resulting endpoint.</p>
-<h2 id="wiring-it-up"><a class="header" href="#wiring-it-up">Wiring it up</a></h2>
-<p>A common pattern when graduating from skeleton to production:</p>
-<ol>
-<li>Stand up the <code>wisecrow-web</code> crate with <code>--features "server web"</code>.</li>
-<li>Set the mobile crate’s API base URL to that server.</li>
-<li>Replace the stubs in <code>server_fns.rs</code> with thin HTTP calls (or use Dioxus’
-shared <code>#[server]</code> mechanism if both crates compile together).</li>
-<li>Add a settings screen that captures the API URL and the user ID.</li>
-</ol>
+<p>The mobile router does <strong>not</strong> expose the quiz route — quizzes require a PDF
+picker that has not been wired up.</p>
+<h2 id="application-ports"><a class="header" href="#application-ports">Application ports</a></h2>
+<pre><code class="language-rust ignore">pub trait LocalStore:
+    ProfileRepository + CorpusRepository + LearningRepository
+    + ContentRepository + GrammarRepository + Send + Sync {}</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Trait</th><th>Holds</th></tr>
+</thead>
+<tbody>
+<tr><td><code>ProfileRepository</code></td><td>Profiles, the active one, and per-profile identity.</td></tr>
+<tr><td><code>CorpusRepository</code></td><td>Vocabulary, card cursors and the sync phase machine.</td></tr>
+<tr><td><code>LearningRepository</code></td><td>Local sessions, answers and the review outbox.</td></tr>
+<tr><td><code>ContentRepository</code></td><td>N-back uploads, cached quizzes and the media cache.</td></tr>
+<tr><td><code>GrammarRepository</code></td><td>The grammar mirrors, the attempt outbox and their cursors.</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="language-rust ignore">#[async_trait]
+pub trait GrammarRepository: Send + Sync {
+    async fn apply_bank_page(&amp;self, page: &amp;GrammarBankChangePageDto) -&gt; Result&lt;(), MobileError&gt;;
+    async fn apply_mastery_page(&amp;self, page: &amp;GrammarMasteryChangePageDto) -&gt; Result&lt;(), MobileError&gt;;
+    async fn grammar_cursors(&amp;self, language: &amp;str) -&gt; Result&lt;GrammarCursors, MobileError&gt;;
+    async fn grammar_items(&amp;self, language: &amp;str) -&gt; Result&lt;Vec&lt;LocalGrammarItem&gt;, MobileError&gt;;
+    async fn grammar_rules(&amp;self, language: &amp;str) -&gt; Result&lt;Vec&lt;LocalGrammarRule&gt;, MobileError&gt;;
+    async fn grammar_mastery(&amp;self, language: &amp;str) -&gt; Result&lt;Vec&lt;LocalGrammarMastery&gt;, MobileError&gt;;
+    async fn queue_attempt(&amp;self, attempt: &amp;QueuedAttempt) -&gt; Result&lt;(), MobileError&gt;;
+    async fn pending_attempts(&amp;self, limit: u16) -&gt; Result&lt;Vec&lt;QueuedAttempt&gt;, MobileError&gt;;
+    async fn apply_attempt_response(&amp;self, ..) -&gt; Result&lt;(), MobileError&gt;;
+}</code></pre>
+<p><code>queue_attempt</code> both writes the outbox row and moves the local mastery
+projection, so the learner sees their answer counted at once. That projection is
+provisional: it grades with the same <code>wisecrow-learning</code> reduction the server
+uses, and the server’s own figures replace it when the feed next arrives. The
+domain types are in <code>application::grammar</code>:</p>
+<pre><code class="language-rust ignore">pub struct LocalGrammarRule;
+pub struct LocalGrammarItem { pub fn gradable(&amp;self) -&gt; GradableItem; }
+pub struct LocalGrammarMastery;
+pub struct QueuedAttempt {
+    pub fn submission(&amp;self) -&gt; Submission;
+    pub fn as_upload(&amp;self) -&gt; OfflineAttemptDto;
+}
+pub struct GrammarCursors { pub bank: i64, pub mastery: i64 }</code></pre>
+<h2 id="server-adapter"><a class="header" href="#server-adapter">Server adapter</a></h2>
+<p><code>MobileApi</code> is the port and <code>transport::HttpMobileApi</code> the adapter. Protocol 2
+is asked for separately:</p>
+<pre><code class="language-rust ignore">async fn capabilities_v2(&amp;self) -&gt; Result&lt;Option&lt;MobileCapabilitiesDto&gt;, MobileError&gt;;
+async fn grammar_bank_changes(&amp;self, ..) -&gt; Result&lt;GrammarBankChangePageDto, MobileError&gt;;
+async fn grammar_mastery_changes(&amp;self, ..) -&gt; Result&lt;GrammarMasteryChangePageDto, MobileError&gt;;
+async fn upload_grammar_attempts(&amp;self, ..) -&gt; Result&lt;GrammarAttemptBatchResponseDto, MobileError&gt;;</code></pre>
+<p><code>capabilities_v2</code> returns <code>Ok(None)</code> against a server that does not offer
+protocol 2, which is not an error: such a server is simply one the device syncs
+vocabulary with and no more.</p>
+<h2 id="sync-phases"><a class="header" href="#sync-phases">Sync phases</a></h2>
+<p>A sync is a state machine persisted in <code>sync_state</code>, so a run killed by the
+scheduler resumes at the phase it reached rather than from the beginning.</p>
+<pre><code class="language-rust ignore">pub enum SyncPhase {
+    Idle, Reviews, Nback, GrammarAttempts, Cards,
+    Snapshots, Deltas, GrammarBank, GrammarMastery, Finishing,
+}</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Phase</th><th>Direction</th><th>Work</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Reviews</code></td><td>up</td><td>The review outbox.</td></tr>
+<tr><td><code>Nback</code></td><td>up</td><td>Completed n-back sessions.</td></tr>
+<tr><td><code>GrammarAttempts</code></td><td>up</td><td>The grammar attempt outbox, oldest first.</td></tr>
+<tr><td><code>Cards</code></td><td>down</td><td>Card changes.</td></tr>
+<tr><td><code>Snapshots</code></td><td>down</td><td>First-run vocabulary for a pair.</td></tr>
+<tr><td><code>Deltas</code></td><td>down</td><td>Corpus changes since the cursor.</td></tr>
+<tr><td><code>GrammarBank</code></td><td>down</td><td>Item bank changes, per ready language.</td></tr>
+<tr><td><code>GrammarMastery</code></td><td>down</td><td>The learner’s mastery figures.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The mastery feed covers the learner rather than a language, so one cursor serves
+it and any language the device follows reports the same position.</p>
+<p>Answers go up before anything comes down, so the mastery the device then pulls
+already accounts for them; a device that pulled first would paint figures it was
+about to invalidate. The three grammar phases do no work unless the server
+advertises protocol 2 and all of <code>GrammarBankSync</code>, <code>GrammarMasterySync</code> and
+<code>GrammarAttemptUpload</code>; they still advance, so a device talking to a version-1
+server walks the same machine and syncs vocabulary only. A partial offer is
+refused rather than half-taken: it would leave answers recorded on the device
+with nowhere to go. The bank is pulled only for pairs whose vocabulary
+sync has reached <code>Ready</code>.</p>
+<p>Cursors move only to the <code>next_cursor</code> the server returns. An empty page returns
+the cursor unchanged, and the device must not advance past it — see
+<a href="#grammar-change-feeds">the change feeds</a> for what
+a client that did would lose.</p>
 
                     </main>
 

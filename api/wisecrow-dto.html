@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-be6e4ce0.js";
+            window.path_to_searchindex_js = "../searchindex-88760e4e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -304,6 +304,107 @@ pub struct RuleExampleImport {
 }</code></pre>
 <p><code>GrammarRuleImport</code> is the file format consumed by
 <code>wisecrow import-grammar --file rules.json</code>.</p>
+<h2 id="grammar-sessions-and-mastery"><a class="header" href="#grammar-sessions-and-mastery">Grammar sessions and mastery</a></h2>
+<p><code>wisecrow-dto/src/grammar.rs</code> carries the CEFR grammar shapes. The served item
+withholds the answer; grading is the server’s, and a browser that could read the
+answer out of the payload would not be tested by it.</p>
+<pre><code class="language-rust ignore">pub struct GrammarItemDto {
+    pub item_id: i32, pub revision: i32,
+    pub rule_id: i32, pub rule_slug: String, pub rule_title: String, pub rule_explanation: String,
+    pub level: String, pub prompt: String, pub hint: Option&lt;String&gt;,
+    pub options: Vec&lt;GrammarOptionDto&gt;,       // empty for a cloze
+}
+pub struct GrammarOptionDto { pub id: String, pub text: String }
+pub struct GrammarSessionDto { pub session_id: Uuid, pub items: Vec&lt;GrammarItemDto&gt; }
+
+pub struct SubmissionDto {
+    pub session_id: Uuid, pub event_id: Uuid,
+    pub item_id: i32, pub revision: i32,
+    pub answer: String, pub chose_option: bool, pub hint_shown: bool,
+    pub ordinal: u32, pub occurred_at: DateTime&lt;Utc&gt;,
+}
+pub struct VerdictDto { pub event_id: Uuid, pub correct: bool, /* .. */ }</code></pre>
+<p><code>event_id</code> is the idempotency key: the same answer sent twice is recorded once.
+<code>revision</code> is checked on submission, so an item edited between serving and
+answering is refused rather than graded against a question the learner never saw.</p>
+<p>The brainmap paints one cell per point, banded by what is known and how firmly:</p>
+<pre><code class="language-rust ignore">pub enum MasteryBandDto {
+    Unseen, Red, Amber, Green,
+    ProvisionalRed, ProvisionalAmber, ProvisionalGreen,
+}
+pub struct BrainmapCellDto {
+    pub rule_id: i32, pub slug: String, pub title: String, pub level: String,
+    pub band: MasteryBandDto, pub accuracy: Option&lt;f32&gt;, pub attempts: i32,
+    pub provenance: String, /* .. */
+}
+pub struct BrainmapDto { pub language: String, pub cells: Vec&lt;BrainmapCellDto&gt; }</code></pre>
+<p>A <code>Provisional</code> band is one drawn from too few attempts to be trusted; the
+<a href="../reference/database-schema.html#grammar_mastery-and-grammar_review_baselines">policy table</a>
+gives the thresholds. <code>BrainmapDto::language</code> is the language’s name, not its
+code.</p>
+<p>Placement is a state machine the client drives one level at a time:</p>
+<pre><code class="language-rust ignore">pub enum PlacementStateDto { Testing(PlacementStepDto), Finished(PlacementResultDto) }
+pub struct PlacementStepDto { pub attempt_id: Uuid, pub session_id: Uuid, pub level: String,
+                              pub items: Vec&lt;GrammarItemDto&gt; }
+pub struct PlacementLevelDto { pub level: String, pub correct: i64, pub asked: i64, pub passed: bool }
+pub struct PlacementResultDto { pub attempt_id: Uuid, pub level_reached: Option&lt;String&gt;,
+                                pub tested: Vec&lt;PlacementLevelDto&gt;, pub skipped: Vec&lt;String&gt; }</code></pre>
+<p><code>level_reached</code> is <code>None</code> when the learner did not pass A1 — the map is then
+drawn from nothing but the attempts themselves.</p>
+<h2 id="grammar-sync-dtos-protocol-2"><a class="header" href="#grammar-sync-dtos-protocol-2">Grammar sync DTOs (protocol 2)</a></h2>
+<p>The device-facing shapes. A device holds answers because it must grade offline,
+so <code>OfflineGrammarItemDto</code> is the one served shape that carries them:</p>
+<pre><code class="language-rust ignore">pub enum GrammarChangeOperationDto { Upsert, Delete }
+
+pub struct OfflineGrammarItemDto {
+    /* GrammarItemDto's fields, plus: */
+    pub language: String,
+    pub answer: Option&lt;String&gt;,          // cloze
+    pub accepted: Vec&lt;String&gt;,           // further accepted spellings
+    pub correct_option: Option&lt;String&gt;,  // multiple choice
+}
+
+pub struct GrammarBankChangeRequestDto { pub protocol_version: u16, pub language: String,
+                                         pub cursor: i64, pub limit: u16 }
+pub struct GrammarBankChangeDto { pub sequence: i64, pub item_id: i32,
+                                  pub operation: GrammarChangeOperationDto,
+                                  pub item: Option&lt;OfflineGrammarItemDto&gt; }
+pub struct GrammarBankChangePageDto { pub protocol_version: u16, pub language: String,
+                                      pub changes: Vec&lt;GrammarBankChangeDto&gt;,
+                                      pub next_cursor: i64, pub has_more: bool }
+
+pub struct GrammarMasteryStateDto { pub rule_id: i32, pub rule_slug: String,
+                                    pub stability: f32, pub difficulty: f32,
+                                    pub elapsed_days: i32, pub scheduled_days: i32,
+                                    pub reps: i32, pub lapses: i32, pub state: i16,
+                                    pub accuracy: Option&lt;f32&gt;, pub attempts: i32,
+                                    pub last_review: Option&lt;DateTime&lt;Utc&gt;&gt;, pub due: DateTime&lt;Utc&gt; }
+pub struct GrammarMasteryChangeRequestDto { pub protocol_version: u16, pub cursor: i64, pub limit: u16 }
+pub struct GrammarMasteryChangeDto { pub sequence: i64, pub rule_id: i32,
+                                     pub operation: GrammarChangeOperationDto,
+                                     pub mastery: Option&lt;GrammarMasteryStateDto&gt; }
+pub struct GrammarMasteryChangePageDto { pub protocol_version: u16,
+                                         pub changes: Vec&lt;GrammarMasteryChangeDto&gt;,
+                                         pub next_cursor: i64, pub has_more: bool }</code></pre>
+<p><code>item</code> and <code>mastery</code> are absent on a <code>Delete</code>, and the figures are <code>f32</code> because
+a device stores them in SQLite <code>REAL</code> and no more precision survives the trip.</p>
+<p>Answers travel the other way in batches:</p>
+<pre><code class="language-rust ignore">pub struct OfflineAttemptDto { /* SubmissionDto's fields, plus language and level */ }
+pub struct GrammarAttemptBatchRequestDto { pub protocol_version: u16, pub device_id: Uuid,
+                                           pub attempts: Vec&lt;OfflineAttemptDto&gt; }
+pub enum OfflineAttemptStatusDto {
+    Accepted(VerdictDto),
+    Duplicate(VerdictDto),
+    Rejected { event_id: Uuid, reason: String },
+}
+pub struct GrammarAttemptBatchResponseDto { pub protocol_version: u16,
+                                            pub results: Vec&lt;OfflineAttemptStatusDto&gt; }</code></pre>
+<p>Each answer is judged on its own, so one refusal does not cost the batch.
+<code>Duplicate</code> carries the stored verdict rather than an error, which is what lets
+a device that never received the first acknowledgement converge on a replay.
+<code>OfflineAttemptDto</code> names its language and level because the session it belongs
+to may not exist on the server yet: the upload adopts the device’s <code>session_id</code>
+if no row holds it, and rejects it if another learner does.</p>
 <h2 id="sync-dtos"><a class="header" href="#sync-dtos">Sync DTOs</a></h2>
 <pre><code class="language-rust ignore">pub struct SyncLanguageDto    { pub id: i32, pub code: String, pub name: String }
 pub struct SyncTranslationDto { pub id: i32, pub from_language_code: String, pub from_phrase: String,
@@ -315,6 +416,23 @@ pub struct SyncProgressDto    { pub table: String, pub synced: usize, pub total:
 <p>These mirror the production schema closely but use codes instead of foreign
 keys so a sync can succeed against a server with a different <code>languages.id</code>
 mapping.</p>
+<h2 id="mobile-protocol-negotiation"><a class="header" href="#mobile-protocol-negotiation">Mobile protocol negotiation</a></h2>
+<pre><code class="language-rust ignore">pub const MOBILE_PROTOCOL_VERSION: u16 = 1;     // frozen
+pub const MOBILE_PROTOCOL_VERSION_V2: u16 = 2;  // adds the grammar feeds
+
+pub enum MobileFeatureDto {
+    CorpusSync, CardSync, ReviewUpload, NbackUpload, QuizCache,
+    GrammarBankSync, GrammarMasterySync, GrammarAttemptUpload,
+    #[serde(other)] Unknown,
+}</code></pre>
+<p>Version 1 is frozen and a fixture pins its payload, because a device in the
+field cannot be asked to upgrade before it may sync. Version 2 is advertised
+beside it, not in place of it, and the grammar capabilities are negotiated
+individually: a client offered none of them syncs vocabulary and nothing else.</p>
+<p><code>Unknown</code> is the reason a version-3 capability will not break this build. Without
+<code>#[serde(other)]</code> one unrecognised name would fail the whole capabilities payload
+to deserialise, and the client would stop syncing altogether — the exact outcome
+negotiating capabilities exists to prevent. A server never sends it.</p>
 <h2 id="dual-n-back"><a class="header" href="#dual-n-back">Dual n-back</a></h2>
 <pre><code class="language-rust ignore">pub enum DnbModeDto { AudioWritten, WordTranslation, AudioImage }
 

@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-be6e4ce0.js";
+            window.path_to_searchindex_js = "../searchindex-88760e4e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -284,6 +284,53 @@ select a fixed-size cohort of cards (due first, then unlearned vocabulary),
 record positions in <code>session_cards</code>, and let the user pause and resume.</p>
 <p>The session selection ordering is deterministic and ranks <strong>Relearning &gt;
 Learning &gt; New &gt; Review</strong>, so cards in the riskiest states are surfaced first.</p>
+<h2 id="grammar-mastery"><a class="header" href="#grammar-mastery">Grammar mastery</a></h2>
+<p>Grammar is scheduled by the same FSRS code, over a different record. The whole
+subsystem rests on one decision: <code>grammar_attempts</code> is the record, and every
+number a learner sees is a projection of it.</p>
+<p><strong>The syllabus.</strong> Every ingested language gets a CEFR-pinned syllabus, either
+from a curated inventory or generated to fill the gaps
+(<a href="cli-reference.html#ensure-syllabus"><code>ensure-syllabus</code></a>). Points are identified
+by slug, not by title, so prose can be improved without orphaning the attempts
+recorded against them.</p>
+<p><strong>The bank.</strong> Exercises are generated once and stored
+(<a href="cli-reference.html#generate-items"><code>generate-items</code></a>), then reviewed before
+they are served (<a href="cli-reference.html#promote-items"><code>promote-items</code></a>). Generation
+is an accumulating investment rather than a cost paid per request, and the
+review step exists because a subtly broken item does not merely teach the wrong
+thing — it writes a false signal into the learner’s mastery and makes selection
+drill a point they already know.</p>
+<p><strong>Grading.</strong> <code>wisecrow-learning::grading</code> is the only code that decides whether
+an answer is right, and all three clients call it. Text is compared after NFC
+composition, full lowercasing and whitespace collapse — accent-sensitive, since
+an accent is usually the thing being taught. The server regrades every
+submission against the stored item revision rather than trusting the client;
+that is a correctness measure before it is an anti-tampering one, because the
+stored row is the only copy all three parties can see.</p>
+<p><strong>Interactions.</strong> Within one session the first item served for a point opens an
+interaction, and every submission against it belongs to that interaction.
+Correct on the first submission with no hint rates <code>Good</code>; correct later or
+after a hint rates <code>Hard</code>; closing without a correct answer rates <code>Again</code>.
+<code>Easy</code> is unused: nothing in a cloze answer distinguishes effortless recall
+from merely correct recall. The reduction is a function of the whole stream
+rather than of arrival order, so an attempt arriving late from a device that
+was offline — even one older than attempts already processed — re-forms its
+interaction and yields what it would have had it never been delayed.</p>
+<p><strong>Two projections.</strong> FSRS answers “when is this due”; an exponentially weighted
+accuracy answers “how often do you get this wrong”. Retrievability is right for
+scheduling and wrong for a brainmap, where red means repeated error rather than
+decay. Both are derived from the one stream, so they cannot drift apart. The
+band policy is in <a href="database-schema.html#grammar_mastery-and-grammar_review_baselines">Database schema</a>.</p>
+<p><strong>Selection.</strong> A practice session serves, in order: points that are due,
+ordered by how overdue; points never attempted, in syllabus order; then the
+rest by ascending accuracy, so the points a learner keeps failing surface ahead
+of the ones they merely have not seen lately. Within a point, the item served
+is the active one least recently shown to that learner.</p>
+<p><strong>Placement.</strong> A placement run climbs level by level on an ordinary grammar
+session, so its answers are graded and recorded exactly like practice. It stops
+after two consecutive levels go badly, and marks only the points it actually
+asked about — the rest of the map stays unmarked rather than being inferred
+from a neighbouring success.</p>
 <h2 id="dual-n-back"><a class="header" href="#dual-n-back">Dual n-back</a></h2>
 <p>Independent of the SRS, the <code>dnb</code> module implements an adaptive dual n-back
 trainer that uses the user’s own vocabulary as audio + visual stimuli. It is
@@ -330,6 +377,47 @@ server:</p>
 </div>
 <p>The cursor is the remote primary key (<code>after_id</code>); successful runs update
 <code>sync_metadata.last_synced_at</code> per <code>(remote_url, table_name)</code>.</p>
+<h3 id="mobile-protocol-versions"><a class="header" href="#mobile-protocol-versions">Mobile protocol versions</a></h3>
+<p>The mobile protocol is negotiated, not assumed. Both ends compare the version
+number for equality, so raising it would make every installed app refuse to
+sync. Version 2 is therefore advertised <strong>beside</strong> version 1 rather than
+replacing it:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Endpoint</th><th style="text-align: right">Answers</th><th>Adds</th></tr>
+</thead>
+<tbody>
+<tr><td><code>/api/mobile/capabilities</code></td><td style="text-align: right">1</td><td>—</td></tr>
+<tr><td><code>/api/mobile/v2/capabilities</code></td><td style="text-align: right">2</td><td><code>GrammarBankSync</code>, <code>GrammarMasterySync</code>, <code>GrammarAttemptUpload</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>A device asks the version-2 endpoint first. A server that has never heard of it,
+or that answers without all three grammar capabilities, is not a fault: the
+device syncs vocabulary exactly as before and leaves grammar alone. Two out of
+three is refused as well, because a device that could download the bank but not
+upload its answers would lose them.</p>
+<p><code>MobileFeatureDto</code> carries an <code>Unknown</code> fallback variant, so a capability a
+newer server advertises cannot fail the whole payload to deserialise — the very
+outcome negotiating capabilities exists to avoid.</p>
+<p><strong>Known limitation.</strong> A version-1 client sees vocabulary only. Grammar practice,
+placement and the brainmap require version 2 on both ends.</p>
+<h3 id="grammar-sync-phases"><a class="header" href="#grammar-sync-phases">Grammar sync phases</a></h3>
+<p>The engine’s phase machine gained three steps, each resumable on its own so
+that a sync killed midway restarts where it stopped:</p>
+<pre><code class="language-text">Idle → Reviews → Nback → GrammarAttempts
+     → Cards → Snapshots → Deltas → GrammarBank → GrammarMastery → Finishing
+</code></pre>
+<p>The outbox goes before anything is downloaded, so the mastery the device then
+pulls already accounts for the answers it took offline.</p>
+<p>The device mirrors the bank with the answer included — it has to mark an answer
+with no network, and a practice session that cannot say whether the learner was
+right is not practice. That verdict is provisional: the server regrades every
+answer when the outbox drains, and the mastery feed then overwrites whatever
+the device projected for itself. The device projects only the accuracy that
+colours its map, folding each answer forward with the same reduction the server
+applies over the whole stream; the FSRS schedule is the server’s alone.</p>
 <h2 id="tui"><a class="header" href="#tui">TUI</a></h2>
 <p>The TUI uses <a href="https://ratatui.rs"><code>ratatui</code></a> with a tick rate of 100 ms. The
 <code>learn</code> command’s <code>app::run_tui</code> owns:</p>

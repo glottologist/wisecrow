@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-be6e4ce0.js";
+            window.path_to_searchindex_js = "../searchindex-88760e4e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -180,8 +180,8 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="cli-reference"><a class="header" href="#cli-reference">CLI reference</a></h1>
-<p>The <code>wisecrow</code> binary ships with nineteen subcommands. Every command has a
-short alias (in parentheses below) for shell ergonomics.</p>
+<p>The <code>wisecrow</code> binary ships with thirty subcommands. Most have a short alias
+(in parentheses below) for shell ergonomics.</p>
 <h2 id="synopsis"><a class="header" href="#synopsis">Synopsis</a></h2>
 <pre><code class="language-text">wisecrow &lt;COMMAND&gt; [ARGS...]
 </code></pre>
@@ -215,6 +215,17 @@ list.</p>
 <tr><td><a href="#preview"><code>preview</code></a></td><td><code>pv</code></td><td style="text-align: center">yes (+ LLM if <code>--gloss-unknowns</code>)</td><td>Annotate subtitle file tokens with corpus + SRS state.</td></tr>
 <tr><td><a href="#user"><code>user</code></a></td><td><code>u</code></td><td style="text-align: center">yes</td><td>Manage accounts and web login.</td></tr>
 <tr><td><a href="#sync-client"><code>sync-client</code></a></td><td><code>sc</code></td><td style="text-align: center">yes</td><td>Manage per-client corpus-sync API keys.</td></tr>
+<tr><td><a href="#extract-phrases"><code>extract-phrases</code></a></td><td>—</td><td style="text-align: center">yes</td><td>Mine frequent multi-word phrases into staging.</td></tr>
+<tr><td><a href="#translate-phrases"><code>translate-phrases</code></a></td><td>—</td><td style="text-align: center">yes + LLM</td><td>Translate staged phrases and promote them into decks.</td></tr>
+<tr><td><a href="#score-sentences"><code>score-sentences</code></a></td><td><code>ss</code></td><td style="text-align: center">yes</td><td>Rank stored sentences by the words they use.</td></tr>
+<tr><td><a href="#sentence-card"><code>sentence-card</code></a></td><td><code>sent</code></td><td style="text-align: center">yes + LLM</td><td>Build a sentence card around a word within reach.</td></tr>
+<tr><td><a href="#gloss-deck"><code>gloss-deck</code></a></td><td><code>gd</code></td><td style="text-align: center">yes + LLM</td><td>Give pending words their card presentations.</td></tr>
+<tr><td><a href="#prune"><code>prune</code></a></td><td><code>pr</code></td><td style="text-align: center">yes</td><td>Demote pairs whose prompt holds no recognised word.</td></tr>
+<tr><td><a href="#ensure-syllabus"><code>ensure-syllabus</code></a></td><td><code>es</code></td><td style="text-align: center">yes + LLM</td><td>Fill any CEFR level with no grammar points.</td></tr>
+<tr><td><a href="#refresh-syllabus"><code>refresh-syllabus</code></a></td><td><code>rs</code></td><td style="text-align: center">yes + LLM</td><td>Rewrite machine-generated grammar prose.</td></tr>
+<tr><td><a href="#export-grammar"><code>export-grammar</code></a></td><td><code>eg</code></td><td style="text-align: center">yes</td><td>Dump a language’s syllabus as JSON.</td></tr>
+<tr><td><a href="#generate-items"><code>generate-items</code></a></td><td><code>gi</code></td><td style="text-align: center">yes + LLM</td><td>Generate quiz items for a level’s grammar points.</td></tr>
+<tr><td><a href="#promote-items"><code>promote-items</code></a></td><td><code>pi</code></td><td style="text-align: center">yes</td><td>Review generated items before they are served.</td></tr>
 </tbody>
 </table>
 </div>
@@ -626,6 +637,105 @@ wisecrow sync-client revoke --name &lt;NAME&gt;
 once. Pullers send it as the <code>x-api-key</code> header; keys are individually
 revocable and compared in constant time. See
 <a href="../guides/sync-workflow.html">Sync workflow</a>.</p>
+<hr>
+<h2 id="extract-phrases"><a class="header" href="#extract-phrases"><code>extract-phrases</code></a></h2>
+<pre><code class="language-sh">wisecrow extract-phrases --lang &lt;CODE&gt;
+</code></pre>
+<p>Mines the corpus for frequent multi-word phrases and stages them. Staging is
+separate from the decks so that a phrase is translated and reviewed before a
+learner ever meets it; <a href="#translate-phrases"><code>translate-phrases</code></a> is what moves
+it on.</p>
+<hr>
+<h2 id="translate-phrases"><a class="header" href="#translate-phrases"><code>translate-phrases</code></a></h2>
+<pre><code class="language-sh">wisecrow translate-phrases --lang &lt;CODE&gt; --native-lang &lt;CODE&gt; [--limit N] [--refresh]
+</code></pre>
+<p>Translates staged phrases with the configured model and promotes them into the
+decks. <code>--limit</code> caps how many are sent in one run (default 100). <code>--refresh</code>
+re-glosses phrases already translated, updating the linked rows in place rather
+than adding duplicates.</p>
+<hr>
+<h2 id="score-sentences"><a class="header" href="#score-sentences"><code>score-sentences</code></a></h2>
+<pre><code class="language-sh">wisecrow score-sentences --lang &lt;CODE&gt;
+</code></pre>
+<p>Scores every stored sentence of a language by the words it uses, which is what
+<a href="#sentence-card"><code>sentence-card</code></a> draws on. The language’s words must already
+be ranked — run <a href="#frequency"><code>frequency</code></a> with <code>--from-corpus</code> first — because
+an unranked word carries no weight to score with.</p>
+<hr>
+<h2 id="sentence-card"><a class="header" href="#sentence-card"><code>sentence-card</code></a></h2>
+<pre><code class="language-sh">wisecrow sentence-card --lang &lt;CODE&gt; --native-lang &lt;CODE&gt; --user-id &lt;ID&gt; [--word &lt;WORD&gt;]
+</code></pre>
+<p>Builds a sentence card around one word the learner is close to knowing. With
+no <code>--word</code>, the next word the deck would serve is used, which is the loop the
+word deck and the sentence deck are meant to form.</p>
+<hr>
+<h2 id="gloss-deck"><a class="header" href="#gloss-deck"><code>gloss-deck</code></a></h2>
+<pre><code class="language-sh">wisecrow gloss-deck --lang &lt;CODE&gt; --native-lang &lt;CODE&gt; [--limit N] [--offset N] [--dry-run]
+</code></pre>
+<p>Gives pending words the presentations their cards are built from. <code>--limit</code>
+bounds one window (1–1000); rows that are punctuation, digits or the wrong
+script are reported and skipped, so fewer than the limit may be enriched.
+<code>--offset</code> steps past a rejected window during an inspection pass; restart from
+zero once entries have been written, since accepted words leave the pending
+list. <code>--dry-run</code> lists the window without calling the model.</p>
+<hr>
+<h2 id="prune"><a class="header" href="#prune"><code>prune</code></a></h2>
+<pre><code class="language-sh">wisecrow prune --lang &lt;CODE&gt; [--native-lang &lt;CODE&gt;] [--dry-run]
+</code></pre>
+<p>Demotes translation pairs whose prompt holds no recognised word — corpus
+corruption such as <code>Bthey</code> or <code>andthatthe</code>, which no ordering rule inside the
+deck query can catch. Run it with <code>--dry-run</code> first: a corpus that turns out to
+be mostly the wrong language loses most of its rows, and that is better seen
+than discovered.</p>
+<hr>
+<h2 id="ensure-syllabus"><a class="header" href="#ensure-syllabus"><code>ensure-syllabus</code></a></h2>
+<pre><code class="language-sh">wisecrow ensure-syllabus --lang &lt;CODE&gt;
+wisecrow ensure-syllabus --all
+</code></pre>
+<p>Fills any CEFR level that holds no grammar points for a language, so that every
+ingested language has a syllabus to practise against rather than only the ones
+someone remembered to seed. <code>--all</code> does the same for every language already
+present in the corpus. Points it generates are marked <code>llm</code>; a level that
+already holds points is left alone.</p>
+<hr>
+<h2 id="refresh-syllabus"><a class="header" href="#refresh-syllabus"><code>refresh-syllabus</code></a></h2>
+<pre><code class="language-sh">wisecrow refresh-syllabus --lang &lt;CODE&gt;
+</code></pre>
+<p>Rewrites the title and explanation of machine-generated grammar points, for
+when a better model or a better prompt would produce clearer prose. Points from
+a curated inventory are never touched: their wording is the reason they were
+curated.</p>
+<hr>
+<h2 id="export-grammar"><a class="header" href="#export-grammar"><code>export-grammar</code></a></h2>
+<pre><code class="language-sh">wisecrow export-grammar --lang &lt;CODE&gt; [--out FILE]
+</code></pre>
+<p>Dumps a language’s syllabus as JSON, in the shape
+<a href="#import-grammar"><code>import-grammar</code></a> accepts, for diffing or backup. Prints to
+standard output when <code>--out</code> is omitted.</p>
+<hr>
+<h2 id="generate-items"><a class="header" href="#generate-items"><code>generate-items</code></a></h2>
+<pre><code class="language-sh">wisecrow generate-items --lang &lt;CODE&gt; --level &lt;CEFR&gt; [--per-rule N]
+</code></pre>
+<p>Generates quiz items for every grammar point at a level and stores them as
+candidates. Nothing generated here is served: items enter the bank at
+<code>candidate</code> status and reach learners only through
+<a href="#promote-items"><code>promote-items</code></a>. Generation is therefore an accumulating
+investment rather than a cost paid on every request, and a subtly wrong item
+gets a human reading before it can write a false signal into anyone’s mastery.</p>
+<p><code>--per-rule</code> sets how many items to ask the model for per point (default 8).</p>
+<hr>
+<h2 id="promote-items"><a class="header" href="#promote-items"><code>promote-items</code></a></h2>
+<pre><code class="language-sh">wisecrow promote-items --lang &lt;CODE&gt; [--level &lt;CEFR&gt;] --list [--limit N]
+wisecrow promote-items --lang &lt;CODE&gt; --accept &lt;ID&gt;...
+wisecrow promote-items --lang &lt;CODE&gt; --reject &lt;ID&gt;... [--reason TEXT]
+wisecrow promote-items --lang &lt;CODE&gt; --retire &lt;ID&gt;...
+</code></pre>
+<p>Reviews what <a href="#generate-items"><code>generate-items</code></a> produced. <code>--list</code> prints the
+waiting candidates and changes nothing. <code>--accept</code> makes them servable,
+<code>--reject</code> refuses them with a reason, and <code>--retire</code> withdraws an active item
+without deleting it — an attempt uploaded from a device that has been offline
+for a fortnight must still be gradeable against the item as the learner saw it,
+so nothing in the bank is ever hard-deleted.</p>
 
                     </main>
 

@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-be6e4ce0.js";
+            window.path_to_searchindex_js = "../searchindex-88760e4e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -180,23 +180,33 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="wisecrow-mobile"><a class="header" href="#wisecrow-mobile">wisecrow-mobile</a></h1>
-<p><code>wisecrow-mobile</code> is the Dioxus mobile/desktop shell. It mirrors the web
-app’s routes and types but ships only client-side server-function stubs —
-the real implementations live in <code>wisecrow-web</code>.</p>
-<blockquote>
-<p><strong>Warning:</strong> The mobile crate is a skeleton. It compiles and renders the
-route tree but the server-function stubs return errors by design.
-Treat this page as a starting point, not a deployment guide.</p>
-</blockquote>
+<p><code>wisecrow-mobile</code> is the Dioxus shell for Android and the desktop. Unlike
+<code>wisecrow-web</code> it is offline first: every page reads the device’s own SQLite
+database, and a sync engine reconciles that database with the server when a
+connection happens to be there. Nothing the learner does waits on the network.</p>
 <h2 id="crate-structure"><a class="header" href="#crate-structure">Crate structure</a></h2>
 <pre><code class="language-text">wisecrow-mobile/
-├── Cargo.toml
+├── migrations/          # SQLite migrations, applied on open
 ├── src/
-│   ├── main.rs           # launches the Dioxus app
-│   ├── router.rs         # Route enum (subset of wisecrow-web)
-│   ├── server_fns.rs     # client-side stubs returning ServerFnError
-│   └── components/       # mobile-friendly Dioxus components
+│   ├── main.rs          # launches the Dioxus app
+│   ├── lib.rs           # app() and app_with_store()
+│   ├── router.rs        # Route enum
+│   ├── application/     # ports: the traits the shell is written against
+│   ├── storage/         # SQLite adapter implementing those ports
+│   ├── transport/       # HttpMobileApi, the server adapter
+│   ├── sync/            # the phase machine
+│   ├── auth/            # token handling
+│   ├── platform/        # Android and desktop specifics
+│   └── components/      # Dioxus pages
 </code></pre>
+<p><code>application</code> declares traits and <code>storage</code> and <code>transport</code> implement them, so a
+test can drive the whole shell against an in-memory database and a recording
+server without touching either.</p>
+<pre><code class="language-rust ignore">pub fn app() -&gt; Element;
+pub fn app_with_store(store: Arc&lt;dyn LocalStore&gt;) -&gt; Element;</code></pre>
+<p>The grammar pages draw entirely from the device’s database and need it in
+context, which is what <code>app_with_store</code> provides; <code>app</code> remains for the launch
+paths that have not yet built one.</p>
 <h2 id="cargo-features"><a class="header" href="#cargo-features">Cargo features</a></h2>
 <div class="table-wrapper">
 <table>
@@ -204,7 +214,7 @@ Treat this page as a starting point, not a deployment guide.</p>
 <tr><th>Feature</th><th>Brings in</th></tr>
 </thead>
 <tbody>
-<tr><td><code>server</code></td><td><code>dioxus/server</code> (no DB stack)</td></tr>
+<tr><td><code>server</code></td><td><code>dioxus/server</code></td></tr>
 <tr><td><code>desktop</code></td><td><code>dioxus/desktop</code></td></tr>
 <tr><td><code>mobile</code></td><td><code>dioxus/mobile</code></td></tr>
 <tr><td><code>web</code></td><td><code>dioxus/web</code></td></tr>
@@ -229,37 +239,105 @@ pub enum Route {
         LearnPage { native: String, foreign: String },
         #[route("/nback/:native/:foreign")]
         NbackPage { native: String, foreign: String },
+        #[route("/grammar/brainmap/:native/:foreign")]
+        GrammarBrainmapPage { native: String, foreign: String },
+        #[route("/grammar/:native/:foreign")]
+        GrammarSessionPage { native: String, foreign: String },
 }</code></pre>
-<p>The mobile router does <strong>not</strong> yet expose the quiz route — quizzes require a
-PDF picker that has not been wired up.</p>
-<h2 id="server-function-surface"><a class="header" href="#server-function-surface">Server function surface</a></h2>
-<p><code>server_fns.rs</code> declares the contract the mobile shell expects to talk to:</p>
-<pre><code class="language-rust ignore">#[server] async fn list_languages() -&gt; Result&lt;Vec&lt;LanguageInfo&gt;, ServerFnError&gt;;
-#[server] async fn create_session(user_id, native, foreign, deck_size, speed_ms) -&gt; Result&lt;SessionDto, _&gt;;
-#[server] async fn resume_session(user_id, native, foreign) -&gt; Result&lt;Option&lt;SessionDto&gt;, _&gt;;
-#[server] async fn answer_card(session_id, card_id, rating) -&gt; Result&lt;CardDto, _&gt;;
-#[server] async fn pause_session(session_id) -&gt; Result&lt;(), _&gt;;
-#[server] async fn complete_session(session_id) -&gt; Result&lt;(), _&gt;;
-#[server] async fn list_users() -&gt; Result&lt;Vec&lt;UserDto&gt;, _&gt;;
-#[server] async fn create_user(display_name) -&gt; Result&lt;UserDto, _&gt;;
-#[server] async fn start_nback_session(config) -&gt; Result&lt;(i32, Vec&lt;DnbTrialDto&gt;), _&gt;;
-#[server] async fn submit_nback_trial(session_id, trial_result, trial_dto) -&gt; Result&lt;DnbAdaptationDto, _&gt;;
-#[server] async fn complete_nback_session(...) -&gt; Result&lt;DnbSessionResultsDto, _&gt;;
-#[server] async fn generate_quiz(pdf_bytes, num_questions) -&gt; Result&lt;Vec&lt;QuizItemDto&gt;, _&gt;;
-#[server] async fn generate_rule_quiz(lang, level, num_questions) -&gt; Result&lt;Vec&lt;QuizItemDto&gt;, _&gt;;</code></pre>
-<p>Every stub currently returns
-<code>ServerFnError::new("client-side stub")</code>. To put it into use, wire each
-function into a real Dioxus server-function on the server side (typically in
-<code>wisecrow-web</code>) and point the mobile build at the resulting endpoint.</p>
-<h2 id="wiring-it-up"><a class="header" href="#wiring-it-up">Wiring it up</a></h2>
-<p>A common pattern when graduating from skeleton to production:</p>
-<ol>
-<li>Stand up the <code>wisecrow-web</code> crate with <code>--features "server web"</code>.</li>
-<li>Set the mobile crate’s API base URL to that server.</li>
-<li>Replace the stubs in <code>server_fns.rs</code> with thin HTTP calls (or use Dioxus’
-shared <code>#[server]</code> mechanism if both crates compile together).</li>
-<li>Add a settings screen that captures the API URL and the user ID.</li>
-</ol>
+<p>The mobile router does <strong>not</strong> expose the quiz route — quizzes require a PDF
+picker that has not been wired up.</p>
+<h2 id="application-ports"><a class="header" href="#application-ports">Application ports</a></h2>
+<pre><code class="language-rust ignore">pub trait LocalStore:
+    ProfileRepository + CorpusRepository + LearningRepository
+    + ContentRepository + GrammarRepository + Send + Sync {}</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Trait</th><th>Holds</th></tr>
+</thead>
+<tbody>
+<tr><td><code>ProfileRepository</code></td><td>Profiles, the active one, and per-profile identity.</td></tr>
+<tr><td><code>CorpusRepository</code></td><td>Vocabulary, card cursors and the sync phase machine.</td></tr>
+<tr><td><code>LearningRepository</code></td><td>Local sessions, answers and the review outbox.</td></tr>
+<tr><td><code>ContentRepository</code></td><td>N-back uploads, cached quizzes and the media cache.</td></tr>
+<tr><td><code>GrammarRepository</code></td><td>The grammar mirrors, the attempt outbox and their cursors.</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="language-rust ignore">#[async_trait]
+pub trait GrammarRepository: Send + Sync {
+    async fn apply_bank_page(&amp;self, page: &amp;GrammarBankChangePageDto) -&gt; Result&lt;(), MobileError&gt;;
+    async fn apply_mastery_page(&amp;self, page: &amp;GrammarMasteryChangePageDto) -&gt; Result&lt;(), MobileError&gt;;
+    async fn grammar_cursors(&amp;self, language: &amp;str) -&gt; Result&lt;GrammarCursors, MobileError&gt;;
+    async fn grammar_items(&amp;self, language: &amp;str) -&gt; Result&lt;Vec&lt;LocalGrammarItem&gt;, MobileError&gt;;
+    async fn grammar_rules(&amp;self, language: &amp;str) -&gt; Result&lt;Vec&lt;LocalGrammarRule&gt;, MobileError&gt;;
+    async fn grammar_mastery(&amp;self, language: &amp;str) -&gt; Result&lt;Vec&lt;LocalGrammarMastery&gt;, MobileError&gt;;
+    async fn queue_attempt(&amp;self, attempt: &amp;QueuedAttempt) -&gt; Result&lt;(), MobileError&gt;;
+    async fn pending_attempts(&amp;self, limit: u16) -&gt; Result&lt;Vec&lt;QueuedAttempt&gt;, MobileError&gt;;
+    async fn apply_attempt_response(&amp;self, ..) -&gt; Result&lt;(), MobileError&gt;;
+}</code></pre>
+<p><code>queue_attempt</code> both writes the outbox row and moves the local mastery
+projection, so the learner sees their answer counted at once. That projection is
+provisional: it grades with the same <code>wisecrow-learning</code> reduction the server
+uses, and the server’s own figures replace it when the feed next arrives. The
+domain types are in <code>application::grammar</code>:</p>
+<pre><code class="language-rust ignore">pub struct LocalGrammarRule;
+pub struct LocalGrammarItem { pub fn gradable(&amp;self) -&gt; GradableItem; }
+pub struct LocalGrammarMastery;
+pub struct QueuedAttempt {
+    pub fn submission(&amp;self) -&gt; Submission;
+    pub fn as_upload(&amp;self) -&gt; OfflineAttemptDto;
+}
+pub struct GrammarCursors { pub bank: i64, pub mastery: i64 }</code></pre>
+<h2 id="server-adapter"><a class="header" href="#server-adapter">Server adapter</a></h2>
+<p><code>MobileApi</code> is the port and <code>transport::HttpMobileApi</code> the adapter. Protocol 2
+is asked for separately:</p>
+<pre><code class="language-rust ignore">async fn capabilities_v2(&amp;self) -&gt; Result&lt;Option&lt;MobileCapabilitiesDto&gt;, MobileError&gt;;
+async fn grammar_bank_changes(&amp;self, ..) -&gt; Result&lt;GrammarBankChangePageDto, MobileError&gt;;
+async fn grammar_mastery_changes(&amp;self, ..) -&gt; Result&lt;GrammarMasteryChangePageDto, MobileError&gt;;
+async fn upload_grammar_attempts(&amp;self, ..) -&gt; Result&lt;GrammarAttemptBatchResponseDto, MobileError&gt;;</code></pre>
+<p><code>capabilities_v2</code> returns <code>Ok(None)</code> against a server that does not offer
+protocol 2, which is not an error: such a server is simply one the device syncs
+vocabulary with and no more.</p>
+<h2 id="sync-phases"><a class="header" href="#sync-phases">Sync phases</a></h2>
+<p>A sync is a state machine persisted in <code>sync_state</code>, so a run killed by the
+scheduler resumes at the phase it reached rather than from the beginning.</p>
+<pre><code class="language-rust ignore">pub enum SyncPhase {
+    Idle, Reviews, Nback, GrammarAttempts, Cards,
+    Snapshots, Deltas, GrammarBank, GrammarMastery, Finishing,
+}</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Phase</th><th>Direction</th><th>Work</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Reviews</code></td><td>up</td><td>The review outbox.</td></tr>
+<tr><td><code>Nback</code></td><td>up</td><td>Completed n-back sessions.</td></tr>
+<tr><td><code>GrammarAttempts</code></td><td>up</td><td>The grammar attempt outbox, oldest first.</td></tr>
+<tr><td><code>Cards</code></td><td>down</td><td>Card changes.</td></tr>
+<tr><td><code>Snapshots</code></td><td>down</td><td>First-run vocabulary for a pair.</td></tr>
+<tr><td><code>Deltas</code></td><td>down</td><td>Corpus changes since the cursor.</td></tr>
+<tr><td><code>GrammarBank</code></td><td>down</td><td>Item bank changes, per ready language.</td></tr>
+<tr><td><code>GrammarMastery</code></td><td>down</td><td>The learner’s mastery figures.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The mastery feed covers the learner rather than a language, so one cursor serves
+it and any language the device follows reports the same position.</p>
+<p>Answers go up before anything comes down, so the mastery the device then pulls
+already accounts for them; a device that pulled first would paint figures it was
+about to invalidate. The three grammar phases do no work unless the server
+advertises protocol 2 and all of <code>GrammarBankSync</code>, <code>GrammarMasterySync</code> and
+<code>GrammarAttemptUpload</code>; they still advance, so a device talking to a version-1
+server walks the same machine and syncs vocabulary only. A partial offer is
+refused rather than half-taken: it would leave answers recorded on the device
+with nowhere to go. The bank is pulled only for pairs whose vocabulary
+sync has reached <code>Ready</code>.</p>
+<p>Cursors move only to the <code>next_cursor</code> the server returns. An empty page returns
+the cursor unchanged, and the device must not advance past it — see
+<a href="../reference/database-schema.html#grammar-change-feeds">the change feeds</a> for what
+a client that did would lose.</p>
 
                     </main>
 

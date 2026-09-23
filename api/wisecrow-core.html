@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-be6e4ce0.js";
+            window.path_to_searchindex_js = "../searchindex-88760e4e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -450,6 +450,110 @@ pub mod seeder { pub async fn seed_grammar(...) -&gt; Result&lt;usize, WisecrowE
 pub mod ai_exercises { pub async fn generate_exercises(...) -&gt; Result&lt;(Vec&lt;ClozeQuiz&gt;, Vec&lt;MultipleChoiceQuiz&gt;), WisecrowError&gt;; }
 pub mod quiz { pub struct ClozeQuiz; pub struct MultipleChoiceQuiz; }
 pub mod pdf { pub fn extract(path: &amp;Path) -&gt; Result&lt;ExtractedContent, WisecrowError&gt;; }</code></pre>
+<p>The CEFR mastery work adds seven modules beneath the same root. They divide by
+the question they answer: what the learner should meet, what they are asked,
+what they know, and what a device is owed.</p>
+<pre><code class="language-rust ignore">pub mod syllabus {
+    pub const ALL_LEVELS: [&amp;str; 6];
+    pub struct EnsureSummary; pub struct SyllabusEntry;
+    pub async fn ensure_syllabus(pool, provider, lang_code) -&gt; Result&lt;EnsureSummary, WisecrowError&gt;;
+    pub async fn ensure_all_syllabuses(pool, provider) -&gt; Result&lt;EnsureSummary, WisecrowError&gt;;
+    pub async fn refresh_syllabus(pool, provider, lang_code) -&gt; Result&lt;usize, WisecrowError&gt;;
+    pub async fn export_syllabus(pool, lang_code) -&gt; Result&lt;String, WisecrowError&gt;;
+    pub async fn import_syllabus(pool, lang_code, document) -&gt; Result&lt;usize, WisecrowError&gt;;
+}
+
+pub mod items {
+    pub const BLANK: &amp;str = "___";
+    pub enum ItemDraft { Cloze { .. }, MultipleChoice { .. } }
+    pub enum GateFailure { .. }
+    pub fn gate(draft: &amp;ItemDraft) -&gt; Option&lt;GateFailure&gt;;
+    pub struct StoredItem { pub fn gradable(&amp;self) -&gt; Result&lt;GradableItem, WisecrowError&gt;; }
+    pub struct ItemRepository;
+    impl ItemRepository {
+        pub async fn insert_candidates(pool, rule_id, &amp;[ItemDraft])
+            -&gt; Result&lt;InsertSummary, WisecrowError&gt;;
+        pub async fn insert_candidates_with_vocabulary(pool, rule_id, &amp;[ItemDraft], in_level)
+            -&gt; Result&lt;InsertSummary, WisecrowError&gt;;
+        pub async fn active_items_for_rule(pool, rule_id) -&gt; Result&lt;Vec&lt;StoredItem&gt;, WisecrowError&gt;;
+        pub async fn candidates_for_language(pool, lang_code, level_code, limit)
+            -&gt; Result&lt;Vec&lt;StoredItem&gt;, WisecrowError&gt;;
+        pub async fn promote(pool, item_id) -&gt; Result&lt;(), WisecrowError&gt;;
+        pub async fn reject(pool, item_id, reason) -&gt; Result&lt;(), WisecrowError&gt;;
+        pub async fn retire(pool, item_id) -&gt; Result&lt;(), WisecrowError&gt;;
+    }
+}
+
+pub mod session {
+    pub const SESSION_LENGTH: i64 = 12;
+    pub enum SessionKind { Practice, Placement }
+    pub struct GrammarSession; pub struct SubmissionContext;
+    pub struct GrammarSessionManager;
+    impl GrammarSessionManager {
+        pub async fn create(pool, user_id, lang_code, level_code, kind, limit)
+            -&gt; Result&lt;Option&lt;GrammarSession&gt;, WisecrowError&gt;;
+        pub async fn open(transaction, user_id, language_id, level_id, kind)
+            -&gt; Result&lt;Uuid, WisecrowError&gt;;
+        pub async fn adopt(transaction, user_id, session_id, language_id, level_id, kind)
+            -&gt; Result&lt;(), WisecrowError&gt;;
+        pub async fn submit(pool, user_id, &amp;Submission, SubmissionContext)
+            -&gt; Result&lt;Verdict, WisecrowError&gt;;
+        pub async fn submit_in_transaction(transaction, user_id, &amp;Submission, SubmissionContext)
+            -&gt; Result&lt;Verdict, WisecrowError&gt;;
+        pub async fn complete(pool, user_id, session_id) -&gt; Result&lt;(), WisecrowError&gt;;
+    }
+    pub async fn session_identity(pool, lang_code, level_code) -&gt; Result&lt;(i32, Option&lt;i32&gt;), WisecrowError&gt;;
+}
+
+pub mod mastery {
+    pub enum AttemptSource { Web, Mobile }
+    pub struct AttemptRecord; pub struct MasteryRow;
+    pub struct MasteryRepository;
+    impl MasteryRepository {
+        pub async fn record_attempt(pool, user_id, &amp;AttemptRecord) -&gt; Result&lt;(), WisecrowError&gt;;
+        pub async fn refresh_projection(pool, user_id, rule_id) -&gt; Result&lt;(), WisecrowError&gt;;
+        pub async fn replay_from_baseline(pool, user_id, rule_id)
+            -&gt; Result&lt;Option&lt;Projection&gt;, WisecrowError&gt;;
+        pub async fn mastery_for_language(pool, user_id, lang_code)
+            -&gt; Result&lt;Vec&lt;MasteryRow&gt;, WisecrowError&gt;;
+    }
+}
+
+pub mod selection {
+    pub struct PracticeItem;
+    pub async fn select_practice(pool, user_id, lang_code, level_code, limit)
+        -&gt; Result&lt;Vec&lt;PracticeItem&gt;, WisecrowError&gt;;
+    pub async fn record_exposure(pool, user_id, item_id) -&gt; Result&lt;(), WisecrowError&gt;;
+}
+
+pub mod placement {
+    pub const PLACEMENT_SAMPLE: i64 = 6;
+    pub const PLACEMENT_PASS: f64 = 0.60;
+    pub const PLACEMENT_MIN_ITEMS: usize = 4;
+    pub const PLACEMENT_MAX_FAILURES: usize = 2;
+    pub struct PlacementStep; pub struct LevelScore; pub struct PlacementOutcome;
+    pub enum PlacementState { Testing(PlacementStep), Finished(PlacementOutcome) }
+    pub async fn start(pool, user_id, lang_code) -&gt; Result&lt;PlacementState, WisecrowError&gt;;
+    pub async fn submit(pool, user_id, attempt_id, &amp;[Submission], SubmissionContext)
+        -&gt; Result&lt;PlacementState, WisecrowError&gt;;
+}
+
+pub mod sync {
+    pub enum ChangeOperation { Upsert, Delete }
+    pub struct GrammarChange; pub struct QuizItemChange; pub struct ChangePage&lt;T&gt;;
+    pub struct BankItem; pub struct MasteryState;
+    pub async fn visible_grammar_changes(pool, user_id, cursor, limit)
+        -&gt; Result&lt;ChangePage&lt;GrammarChange&gt;, WisecrowError&gt;;
+    pub async fn visible_item_changes(pool, language_code, cursor, limit)
+        -&gt; Result&lt;ChangePage&lt;QuizItemChange&gt;, WisecrowError&gt;;
+    pub async fn bank_items(pool, item_ids) -&gt; Result&lt;Vec&lt;BankItem&gt;, WisecrowError&gt;;
+    pub async fn mastery_states(pool, user_id, rule_ids) -&gt; Result&lt;Vec&lt;MasteryState&gt;, WisecrowError&gt;;
+}</code></pre>
+<p><code>sync</code> is the device-facing half. Its two readers serve only rows whose writing
+transaction has finished — see <a href="../reference/database-schema.html#grammar-change-feeds">the change feeds</a>
+for why a <code>BIGSERIAL</code> cursor alone loses changes — and <code>ChangePage::next_cursor</code>
+is the caller’s own cursor when the page is empty. <code>bank_items</code> serves active
+items only, and is the one path by which an answer reaches a device.</p>
 <p>Source: <code>wisecrow-core/src/grammar/</code>.</p>
 <h2 id="llm"><a class="header" href="#llm"><code>llm</code></a></h2>
 <pre><code class="language-rust ignore">#[async_trait]
@@ -522,6 +626,12 @@ to serde DTOs in <code>wisecrow-dto</code>. Notable helpers:</p>
 <li><code>grammar_rule_to_dto(&amp;GrammarRule, cefr_level_code) -&gt; GrammarRuleDto</code></li>
 <li><code>quizzes_to_dto(&amp;[ClozeQuiz], &amp;[MultipleChoiceQuiz]) -&gt; Vec&lt;QuizItemDto&gt;</code></li>
 <li><code>adaptation_to_dto(&amp;AdaptationState, &amp;[CompletedTrial], terminated) -&gt; DnbAdaptationDto</code></li>
+<li><code>grammar_item(&amp;PracticeItem) -&gt; GrammarItemDto</code> (the served shape, answers withheld)</li>
+<li><code>offline_grammar_item(&amp;BankItem) -&gt; OfflineGrammarItemDto</code> (the device shape, answers included)</li>
+<li><code>grammar_mastery_state(&amp;MasteryState) -&gt; GrammarMasteryStateDto</code></li>
+<li><code>brainmap_cell(&amp;MasteryRow) -&gt; BrainmapCellDto</code></li>
+<li><code>placement_state(&amp;PlacementState) -&gt; PlacementStateDto</code></li>
+<li><code>submission(&amp;SubmissionDto) -&gt; Submission</code></li>
 </ul>
 <p>Source: <code>wisecrow-core/src/dto_convert.rs</code>.</p>
 

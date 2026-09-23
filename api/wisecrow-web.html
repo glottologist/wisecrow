@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-be6e4ce0.js";
+            window.path_to_searchindex_js = "../searchindex-88760e4e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-d4c59dab.js"></script>
@@ -226,15 +226,27 @@ dx serve
 <h2 id="routes"><a class="header" href="#routes">Routes</a></h2>
 <pre><code class="language-rust ignore">#[derive(Clone, Routable, Debug, PartialEq)]
 pub enum Route {
+    #[route("/login")]
+    LoginPage {},
     #[layout(Layout)]
         #[route("/")]
         Home {},
-        #[route("/learn/:user_id/:native/:foreign")]
-        LearnPage { user_id: i32, native: String, foreign: String },
+        #[route("/learn/:native/:foreign")]
+        LearnPage { native: String, foreign: String },
         #[route("/nback/:native/:foreign")]
         NbackPage { native: String, foreign: String },
+        #[route("/fast/:native/:foreign")]
+        FastPage { native: String, foreign: String },
         #[route("/quiz")]
         QuizPage {},
+        #[route("/grammar/placement/:native/:foreign")]
+        PlacementPage { native: String, foreign: String },
+        #[route("/grammar/brainmap/:native/:foreign")]
+        BrainmapPage { native: String, foreign: String },
+        #[route("/grammar/:native/:foreign")]
+        GrammarPage { native: String, foreign: String },
+        #[route("/:..segments")]
+        NotFound { segments: Vec&lt;String&gt; },
 }</code></pre>
 <div class="table-wrapper">
 <table>
@@ -242,13 +254,21 @@ pub enum Route {
 <tr><th>Route</th><th>Purpose</th></tr>
 </thead>
 <tbody>
-<tr><td><code>/</code></td><td>Landing / language picker / user selector.</td></tr>
-<tr><td><code>/learn/:user_id/:native/:foreign</code></td><td>The flashcard session UI.</td></tr>
+<tr><td><code>/login</code></td><td>Sign-in, outside the layout so the chrome does not offer links a signed-out reader cannot follow.</td></tr>
+<tr><td><code>/</code></td><td>Landing / language picker.</td></tr>
+<tr><td><code>/learn/:native/:foreign</code></td><td>The flashcard session UI.</td></tr>
 <tr><td><code>/nback/:native/:foreign</code></td><td>The dual n-back trainer.</td></tr>
+<tr><td><code>/fast/:native/:foreign</code></td><td>The auto-advancing deck.</td></tr>
 <tr><td><code>/quiz</code></td><td>Stand-alone quiz (PDF upload or rule-based generation).</td></tr>
+<tr><td><code>/grammar/:native/:foreign</code></td><td>A grammar practice session, twelve items drawn by mastery.</td></tr>
+<tr><td><code>/grammar/placement/:native/:foreign</code></td><td>The placement test, one CEFR level at a time.</td></tr>
+<tr><td><code>/grammar/brainmap/:native/:foreign</code></td><td>The brainmap: every syllabus point, banded by what is known.</td></tr>
+<tr><td><code>/:..segments</code></td><td>Not found. Declared last, inside the layout, so a wrong URL keeps the site’s chrome.</td></tr>
 </tbody>
 </table>
 </div>
+<p>The four-segment grammar routes are declared before the three-segment one only
+for readability. They cannot collide: the router matches on segment count first.</p>
 <h2 id="server-functions"><a class="header" href="#server-functions">Server functions</a></h2>
 <p>The server module groups the database-touching server functions. All take
 <code>wisecrow-dto</code> types so the WASM bundle can call them without depending on
@@ -268,6 +288,44 @@ declarations.</p>
 </tbody>
 </table>
 </div>
+<h3 id="endpoints"><a class="header" href="#endpoints">Endpoints</a></h3>
+<p>Dioxus server functions take a single argument, so a request body is wrapped:
+<code>{"request": { .. }}</code>, not the payload flat.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Endpoint</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td><code>/api/auth/login</code>, <code>/api/auth/logout</code></td><td>Browser session cookies.</td></tr>
+<tr><td><code>/api/learn/*</code></td><td>Language list, session create/resume/pause/complete, card answer, fast deck.</td></tr>
+<tr><td><code>/api/nback/{start,trial,complete}</code></td><td>The dual n-back trainer.</td></tr>
+<tr><td><code>/api/quiz/{pdf,rule}</code></td><td>Ad-hoc quiz generation.</td></tr>
+<tr><td><code>/api/media/{audio,image}</code></td><td>Cached pronunciation and imagery.</td></tr>
+<tr><td><code>/api/grammar/session/{start,submit,complete}</code></td><td>A grammar practice session.</td></tr>
+<tr><td><code>/api/grammar/placement/{start,submit}</code></td><td>A placement run, level by level.</td></tr>
+<tr><td><code>/api/grammar/brainmap</code></td><td>Every syllabus point with its band.</td></tr>
+<tr><td><code>/api/mobile/{login,me,logout}</code></td><td>Device tokens.</td></tr>
+<tr><td><code>/api/mobile/capabilities</code>, <code>/api/mobile/v2/capabilities</code></td><td>Protocol negotiation.</td></tr>
+<tr><td><code>/api/mobile/devices/register</code></td><td>Device enrolment.</td></tr>
+<tr><td><code>/api/mobile/corpus/{snapshot,changes}</code>, <code>/api/mobile/cards/changes</code></td><td>Vocabulary feeds (protocol 1).</td></tr>
+<tr><td><code>/api/mobile/{reviews,nback}/upload</code></td><td>Review and n-back events (protocol 1).</td></tr>
+<tr><td><code>/api/mobile/v2/grammar/bank/changes</code></td><td>The item bank feed, answers included.</td></tr>
+<tr><td><code>/api/mobile/v2/grammar/mastery/changes</code></td><td>The mastery feed for the calling learner.</td></tr>
+<tr><td><code>/api/mobile/v2/grammar/attempts/upload</code></td><td>Offline answers, judged one at a time.</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>/api/grammar/*</code> serves items with the answers stripped: the server grades, so a
+browser cannot read the answer out of the payload it was tested with. The
+<code>/api/mobile/v2/*</code> bank feed is the exception and carries them, because a device
+out of contact has to grade for itself — see
+<a href="wisecrow-dto.html#grammar-sync-dtos-protocol-2">the DTO reference</a>.</p>
+<p>The attempts upload adopts the session identifier the device chose, so a session
+begun offline needs no round trip before its answers can be recorded. It
+resolves the language and level before opening its transaction: a query issued on
+the pool while a transaction is held takes a second connection, and under a small
+pool that is how a request comes to wait on itself.</p>
 <h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
 <p>The server crate reuses <code>wisecrow-core</code>’s configuration loader, so the same
 <code>WISECROW__*</code> variables apply. The pool is initialised once at start-up
