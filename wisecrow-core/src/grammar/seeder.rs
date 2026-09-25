@@ -2,14 +2,18 @@ use serde::Deserialize;
 use sqlx::PgPool;
 use tracing::info;
 
-use super::rules::{NewGrammarRule, NewRuleExample, RuleRepository, RuleSource};
+use super::rules::{NewGrammarRule, NewRuleExample, RulePlacement, RuleRepository, RuleSource};
 use crate::errors::WisecrowError;
 use crate::ingesting::persisting::DatabasePersister;
 use crate::llm::prompts::grammar_seed_prompt;
 use crate::llm::LlmProvider;
 
 const RULES_PER_LEVEL: u32 = 15;
-const MAX_LLM_TOKENS: u32 = 4096;
+/// Fifteen rules, each with prose and two examples, is a long answer. Measured
+/// on Scottish Gaelic against `claude-sonnet-5`: B2 came back at 4062 output
+/// tokens and C1 at 3821, so the former 4096 ceiling left tens of tokens of
+/// headroom and cut whichever level ran slightly longer. Double it.
+const MAX_LLM_TOKENS: u32 = 8192;
 
 /// LLM response shape for a single grammar rule.
 ///
@@ -61,6 +65,7 @@ pub async fn seed_grammar(
 
         let imported: Vec<LlmGrammarRule> = parse_llm_json(&response)?;
         let cefr_level_id = RuleRepository::ensure_cefr_level(pool, level_code).await?;
+        let mut held = 0usize;
 
         for rule_import in &imported {
             let new_rule = NewGrammarRule {
@@ -79,14 +84,23 @@ pub async fn seed_grammar(
                     .collect(),
             };
 
-            RuleRepository::upsert_rule(pool, language_id, cefr_level_id, &new_rule).await?;
-            total = total.saturating_add(1);
+            match RuleRepository::place_rule(pool, language_id, cefr_level_id, &new_rule).await? {
+                RulePlacement::Placed(_) => total = total.saturating_add(1),
+                RulePlacement::HeldAtAnotherLevel(_) => {
+                    held = held.saturating_add(1);
+                }
+            }
         }
 
-        info!(
-            "Persisted {} rules for {lang_name} {level_code}",
-            imported.len()
-        );
+        let placed = imported.len().saturating_sub(held);
+        if held > 0 {
+            info!(
+                "Persisted {placed} rules for {lang_name} {level_code}; \
+                 {held} were points the model had already placed at another level"
+            );
+        } else {
+            info!("Persisted {placed} rules for {lang_name} {level_code}");
+        }
     }
 
     Ok(total)

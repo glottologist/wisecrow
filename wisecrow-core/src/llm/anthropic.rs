@@ -69,6 +69,36 @@ struct Message<'a> {
 #[derive(Deserialize)]
 struct AnthropicResponse {
     content: Vec<ContentBlock>,
+    /// `max_tokens` here means the answer was cut mid-sentence. Every caller
+    /// asks for JSON, so a cut answer reaches the parser as a syntax error
+    /// that names a line and column in text nobody kept -- see
+    /// [`AnthropicResponse::into_text`].
+    #[serde(default)]
+    stop_reason: Option<String>,
+}
+
+impl AnthropicResponse {
+    /// Joins the text-bearing blocks, refusing an answer the model did not
+    /// finish.
+    fn into_text(self, max_tokens: u32) -> Result<String, WisecrowError> {
+        if self.stop_reason.as_deref() == Some("max_tokens") {
+            return Err(WisecrowError::LlmError(format!(
+                "Anthropic stopped at the max_tokens ceiling of {max_tokens}: the answer is \
+                 truncated, not malformed. Ask for less in one call or raise the budget."
+            )));
+        }
+        let text: String = self
+            .content
+            .into_iter()
+            .filter_map(|block| block.text)
+            .collect();
+        if text.is_empty() {
+            return Err(WisecrowError::LlmError(
+                "Empty response from Anthropic".to_owned(),
+            ));
+        }
+        Ok(text)
+    }
 }
 
 /// One block of the response's `content` array. Newer models prepend
@@ -119,20 +149,58 @@ impl LlmProvider for AnthropicProvider {
             WisecrowError::LlmError(format!("Failed to parse Anthropic response: {e:?}"))
         })?;
 
-        let text: String = parsed
-            .content
-            .into_iter()
-            .filter_map(|block| block.text)
-            .collect();
-        if text.is_empty() {
-            return Err(WisecrowError::LlmError(
-                "Empty response from Anthropic".to_owned(),
-            ));
-        }
-        Ok(text)
+        parsed.into_text(max_tokens)
     }
 
     fn name(&self) -> &str {
         "anthropic"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn response(json: &str) -> AnthropicResponse {
+        serde_json::from_str(json).expect("the fixture is a well-formed Anthropic response")
+    }
+
+    /// Seeding a CEFR level asked for fifteen rules inside a 4096-token budget
+    /// and the answer landed 34 tokens under it, so some levels were cut. The
+    /// cut arrived as `EOF while parsing a string at line 228 column 112`,
+    /// which reads like a model that cannot write JSON rather than a budget
+    /// that is too small.
+    #[test]
+    fn a_truncated_answer_names_the_ceiling_rather_than_the_json() {
+        let err = response(
+            r#"{"stop_reason":"max_tokens","content":[{"type":"text","text":"[{\"title\": \"Unfinis"}]}"#,
+        )
+        .into_text(4096)
+        .expect_err("an answer the model did not finish is not an answer");
+        assert!(
+            matches!(&err, WisecrowError::LlmError(m) if m.contains("4096") && m.contains("truncated")),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn a_finished_answer_is_its_text_blocks_joined() {
+        let text = response(
+            r#"{"stop_reason":"end_turn","content":[{"type":"thinking"},{"type":"text","text":"[1,"},{"type":"text","text":"2]"}]}"#,
+        )
+        .into_text(4096)
+        .expect("a finished answer is returned whole");
+        assert_eq!(text, "[1,2]");
+    }
+
+    #[test]
+    fn an_answer_with_no_text_is_refused() {
+        let err = response(r#"{"stop_reason":"end_turn","content":[]}"#)
+            .into_text(4096)
+            .expect_err("no text is nothing to parse");
+        assert!(
+            matches!(&err, WisecrowError::LlmError(m) if m.contains("Empty")),
+            "got {err:?}"
+        );
     }
 }

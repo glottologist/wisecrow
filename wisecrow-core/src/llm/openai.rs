@@ -53,6 +53,10 @@ struct OpenAiResponse {
 #[derive(Deserialize)]
 struct Choice {
     message: ResponseMessage,
+    /// `length` is OpenAI's spelling of "cut at the ceiling". Without it a
+    /// truncated answer reaches the caller's JSON parser as a syntax error.
+    #[serde(default)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -94,12 +98,18 @@ impl LlmProvider for OpenAiProvider {
             WisecrowError::LlmError(format!("Failed to parse OpenAI response: {e}"))
         })?;
 
-        parsed
+        let choice = parsed
             .choices
             .into_iter()
             .next()
-            .map(|choice| choice.message.content)
-            .ok_or_else(|| WisecrowError::LlmError("Empty response from OpenAI".to_owned()))
+            .ok_or_else(|| WisecrowError::LlmError("Empty response from OpenAI".to_owned()))?;
+        if choice.finish_reason.as_deref() == Some("length") {
+            return Err(WisecrowError::LlmError(format!(
+                "OpenAI stopped at the max_tokens ceiling of {max_tokens}: the answer is \
+                 truncated, not malformed. Ask for less in one call or raise the budget."
+            )));
+        }
+        Ok(choice.message.content)
     }
 
     fn name(&self) -> &str {

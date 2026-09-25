@@ -541,3 +541,97 @@ async fn export_round_trips_through_import() -> TestResult {
     assert_eq!(before, after, "re-importing an export changes nothing");
     Ok(())
 }
+
+/// A model asked for one CEFR level at a time repeats itself across them.
+/// Seeding Scottish Gaelic proposed "The Genitive Case with Verbal Nouns" at
+/// both B2 and C1; the upsert keyed on slug answered the second proposal by
+/// moving the point up, so B2 quietly ended the run holding fourteen points
+/// where fifteen had been asked for.
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn a_point_repeated_at_a_higher_level_stays_where_it_was_first_placed() -> TestResult {
+    use wisecrow::grammar::rules::{NewGrammarRule, RulePlacement, RuleRepository, RuleSource};
+
+    let pool = reset_pool().await?;
+    let language_id = seed_language(&pool, "gd", "Scottish Gaelic").await?;
+    let b2 = RuleRepository::ensure_cefr_level(&pool, "B2").await?;
+    let c1 = RuleRepository::ensure_cefr_level(&pool, "C1").await?;
+
+    let at_b2 = NewGrammarRule {
+        slug: "the-genitive-case-with-verbal-nouns".to_owned(),
+        title: "The Genitive Case with Verbal Nouns".to_owned(),
+        explanation: "As B2 explained it".to_owned(),
+        source: RuleSource::Llm,
+        examples: vec![],
+    };
+    let placed = RuleRepository::place_rule(&pool, language_id, b2, &at_b2).await?;
+    let RulePlacement::Placed(rule_id) = placed else {
+        panic!("a point new to the language is placed, got {placed:?}");
+    };
+
+    let at_c1 = NewGrammarRule {
+        explanation: "As C1 explained it".to_owned(),
+        ..at_b2
+    };
+    let repeat = RuleRepository::place_rule(&pool, language_id, c1, &at_c1).await?;
+    assert_eq!(
+        repeat,
+        RulePlacement::HeldAtAnotherLevel(rule_id),
+        "the repeat must name the point it found rather than move it"
+    );
+
+    let (level, explanation): (i32, String) =
+        sqlx::query_as("SELECT cefr_level_id, explanation FROM grammar_rules WHERE id = $1")
+            .bind(rule_id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(level, b2, "the point keeps the level that first claimed it");
+    assert_eq!(
+        explanation, "As B2 explained it",
+        "a held point keeps its prose: the later guess is no better than the earlier one"
+    );
+    Ok(())
+}
+
+/// Re-seeding the same level is how prose is refreshed, so the guard must not
+/// turn that into a no-op.
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn re_seeding_the_same_level_still_refreshes_the_point() -> TestResult {
+    use wisecrow::grammar::rules::{NewGrammarRule, RulePlacement, RuleRepository, RuleSource};
+
+    let pool = reset_pool().await?;
+    let language_id = seed_language(&pool, "cy", "Welsh").await?;
+    let a2 = RuleRepository::ensure_cefr_level(&pool, "A2").await?;
+
+    let first = NewGrammarRule {
+        slug: "soft-mutation-after-i".to_owned(),
+        title: "Soft mutation after i".to_owned(),
+        explanation: "First wording".to_owned(),
+        source: RuleSource::Llm,
+        examples: vec![],
+    };
+    let RulePlacement::Placed(rule_id) =
+        RuleRepository::place_rule(&pool, language_id, a2, &first).await?
+    else {
+        panic!("a point new to the language is placed");
+    };
+
+    let reworded = NewGrammarRule {
+        explanation: "Second wording".to_owned(),
+        ..first
+    };
+    assert_eq!(
+        RuleRepository::place_rule(&pool, language_id, a2, &reworded).await?,
+        RulePlacement::Placed(rule_id),
+        "the same point at the same level keeps its identity"
+    );
+
+    let explanation: String =
+        sqlx::query_scalar("SELECT explanation FROM grammar_rules WHERE id = $1")
+            .bind(rule_id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(explanation, "Second wording");
+    Ok(())
+}

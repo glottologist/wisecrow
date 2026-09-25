@@ -187,6 +187,16 @@ fn is_combining_mark(character: char) -> bool {
 /// Longest slug the `grammar_rules.slug` column accepts.
 const SLUG_MAX_CHARS: usize = 96;
 
+/// What became of a point a seeding run proposed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RulePlacement {
+    /// The point was new to this language, or already sat at this level and
+    /// was refreshed in place.
+    Placed(i32),
+    /// The point already belongs to another level and was left there.
+    HeldAtAnotherLevel(i32),
+}
+
 pub struct RuleRepository;
 
 impl RuleRepository {
@@ -238,6 +248,87 @@ impl RuleRepository {
         }
 
         Ok(row)
+    }
+
+    /// Stores a rule a model proposed for one CEFR level, without moving a
+    /// point that already sits at another.
+    ///
+    /// A model asked for one level at a time repeats itself across them: seeding
+    /// Scottish Gaelic produced "The Genitive Case with Verbal Nouns" at both B2
+    /// and C1, and "The Autonomous (Impersonal) Verb Form" likewise. Slug is
+    /// identity, so [`RuleRepository::upsert_rule`] answered the second proposal
+    /// by relocating the point to the later level -- the earlier level silently
+    /// lost a point and the operator saw only a level holding thirteen rules
+    /// where fifteen were asked for. A model's later guess is no better than its
+    /// earlier one, so the first placement stands and the repeat is reported.
+    ///
+    /// Callers that carry authority over placement -- a curated syllabus
+    /// document, a sync feed -- use [`RuleRepository::upsert_rule`] and do move
+    /// the point.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a database write fails.
+    pub async fn place_rule(
+        pool: &PgPool,
+        language_id: i32,
+        cefr_level_id: i32,
+        rule: &NewGrammarRule,
+    ) -> Result<RulePlacement, WisecrowError> {
+        // The level guard rides on the insert rather than a read before it, so
+        // that two seeding runs at once cannot both decide a point is new.
+        let placed = sqlx::query_scalar::<_, i32>(
+            "INSERT INTO grammar_rules (language_id, cefr_level_id, slug, title, explanation, source)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (language_id, slug)
+             DO UPDATE SET title = EXCLUDED.title,
+                           explanation = EXCLUDED.explanation,
+                           source = EXCLUDED.source,
+                           updated_at = CURRENT_TIMESTAMP
+             WHERE grammar_rules.cefr_level_id = EXCLUDED.cefr_level_id
+             RETURNING id",
+        )
+        .bind(language_id)
+        .bind(cefr_level_id)
+        .bind(&rule.slug)
+        .bind(&rule.title)
+        .bind(&rule.explanation)
+        .bind(rule.source.as_str())
+        .fetch_optional(pool)
+        .await?;
+
+        let Some(rule_id) = placed else {
+            // The conflicting row failed the level guard, so it belongs to
+            // another level and keeps its prose and examples untouched.
+            let held = sqlx::query_scalar::<_, i32>(
+                "SELECT id FROM grammar_rules WHERE language_id = $1 AND slug = $2",
+            )
+            .bind(language_id)
+            .bind(&rule.slug)
+            .fetch_one(pool)
+            .await?;
+            return Ok(RulePlacement::HeldAtAnotherLevel(held));
+        };
+
+        sqlx::query("DELETE FROM rule_examples WHERE rule_id = $1")
+            .bind(rule_id)
+            .execute(pool)
+            .await?;
+
+        for example in &rule.examples {
+            sqlx::query(
+                "INSERT INTO rule_examples (rule_id, sentence, translation, is_correct)
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(rule_id)
+            .bind(&example.sentence)
+            .bind(example.translation.as_deref())
+            .bind(example.is_correct)
+            .execute(pool)
+            .await?;
+        }
+
+        Ok(RulePlacement::Placed(rule_id))
     }
 
     /// Fetches all grammar rules for a language and CEFR level code.

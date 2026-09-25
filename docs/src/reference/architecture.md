@@ -136,6 +136,14 @@ from a curated inventory or generated to fill the gaps
 by slug, not by title, so prose can be improved without orphaning the attempts
 recorded against them.
 
+A generated syllabus is built one level at a time, and a model asked for six
+levels in turn repeats itself: seeding Scottish Gaelic proposed the genitive
+with verbal nouns at both B2 and C1. The first level to claim a point keeps it.
+A repeat is left where it stands and reported in the seeding summary, so a level
+that ends the run holding fewer points than were asked for says why. A curated
+inventory carries authority that a model does not, so importing one does move a
+point to the level the document names.
+
 **The bank.** Exercises are generated once and stored
 ([`generate-items`](cli-reference.md#generate-items)), then reviewed before
 they are served ([`promote-items`](cli-reference.md#promote-items)). Generation
