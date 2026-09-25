@@ -38,7 +38,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-80618ef8.js";
+            window.path_to_searchindex_js = "searchindex-3e801ce8.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d4c59dab.js"></script>
@@ -2545,6 +2545,7 @@ files live at <code>wisecrow-core/migrations/</code> and run in numeric order.</
 <tr><td><code>029_quiz_item_bank.sql</code></td><td><code>quiz_items</code>, <code>quiz_item_exposures</code> — the persisted exercise bank.</td></tr>
 <tr><td><code>030_grammar_mastery.sql</code></td><td><code>grammar_sessions</code>, <code>grammar_attempts</code>, <code>grammar_mastery</code>, <code>grammar_review_baselines</code>, <code>placement_attempts</code>.</td></tr>
 <tr><td><code>031_grammar_change_feeds.sql</code></td><td><code>grammar_changes</code>, <code>quiz_item_changes</code> — commit-order-safe feeds for devices.</td></tr>
+<tr><td><code>032_corpus_card_change_visibility.sql</code></td><td>Gives <code>corpus_changes</code> and <code>card_changes</code> the same <code>xact_id</code> guard.</td></tr>
 </tbody>
 </table>
 </div>
@@ -2809,10 +2810,16 @@ in flight. The cost is latency, never correctness: a change waits for its
 neighbours rather than arriving early and alone. An empty page therefore leaves
 the client’s cursor exactly where it was.</p>
 <p>Triggers on <code>grammar_mastery</code> and <code>quiz_items</code> populate the feeds.</p>
-<blockquote>
-<p>The older <code>corpus_changes</code> and <code>card_changes</code> feeds from migration 022 carry
-the same hazard and have not yet been repaired.</p>
-</blockquote>
+<p>The older <code>corpus_changes</code> and <code>card_changes</code> feeds from migration 022 were born
+without this guard and carried the hazard until migration 032 gave them the same
+<code>xact_id</code> column and the same predicate on every read, watermarks included. A
+watermark that ran ahead of what the pages can serve would invite a client past
+precisely the rows the column exists to protect, which is why it is not enough to
+filter the pages alone.</p>
+<p>One reader is deliberately left unfiltered. The per-card cursor carried by a
+card <em>snapshot</em> is a version stamp that the change feed later compares for
+equality, not a position a client advances from, and filtering it would fail a
+request whose neighbour merely happened to be in flight.</p>
 <h2 id="mobile-offline-store"><a class="header" href="#mobile-offline-store">Mobile offline store</a></h2>
 <p><code>wisecrow-mobile</code> keeps its own SQLite database, migrated from
 <code>wisecrow-mobile/migrations/</code>. Every table is keyed by <code>(profile_id, user_id)</code>
