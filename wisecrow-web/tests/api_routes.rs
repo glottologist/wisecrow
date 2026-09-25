@@ -228,3 +228,19 @@ async fn mobile_sync_route_requires_authentication(#[case] path: &str, #[case] b
         "{path}"
     );
 }
+
+/// Axum buffers a request body up to 2 MB by default, and dioxus-fullstack
+/// unwraps the error when that limit is passed, so the request panicked and the
+/// browser was answered a bare 500. Uploading a 15 MB grammar PDF to the quiz
+/// endpoint did exactly that. The body has to survive extraction and reach the
+/// handler, which is what answers 401 here.
+#[tokio::test]
+async fn a_pdf_upload_larger_than_the_axum_default_reaches_the_handler() {
+    let bytes: String = std::iter::repeat_n("37,", 1_000_000).collect();
+    let body = format!(r#"{{"pdf_bytes":[37,80,68,70,45,{bytes}0],"num_questions":1}}"#);
+    assert!(body.len() > 2 * 1024 * 1024, "{} bytes", body.len());
+    assert_eq!(
+        post_status("/api/quiz/pdf", &body).await,
+        StatusCode::UNAUTHORIZED
+    );
+}

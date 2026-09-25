@@ -21,6 +21,7 @@ files live at `wisecrow-core/migrations/` and run in numeric order.
 | `029_quiz_item_bank.sql` | `quiz_items`, `quiz_item_exposures` — the persisted exercise bank. |
 | `030_grammar_mastery.sql` | `grammar_sessions`, `grammar_attempts`, `grammar_mastery`, `grammar_review_baselines`, `placement_attempts`. |
 | `031_grammar_change_feeds.sql` | `grammar_changes`, `quiz_item_changes` — commit-order-safe feeds for devices. |
+| `032_corpus_card_change_visibility.sql` | Gives `corpus_changes` and `card_changes` the same `xact_id` guard. |
 
 Migrations 012–027 are omitted here; they add the media, phrase, word-candidate
 and mobile-sync tables described in their own sections.
@@ -333,8 +334,17 @@ the client's cursor exactly where it was.
 
 Triggers on `grammar_mastery` and `quiz_items` populate the feeds.
 
-> The older `corpus_changes` and `card_changes` feeds from migration 022 carry
-> the same hazard and have not yet been repaired.
+The older `corpus_changes` and `card_changes` feeds from migration 022 were born
+without this guard and carried the hazard until migration 032 gave them the same
+`xact_id` column and the same predicate on every read, watermarks included. A
+watermark that ran ahead of what the pages can serve would invite a client past
+precisely the rows the column exists to protect, which is why it is not enough to
+filter the pages alone.
+
+One reader is deliberately left unfiltered. The per-card cursor carried by a
+card *snapshot* is a version stamp that the change feed later compares for
+equality, not a position a client advances from, and filtering it would fail a
+request whose neighbour merely happened to be in flight.
 
 ## Mobile offline store
 

@@ -653,18 +653,25 @@ mod implementation {
         crate::server::client_error(StatusCode::BAD_REQUEST, message)
     }
 
+    /// Rows written by a transaction that every current snapshot can already
+    /// see. Migration 032 explains why a sequence number alone cannot be
+    /// trusted as a cursor; this is the predicate that makes it safe, and it
+    /// belongs on every read of these two feeds, watermarks included. A
+    /// watermark that ran ahead of what the pages can serve would invite a
+    /// client to skip precisely the rows the column exists to protect.
+    const VISIBLE: &str = "xact_id < pg_snapshot_xmin(pg_current_snapshot())::TEXT::BIGINT";
+
     async fn snapshot_watermark(
         db: &PgPool,
         requested: Option<i64>,
         after_translation_id: i32,
     ) -> Result<i64, ServerFnError> {
-        let current =
-            sqlx::query_scalar::<_, i64>("SELECT COALESCE(MAX(sequence), 0) FROM corpus_changes")
-                .fetch_one(db)
-                .await
-                .map_err(|error| {
-                    crate::server::internal_error("corpus snapshot watermark", &error)
-                })?;
+        let current = sqlx::query_scalar::<_, i64>(&format!(
+            "SELECT COALESCE(MAX(sequence), 0) FROM corpus_changes WHERE {VISIBLE}"
+        ))
+        .fetch_one(db)
+        .await
+        .map_err(|error| crate::server::internal_error("corpus snapshot watermark", &error))?;
         match requested {
             Some(value) if (0..=current).contains(&value) => Ok(value),
             Some(_) => Err(bad_request("Snapshot watermark is invalid")),
@@ -716,11 +723,11 @@ mod implementation {
         db: &PgPool,
         pair: &LanguagePairDto,
     ) -> Result<i64, ServerFnError> {
-        sqlx::query_scalar::<_, i64>(
+        sqlx::query_scalar::<_, i64>(&format!(
             "SELECT COALESCE(MAX(sequence), 0)
              FROM corpus_changes
-             WHERE from_language_code = $1 AND to_language_code = $2",
-        )
+             WHERE from_language_code = $1 AND to_language_code = $2 AND {VISIBLE}"
+        ))
         .bind(&pair.native_lang)
         .bind(&pair.foreign_lang)
         .fetch_one(db)
@@ -733,15 +740,15 @@ mod implementation {
         request: &CorpusChangeRequestDto,
         watermark: i64,
     ) -> Result<Vec<CorpusChangeRow>, ServerFnError> {
-        sqlx::query_as::<_, CorpusChangeRow>(
+        sqlx::query_as::<_, CorpusChangeRow>(&format!(
             "SELECT sequence, translation_id, from_phrase, to_phrase, frequency,
                     is_phrase, operation::text, changed_at
              FROM corpus_changes
              WHERE from_language_code = $1 AND to_language_code = $2
-               AND sequence > $3 AND sequence <= $4
+               AND sequence > $3 AND sequence <= $4 AND {VISIBLE}
              ORDER BY sequence
-             LIMIT $5",
-        )
+             LIMIT $5"
+        ))
         .bind(&request.pair.native_lang)
         .bind(&request.pair.foreign_lang)
         .bind(request.cursor)
@@ -777,9 +784,10 @@ mod implementation {
     }
 
     async fn card_change_watermark(db: &PgPool, user_id: i32) -> Result<i64, ServerFnError> {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT COALESCE(MAX(sequence), 0) FROM card_changes WHERE user_id = $1",
-        )
+        sqlx::query_scalar::<_, i64>(&format!(
+            "SELECT COALESCE(MAX(sequence), 0) FROM card_changes
+             WHERE user_id = $1 AND {VISIBLE}"
+        ))
         .bind(user_id)
         .fetch_one(db)
         .await
@@ -792,11 +800,11 @@ mod implementation {
         request: &CardChangeRequestDto,
         watermark: i64,
     ) -> Result<Vec<CardChangeRow>, ServerFnError> {
-        sqlx::query_as::<_, CardChangeRow>(
+        sqlx::query_as::<_, CardChangeRow>(&format!(
             "WITH latest AS (
                  SELECT DISTINCT ON (translation_id) translation_id, sequence
                  FROM card_changes
-                 WHERE user_id = $1 AND sequence > $2 AND sequence <= $3
+                 WHERE user_id = $1 AND sequence > $2 AND sequence <= $3 AND {VISIBLE}
                  ORDER BY translation_id, sequence DESC
              )
              SELECT latest.sequence, latest.translation_id, card.stability, card.difficulty,
@@ -806,8 +814,8 @@ mod implementation {
              LEFT JOIN cards AS card
                ON card.user_id = $1 AND card.translation_id = latest.translation_id
              ORDER BY latest.sequence
-             LIMIT $4",
-        )
+             LIMIT $4"
+        ))
         .bind(user_id)
         .bind(request.cursor)
         .bind(watermark)

@@ -10,7 +10,8 @@ use wisecrow_web::server::{init_pool, pool};
 async fn sync_get_routes_authenticate() {
     std::env::set_var(
         "WISECROW__DB_URL",
-        "postgres://wisecrow:wisecrow@localhost:5433/wisecrow_test",
+        std::env::var("TEST_DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://wisecrow:wisecrow@localhost:5433/wisecrow_test".into()),
     );
     std::env::set_var("WISECROW__SYNC_API_KEY", "legacy-fallback-key");
     init_pool().await.expect("init pool");

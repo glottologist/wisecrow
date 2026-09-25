@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use wisecrow_dto::{MultipleChoiceQuizDto, QuizItemDto};
 use wisecrow_learning::grading::{grade, GradableItem, Submission};
 
-use crate::api::quiz::generate_quiz;
+use crate::api::quiz::{generate_quiz, MAX_PDF_BYTES};
 
 /// Which bank item a submission is made against.
 ///
@@ -119,6 +119,13 @@ pub fn QuizPage() -> Element {
                                         loading.set(true);
                                         error_msg.set(None);
                                         match file.read_bytes().await {
+                                            Ok(bytes) if bytes.len() > MAX_PDF_BYTES => {
+                                                error_msg.set(Some(format!(
+                                                    "PDF is {} MB; the limit is {} MB.",
+                                                    bytes.len() / (1024 * 1024),
+                                                    MAX_PDF_BYTES / (1024 * 1024),
+                                                )));
+                                            }
                                             Ok(bytes) => {
                                                 match generate_quiz(bytes.into(), 20).await {
                                                     Ok(quiz_items) => {

@@ -82,6 +82,15 @@ pub async fn init_pool() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Ceiling on a buffered request body.
+///
+/// Axum defaults to 2 MB, which the quiz endpoint's PDF upload passes without
+/// trying. dioxus-fullstack unwraps the resulting `LengthLimitError`, so the
+/// request panicked and the browser saw a bare 500 with nothing to read. The
+/// limit sits above [`crate::api::quiz::MAX_PDF_BYTES`] so that an oversize
+/// upload is refused by the handler, which can say why.
+const MAX_REQUEST_BYTES: usize = 96 * 1024 * 1024;
+
 /// Builds the fullstack axum router with the auth-enrichment middleware layered
 /// on. Used instead of the default `launch` so the middleware applies to every
 /// request; from P4 the TLS bootstrap binds this same router.
@@ -89,4 +98,5 @@ pub fn build_router() -> axum::Router {
     dioxus::server::router(crate::app)
         .merge(sync::sync_routes())
         .layer(axum::middleware::from_fn(auth::auth_enrich_layer))
+        .layer(axum::extract::DefaultBodyLimit::max(MAX_REQUEST_BYTES))
 }

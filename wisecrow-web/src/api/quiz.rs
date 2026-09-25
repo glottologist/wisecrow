@@ -1,6 +1,19 @@
 use dioxus::prelude::*;
 use wisecrow_dto::QuizItemDto;
 
+/// Largest PDF the quiz endpoint accepts.
+///
+/// The axum body limit in `build_router` is set above this on purpose. A body
+/// that exceeds the framework's limit is unwrapped by dioxus-fullstack, which
+/// panics the request and answers a bare 500 the browser cannot explain --
+/// uploading a 15 MB grammar produced exactly that. Refusing the file here, and
+/// in the upload form before it is sent, keeps the reason visible.
+///
+/// Gated like `components`, which holds the upload form: a build with neither
+/// half has no caller.
+#[cfg(any(feature = "server", feature = "web"))]
+pub(crate) const MAX_PDF_BYTES: usize = 80 * 1024 * 1024;
+
 /// Generates quiz items from an uploaded PDF.
 ///
 /// # Errors
@@ -34,9 +47,8 @@ mod implementation {
     use wisecrow::grammar::quiz::{ClozeQuiz, MultipleChoiceQuiz};
     use wisecrow_dto::{QuizItemDto, RuleContextDto};
 
-    use super::ServerFnError;
+    use super::{ServerFnError, MAX_PDF_BYTES};
 
-    const MAX_PDF_BYTES: usize = 10 * 1024 * 1024;
     const MAX_QUESTIONS: u32 = 100;
     const PDF_HEADER: &[u8] = b"%PDF-";
 
@@ -71,7 +83,10 @@ mod implementation {
         if pdf_bytes.len() > MAX_PDF_BYTES {
             return Err(crate::server::client_error(
                 StatusCode::PAYLOAD_TOO_LARGE,
-                "PDF exceeds maximum size of 10 MB",
+                &format!(
+                    "PDF exceeds maximum size of {} MB",
+                    MAX_PDF_BYTES / (1024 * 1024)
+                ),
             ));
         }
         if !header_present {
