@@ -11,7 +11,7 @@ use sqlx::PgPool;
 use tracing::{info, warn};
 
 use super::rules::RuleRepository;
-use super::seeder::seed_grammar;
+use super::seeder::{seed_grammar, RULES_PER_LEVEL};
 use crate::cli::SUPPORTED_LANGUAGE_INFO;
 use crate::errors::WisecrowError;
 use crate::ingesting::persisting::DatabasePersister;
@@ -36,10 +36,13 @@ impl EnsureSummary {
     }
 }
 
-/// Fills any CEFR level holding no points for this language.
+/// Fills any CEFR level holding fewer than [`RULES_PER_LEVEL`] points for this
+/// language.
 ///
 /// Existing points are left exactly as they stand, prose included, so the
-/// command is safe to run on a schedule and safe to run twice.
+/// command is safe to run on a schedule and safe to run twice. A level that is
+/// merely short is topped up: reading "has a point" as "is finished" is what
+/// stranded levels below their target with no command able to reach them.
 ///
 /// # Errors
 ///
@@ -56,7 +59,7 @@ pub async fn ensure_syllabus(
 
     let mut summary = EnsureSummary::default();
     for level in ALL_LEVELS {
-        if level_is_populated(pool, language_id, level).await? {
+        if level_is_full(pool, language_id, level).await? {
             summary.levels_skipped = summary.levels_skipped.saturating_add(1);
             continue;
         }
@@ -72,7 +75,7 @@ pub async fn ensure_syllabus(
     }
 
     info!(
-        "Syllabus for {lang_code}: {} levels filled, {} already populated, {} points added",
+        "Syllabus for {lang_code}: {} levels filled, {} already full, {} points added",
         summary.levels_filled, summary.levels_skipped, summary.points_added
     );
     Ok(summary)
@@ -104,7 +107,7 @@ pub async fn ensure_all_syllabuses(
     Ok(summary)
 }
 
-async fn level_is_populated(
+async fn level_is_full(
     pool: &PgPool,
     language_id: i32,
     level_code: &str,
@@ -119,7 +122,7 @@ async fn level_is_populated(
     .bind(level_code)
     .fetch_one(pool)
     .await?;
-    Ok(count > 0)
+    Ok(count >= i64::from(RULES_PER_LEVEL))
 }
 
 fn language_name(lang_code: &str) -> Result<&'static str, WisecrowError> {

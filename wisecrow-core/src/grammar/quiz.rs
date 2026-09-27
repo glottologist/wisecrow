@@ -1,5 +1,5 @@
 use crate::errors::WisecrowError;
-use crate::grammar::pdf::{ExampleSentence, GrammarContent, GrammarSection};
+use crate::grammar::pdf::{ExampleSentence, GrammarContent, GrammarPassage};
 
 #[derive(Debug, Clone)]
 pub struct ClozeQuiz {
@@ -29,20 +29,23 @@ impl QuizGenerator {
         examples.iter().filter_map(Self::make_cloze).collect()
     }
 
-    /// Generates multiple-choice quizzes from grammar rules using example
-    /// sentences as distractors.
+    /// Generates multiple-choice quizzes from the opening sentence of each
+    /// passage, using the other passages' openings as distractors.
     ///
     /// # Errors
     ///
     /// Returns an error if there are insufficient rules to generate quizzes.
     pub fn multiple_choice_from_rules(
-        sections: &[GrammarSection],
+        passages: &[GrammarPassage],
     ) -> Result<Vec<MultipleChoiceQuiz>, WisecrowError> {
         const QUESTION_TEXT: &str = "Which of the following is a correct grammar rule?";
 
-        let all_rules: Vec<&str> = sections
+        // One option per passage, taken from its opening sentence: a passage's
+        // whole prose is too long to read as an option, and its first sentence is
+        // where a grammar book states the rule the rest of the passage qualifies.
+        let all_rules: Vec<&str> = passages
             .iter()
-            .flat_map(|s| s.rules.iter().map(String::as_str))
+            .map(|passage| first_sentence(&passage.text))
             .collect();
 
         if all_rules.len() < 2 {
@@ -111,6 +114,13 @@ impl QuizGenerator {
     }
 }
 
+/// The passage's first sentence, or the whole passage when it holds no full stop.
+fn first_sentence(text: &str) -> &str {
+    text.split_once(". ")
+        .map_or(text, |(sentence, _)| sentence)
+        .trim()
+}
+
 /// Assembles the quizzes for a parsed grammar document: cloze deletions from the
 /// example sentences and deterministically shuffled multiple-choice questions
 /// from the rules. Each surface (the web DTO list, the TUI item list) applies its
@@ -121,12 +131,12 @@ pub fn assemble_from_content(
 ) -> (Vec<ClozeQuiz>, Vec<MultipleChoiceQuiz>) {
     let cloze = QuizGenerator::cloze_from_examples(
         &content
-            .sections
+            .passages
             .iter()
-            .flat_map(|s| s.examples.iter().cloned())
+            .flat_map(|passage| passage.examples.iter().cloned())
             .collect::<Vec<_>>(),
     );
-    let shuffled_mc = QuizGenerator::multiple_choice_from_rules(&content.sections)
+    let shuffled_mc = QuizGenerator::multiple_choice_from_rules(&content.passages)
         .unwrap_or_default()
         .iter()
         .enumerate()
@@ -208,29 +218,34 @@ mod tests {
 
     #[test]
     fn multiple_choice_needs_minimum_rules() {
-        let sections = vec![GrammarSection {
-            title: None,
-            rules: vec!["Only one rule".to_owned()],
+        let passages = vec![GrammarPassage {
+            heading: None,
+            text: "Only one rule".to_owned(),
+            page: 1,
             examples: vec![],
         }];
 
-        let result = QuizGenerator::multiple_choice_from_rules(&sections);
+        let result = QuizGenerator::multiple_choice_from_rules(&passages);
         assert!(result.is_err());
     }
 
     #[test]
     fn multiple_choice_generates_from_rules() {
-        let sections = vec![GrammarSection {
-            title: Some("Verbs".to_owned()),
-            rules: vec![
-                "Regular verbs end in -ar".to_owned(),
-                "Irregular verbs must be memorized".to_owned(),
-                "Reflexive verbs use se".to_owned(),
-            ],
+        let passages = [
+            "Regular verbs end in -ar",
+            "Irregular verbs must be memorized",
+            "Reflexive verbs use se",
+        ]
+        .into_iter()
+        .map(|rule| GrammarPassage {
+            heading: Some("Verbs".to_owned()),
+            text: format!("{rule}. The rest of the passage qualifies it."),
+            page: 1,
             examples: vec![],
-        }];
+        })
+        .collect::<Vec<_>>();
 
-        let quizzes = QuizGenerator::multiple_choice_from_rules(&sections).unwrap();
+        let quizzes = QuizGenerator::multiple_choice_from_rules(&passages).unwrap();
         assert_eq!(quizzes.len(), 3);
         for quiz in &quizzes {
             assert!(!quiz.options.is_empty());

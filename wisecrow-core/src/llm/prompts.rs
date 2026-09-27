@@ -1,6 +1,31 @@
 /// Builds a prompt for generating grammar rules for a given language and CEFR level.
+///
+/// `already_covered` names the titles the level already holds, so that a request
+/// topping up a short level spends its tokens on points that are missing rather
+/// than on restating the ones that are there. An empty slice asks for the level
+/// outright.
 #[must_use]
-pub fn grammar_seed_prompt(language_name: &str, cefr_level: &str, count: u32) -> String {
+pub fn grammar_seed_prompt(
+    language_name: &str,
+    cefr_level: &str,
+    count: u32,
+    already_covered: &[String],
+) -> String {
+    let avoid = if already_covered.is_empty() {
+        String::new()
+    } else {
+        let listed = already_covered
+            .iter()
+            .map(|title| format!("- {title}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "\n\nThis level already covers the points below. Do not return any of \
+             them, and do not return a rephrasing of one; return {count} points \
+             that are absent from this list.\n{listed}"
+        )
+    };
+
     format!(
         r#"Generate exactly {count} grammar rules for {language_name} at CEFR level {cefr_level}.
 
@@ -27,7 +52,91 @@ Requirements:
 - Rules should be specific and actionable, not vague
 - Examples should be realistic sentences a learner would encounter
 - Explanations should reference the specific grammatical structure
-- Return ONLY the JSON array, no surrounding text"#
+- Return ONLY the JSON array, no surrounding text{avoid}"#
+    )
+}
+
+/// One passage of a grammar document, as [`pdf_rules_prompt`] presents it.
+///
+/// The page is quoted to the model and asked for back, so a point it proposes
+/// can be traced to the page that prompted it rather than to the document as a
+/// whole.
+#[derive(Debug, Clone, Copy)]
+pub struct PassageExcerpt<'a> {
+    pub page: usize,
+    pub heading: Option<&'a str>,
+    pub text: &'a str,
+}
+
+/// Builds a prompt asking for grammar points drawn from a document's passages.
+///
+/// The same JSON contract as [`grammar_seed_prompt`], with one field added: the
+/// page the point was read from. Asking for the page rather than assigning it
+/// afterwards is what lets the answer be checked -- a page the prompt never
+/// carried is a point the model invented rather than read.
+#[must_use]
+pub fn pdf_rules_prompt(
+    language_name: &str,
+    cefr_level: &str,
+    count: u32,
+    already_covered: &[String],
+    passages: &[PassageExcerpt<'_>],
+) -> String {
+    let quoted = passages
+        .iter()
+        .map(|passage| {
+            let heading = passage.heading.unwrap_or("(no heading)");
+            format!("[page {}] {heading}\n{}", passage.page, passage.text)
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    let avoid = if already_covered.is_empty() {
+        String::new()
+    } else {
+        let listed = already_covered
+            .iter()
+            .map(|title| format!("- {title}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "\n\nThis level already covers the points below. Do not return any of \
+             them, and do not return a rephrasing of one.\n{listed}"
+        )
+    };
+
+    format!(
+        r#"Below are passages from a {language_name} grammar document, each marked with the page it came from.
+
+{quoted}
+
+From these passages, state at most {count} grammar points a learner at CEFR level {cefr_level} needs. A passage that holds nothing at this level is passed over: returning fewer points is correct, and inventing one is not.
+
+Return a JSON array where each element has this structure:
+{{
+  "title": "Short rule title (e.g. 'Present Simple Conjugation')",
+  "explanation": "Clear explanation of the rule (2-4 sentences)",
+  "page": 148,
+  "examples": [
+    {{
+      "sentence": "An example sentence demonstrating the rule",
+      "translation": "English translation of the sentence",
+      "is_correct": true
+    }},
+    {{
+      "sentence": "An incorrect example showing a common mistake",
+      "translation": "English translation",
+      "is_correct": false
+    }}
+  ]
+}}
+
+Requirements:
+- "page" must be one of the page numbers given above, the page the point was read from
+- Each rule must have at least 2 examples (1 correct, 1 incorrect)
+- Explanations must be your own prose, not a quotation of the passage
+- Examples should be realistic sentences a learner would encounter
+- Return ONLY the JSON array, no surrounding text{avoid}"#
     )
 }
 
@@ -197,6 +306,31 @@ Return a JSON object with this exact shape:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_seed_prompt_for_an_untouched_level_names_no_exclusions() {
+        let p = grammar_seed_prompt("Italian", "B1", 15, &[]);
+        assert!(p.contains("exactly 15 grammar rules"));
+        assert!(p.contains("Italian") && p.contains("B1"));
+        assert!(
+            !p.contains("already covers"),
+            "an empty exclusion list must leave the clause out entirely"
+        );
+    }
+
+    #[test]
+    fn a_seed_prompt_topping_up_a_level_asks_only_for_what_is_missing() {
+        let covered = vec!["Passato prossimo".to_owned(), "Partitive ne".to_owned()];
+        let p = grammar_seed_prompt("Italian", "B1", 9, &covered);
+        assert!(p.contains("exactly 9 grammar rules"));
+        assert!(p.contains("already covers"));
+        assert!(p.contains("- Passato prossimo"));
+        assert!(p.contains("- Partitive ne"));
+        assert!(
+            p.contains("return 9 points"),
+            "the count is repeated in the exclusion clause, where it is the operative number"
+        );
+    }
 
     #[test]
     fn gloss_prompt_contains_language_and_sentence() {

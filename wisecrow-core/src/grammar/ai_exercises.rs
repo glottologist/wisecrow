@@ -78,10 +78,17 @@ pub async fn generate_exercises(
     Ok((cloze_quizzes, mc_quizzes))
 }
 
-/// Generates items for every rule at a level and stores them as candidates.
+/// Generates items for every rule at a level that has none, and stores them as
+/// candidates.
 ///
 /// This is the accumulating counterpart to [`generate_exercises`], which
 /// answers one request and forgets what it produced.
+///
+/// A rule already holding a candidate or active item is skipped. Topping up a
+/// syllabus adds a few points to a level whose other points already carry
+/// items; regenerating those would pay the model again for material the content
+/// hash cannot recognise as a repeat, and lengthen a review queue that is
+/// already the bottleneck. Running the command twice is therefore free.
 ///
 /// # Errors
 ///
@@ -104,8 +111,13 @@ pub async fn generate_and_store(
         )));
     }
 
+    let rule_ids: Vec<i32> = rules.iter().map(|rule| rule.id).collect();
+    let covered =
+        crate::grammar::items::ItemRepository::rules_holding_items(pool, &rule_ids).await?;
+    let skipped = covered.len();
+
     let mut total = crate::grammar::items::InsertSummary::default();
-    for rule in &rules {
+    for rule in rules.iter().filter(|rule| !covered.contains(&rule.id)) {
         let prompt = exercise_generation_prompt(std::slice::from_ref(rule), per_rule);
         let response = provider.generate(&prompt, 4096).await?;
         let drafts = parse_exercise_response(&response)?
@@ -122,7 +134,8 @@ pub async fn generate_and_store(
     }
 
     info!(
-        "Stored {} candidate items for {lang_code} {cefr_level_code} ({} duplicates, {} gated)",
+        "Stored {} candidate items for {lang_code} {cefr_level_code} ({} duplicates, {} gated); \
+         {skipped} rules already held items and were not asked about",
         total.inserted, total.duplicates, total.gated
     );
     Ok(total)

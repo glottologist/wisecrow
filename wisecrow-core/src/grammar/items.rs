@@ -487,6 +487,28 @@ impl ItemRepository {
         Ok(items)
     }
 
+    /// Which of `rule_ids` already hold an item awaiting review or being served.
+    ///
+    /// Rejected and retired items do not count: a rule whose every item was
+    /// refused has nothing a learner can be shown, so it is owed a fresh batch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the query fails.
+    pub async fn rules_holding_items(
+        pool: &PgPool,
+        rule_ids: &[i32],
+    ) -> Result<std::collections::HashSet<i32>, WisecrowError> {
+        let held = sqlx::query_scalar::<_, i32>(
+            "SELECT DISTINCT rule_id FROM quiz_items
+             WHERE rule_id = ANY($1) AND status IN ('candidate', 'active')",
+        )
+        .bind(rule_ids)
+        .fetch_all(pool)
+        .await?;
+        Ok(held.into_iter().collect())
+    }
+
     /// Candidates awaiting a reviewer, newest rules first within a language.
     ///
     /// # Errors

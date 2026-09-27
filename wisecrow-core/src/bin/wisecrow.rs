@@ -455,7 +455,7 @@ async fn handle_ensure_syllabus(args: EnsureSyllabusArgs) -> Result<(), Error> {
     };
 
     info!(
-        "Syllabus check complete: {} levels filled, {} already populated, {} points added",
+        "Syllabus check complete: {} levels filled, {} already full, {} points added",
         summary.levels_filled, summary.levels_skipped, summary.points_added
     );
     Ok(())

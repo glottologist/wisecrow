@@ -275,6 +275,7 @@ struct CountingProvider {
     rules_per_call: usize,
     calls: std::sync::atomic::AtomicUsize,
     explanation: String,
+    prompts: std::sync::Mutex<Vec<String>>,
 }
 
 impl CountingProvider {
@@ -283,6 +284,7 @@ impl CountingProvider {
             rules_per_call,
             calls: std::sync::atomic::AtomicUsize::new(0),
             explanation: "GENERATED".to_owned(),
+            prompts: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -291,11 +293,24 @@ impl CountingProvider {
             rules_per_call: 1,
             calls: std::sync::atomic::AtomicUsize::new(0),
             explanation: explanation.to_owned(),
+            prompts: std::sync::Mutex::new(Vec::new()),
         }
     }
 
     fn calls(&self) -> usize {
         self.calls.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Every prompt sent for one level, so that a test can read both how often
+    /// the level was asked about and what the model was told already covers it.
+    fn prompts_for(&self, level: &str) -> Vec<String> {
+        self.prompts
+            .lock()
+            .expect("prompts")
+            .iter()
+            .filter(|prompt| prompt.contains(&format!("CEFR level {level}")))
+            .cloned()
+            .collect()
     }
 }
 
@@ -307,6 +322,10 @@ impl wisecrow::llm::LlmProvider for CountingProvider {
         _max_tokens: u32,
     ) -> Result<String, wisecrow::errors::WisecrowError> {
         self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.prompts
+            .lock()
+            .expect("prompts")
+            .push(prompt.to_owned());
         // The prompt names the level; vary titles by it so slugs stay distinct.
         let level = ["A1", "A2", "B1", "B2", "C1", "C2"]
             .into_iter()
@@ -334,17 +353,19 @@ async fn ensure_syllabus_fills_gaps_and_is_idempotent() -> TestResult {
     use wisecrow::grammar::syllabus;
 
     let pool = reset_pool().await?;
-    let provider = CountingProvider::with_rules(3);
+    // Fifteen per call is what a level's target is, so one pass fills every
+    // level and the second run has nothing left to ask for.
+    let provider = CountingProvider::with_rules(15);
 
     let first = syllabus::ensure_syllabus(&pool, &provider, "pl").await?;
     assert_eq!(first.levels_filled, 6);
-    assert_eq!(first.points_added, 18, "three points across six levels");
+    assert_eq!(first.points_added, 90, "fifteen points across six levels");
     assert_eq!(provider.calls(), 6, "one call per empty level");
 
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM grammar_rules")
         .fetch_one(&pool)
         .await?;
-    assert_eq!(total, 18);
+    assert_eq!(total, 90);
 
     let second = syllabus::ensure_syllabus(&pool, &provider, "pl").await?;
     assert_eq!(second.points_added, 0, "second run adds nothing");
@@ -381,11 +402,89 @@ async fn ensure_syllabus_leaves_existing_prose_untouched() -> TestResult {
         sqlx::query_scalar("SELECT explanation FROM grammar_rules WHERE slug = 'hand-written'")
             .fetch_one(&pool)
             .await?;
-    assert_eq!(explanation, "ORIGINAL", "a filled level is left alone");
+    assert_eq!(
+        explanation, "ORIGINAL",
+        "topping a level up must not reword the points already in it"
+    );
     assert_eq!(
         provider.calls(),
-        5,
-        "A1 already had a point, so five gaps remain"
+        6,
+        "A1 holds one point of fifteen, so it is short and asked again like the rest"
+    );
+    Ok(())
+}
+
+/// A level short of its target was read as populated and skipped for good.
+/// Seeding Italian left B1 holding six points of fifteen, and no `ensure` run
+/// could reach it again: the nine missing points were stranded for as long as
+/// the row count was tested against zero rather than against the target.
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn a_level_short_of_its_target_is_topped_up_and_not_reasked_once_full() -> TestResult {
+    use wisecrow::grammar::syllabus;
+
+    let pool = reset_pool().await?;
+    let language_id = seed_language(&pool, "it", "Italian").await?;
+    let b1 = level_id(&pool, "B1").await?;
+    for index in 0..6 {
+        sqlx::query(
+            "INSERT INTO grammar_rules (language_id, cefr_level_id, slug, title, explanation, source)
+             VALUES ($1, $2, $3, $4, 'ORIGINAL', 'llm')",
+        )
+        .bind(language_id)
+        .bind(b1)
+        .bind(format!("existing-{index}"))
+        .bind(format!("Existing {index}"))
+        .execute(&pool)
+        .await?;
+    }
+
+    let provider = CountingProvider::with_rules(9);
+    syllabus::ensure_syllabus(&pool, &provider, "it").await?;
+
+    let at_b1: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM grammar_rules WHERE language_id = $1 AND cefr_level_id = $2",
+    )
+    .bind(language_id)
+    .bind(b1)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        at_b1, 15,
+        "the nine missing points were asked for and stored"
+    );
+
+    let asked = provider.prompts_for("B1");
+    assert_eq!(asked.len(), 1, "one request per level per run");
+    assert!(
+        asked[0].contains("exactly 9 grammar rules"),
+        "the request is for the shortfall, not the whole level"
+    );
+    for index in 0..6 {
+        assert!(
+            asked[0].contains(&format!("- Existing {index}")),
+            "the model is told what the level already covers, so it proposes something else"
+        );
+    }
+    assert!(
+        provider.prompts_for("A1")[0].contains("exactly 15 grammar rules"),
+        "an untouched level is still asked for whole"
+    );
+
+    let untouched: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM grammar_rules
+         WHERE language_id = $1 AND slug LIKE 'existing-%' AND explanation = 'ORIGINAL'",
+    )
+    .bind(language_id)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(untouched, 6, "the points already there keep their prose");
+
+    syllabus::ensure_syllabus(&pool, &provider, "it").await?;
+    assert_eq!(
+        provider.prompts_for("B1").len(),
+        1,
+        "a level that has reached its target is not asked about again"
     );
     Ok(())
 }

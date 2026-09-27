@@ -109,3 +109,7 @@ agents/
 # Gradle build artefacts (Android platform module)
 wisecrow-mobile/android/platform/.gradle/
 wisecrow-mobile/android/platform/build/
+
+# Source grammar PDFs (large third-party scans, not project source)
+grammar/*
+!grammar/SOURCES.md

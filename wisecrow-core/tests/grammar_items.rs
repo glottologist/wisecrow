@@ -321,3 +321,87 @@ async fn retiring_an_item_keeps_the_row_for_later_grading() -> TestResult {
     );
     Ok(())
 }
+
+/// Answers every generation request with one cloze item whose wording is
+/// unique to the call, so that nothing it returns is mistaken for a duplicate.
+struct OneItemProvider {
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl wisecrow::llm::LlmProvider for OneItemProvider {
+    async fn generate(
+        &self,
+        _prompt: &str,
+        _max_tokens: u32,
+    ) -> Result<String, wisecrow::errors::WisecrowError> {
+        let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(format!(
+            r#"[{{"exercise_type": "cloze", "sentence_with_blank": "Yo ___ cansado {call}.", "answer": "estoy"}}]"#
+        ))
+    }
+
+    fn name(&self) -> &str {
+        "one-item"
+    }
+}
+
+/// Topping up a syllabus adds points to levels whose other points already carry
+/// items. Generating for the whole level again would pay the model for material
+/// the content hash cannot recognise as a repeat, since the model words it
+/// differently each time.
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn generation_skips_rules_that_already_hold_candidate_or_active_items() -> TestResult {
+    use wisecrow::grammar::ai_exercises::generate_and_store;
+
+    let pool = reset_pool().await?;
+    let pending = seed_rule(&pool, "has-a-candidate").await?;
+    let served = seed_rule(&pool, "has-an-active-item").await?;
+    let refused = seed_rule(&pool, "has-only-rejected-items").await?;
+    let fresh = seed_rule(&pool, "has-no-items").await?;
+
+    insert_item(&pool, pending, HASH_A).await?;
+    let active = insert_item(&pool, served, HASH_A).await?;
+    sqlx::query("UPDATE quiz_items SET status = 'active' WHERE id = $1")
+        .bind(active)
+        .execute(&pool)
+        .await?;
+    let rejected = insert_item(&pool, refused, HASH_B).await?;
+    sqlx::query("UPDATE quiz_items SET status = 'rejected' WHERE id = $1")
+        .bind(rejected)
+        .execute(&pool)
+        .await?;
+
+    let provider = OneItemProvider {
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    };
+    let summary = generate_and_store(&pool, &provider, "es", "A1", 1).await?;
+
+    assert_eq!(
+        provider.calls.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "only the rule with nothing and the rule with nothing servable are asked about"
+    );
+    assert_eq!(summary.inserted, 2);
+
+    let per_rule: Vec<(i32, i64)> = sqlx::query_as(
+        "SELECT rule_id, COUNT(*) FROM quiz_items
+         WHERE status = 'candidate' GROUP BY rule_id ORDER BY rule_id",
+    )
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(
+        per_rule,
+        vec![(pending, 1), (refused, 1), (fresh, 1)],
+        "the covered rules gained nothing; the refused and fresh rules gained one each"
+    );
+
+    generate_and_store(&pool, &provider, "es", "A1", 1).await?;
+    assert_eq!(
+        provider.calls.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "a second run finds every rule covered and asks about none"
+    );
+    Ok(())
+}

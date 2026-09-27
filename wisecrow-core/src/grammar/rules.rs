@@ -461,7 +461,13 @@ pub async fn import_from_json(
     Ok(count)
 }
 
-/// Imports grammar rules extracted from a PDF file.
+/// Imports the passages of a grammar PDF as rules at one CEFR level.
+///
+/// One rule per passage, its prose kept whole. Synthesising a level's points
+/// from the passages through a model, which is what makes them comparable with
+/// seeded points, is planned in
+/// `agents/2026-09-26-004-feature-pdf-import-synthesis-gate.md`; until then a
+/// passage stands as the rule's explanation.
 pub async fn import_from_pdf(
     pool: &PgPool,
     language_id: i32,
@@ -472,29 +478,26 @@ pub async fn import_from_pdf(
     let cefr_level_id = RuleRepository::ensure_cefr_level(pool, cefr_level_code).await?;
 
     let mut count = 0usize;
-    for section in &content.sections {
-        let title = section.title.as_deref().unwrap_or("Untitled Rule");
-
-        for rule_text in &section.rules {
-            let pdf_title = format!("{title}: {}", truncate(rule_text, 100));
-            let new_rule = NewGrammarRule {
-                slug: slugify(&pdf_title),
-                title: pdf_title,
-                explanation: rule_text.clone(), // clone: building owned struct from borrowed extraction
-                source: RuleSource::Pdf,
-                examples: section
-                    .examples
-                    .iter()
-                    .map(|ex| NewRuleExample {
-                        sentence: ex.text.clone(), // clone: building owned struct from borrowed extraction
-                        translation: ex.translation.clone(), // clone: building owned struct from borrowed extraction
-                        is_correct: true,
-                    })
-                    .collect(),
-            };
-            RuleRepository::upsert_rule(pool, language_id, cefr_level_id, &new_rule).await?;
-            count = count.saturating_add(1);
-        }
+    for passage in &content.passages {
+        let heading = passage.heading.as_deref().unwrap_or("Untitled Rule");
+        let pdf_title = format!("{heading}: {}", truncate(&passage.text, 100));
+        let new_rule = NewGrammarRule {
+            slug: slugify(&pdf_title),
+            title: pdf_title,
+            explanation: passage.text.clone(), // clone: building owned struct from borrowed extraction
+            source: RuleSource::Pdf,
+            examples: passage
+                .examples
+                .iter()
+                .map(|ex| NewRuleExample {
+                    sentence: ex.text.clone(), // clone: building owned struct from borrowed extraction
+                    translation: ex.translation.clone(), // clone: building owned struct from borrowed extraction
+                    is_correct: true,
+                })
+                .collect(),
+        };
+        RuleRepository::upsert_rule(pool, language_id, cefr_level_id, &new_rule).await?;
+        count = count.saturating_add(1);
     }
 
     Ok(count)

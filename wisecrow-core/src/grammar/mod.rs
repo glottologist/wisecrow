@@ -4,6 +4,7 @@ pub mod graded_reader;
 pub mod items;
 pub mod mastery;
 pub mod pdf;
+pub mod pdf_import;
 pub mod placement;
 pub mod quiz;
 pub mod rules;

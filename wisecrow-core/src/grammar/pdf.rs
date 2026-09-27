@@ -3,19 +3,38 @@ use std::path::Path;
 use crate::errors::WisecrowError;
 
 const BULLET_PREFIXES: &[&str] = &["- ", "\u{2022} ", "* ", "\u{2013} "];
-const MIN_RULE_LINE_LENGTH: usize = 10;
 const MAX_HEADER_LENGTH: usize = 100;
 const MAX_HEADER_WORDS: usize = 8;
+/// Shortest block of prose kept as a passage.
+///
+/// A grammar book's text layer holds far more short lines than rules: running
+/// heads, page numbers, index entries, the stub of a paradigm table the column
+/// detector missed. None of them says anything a learner could be taught, and a
+/// rule that a book states in fewer than two hundred characters states it again
+/// in the paragraph around it. Dropping them here is what keeps a 256-page
+/// standard from arriving as seven thousand fragments.
+const MIN_PASSAGE_CHARS: usize = 200;
+/// Run of spaces treated as a column gap rather than a word break.
+const COLUMN_GAP: &str = "   ";
+/// Column gaps a line needs before it is read as a table row.
+const MIN_COLUMN_GAPS: usize = 2;
 
 #[derive(Debug, Clone)]
 pub struct GrammarContent {
-    pub sections: Vec<GrammarSection>,
+    pub passages: Vec<GrammarPassage>,
 }
 
+/// One heading and the prose beneath it, as it stood on one page.
+///
+/// A passage is a unit a model can be asked to read. It is deliberately not a
+/// unit the database stores: turning passages into levelled points is the job of
+/// the synthesis step, and the page number is carried so a point can cite where
+/// it came from.
 #[derive(Debug, Clone)]
-pub struct GrammarSection {
-    pub title: Option<String>,
-    pub rules: Vec<String>,
+pub struct GrammarPassage {
+    pub heading: Option<String>,
+    pub text: String,
+    pub page: usize,
     pub examples: Vec<ExampleSentence>,
 }
 
@@ -25,80 +44,112 @@ pub struct ExampleSentence {
     pub translation: Option<String>,
 }
 
-/// Extracts structured grammar content from a PDF file.
+/// Extracts the prose passages of a grammar PDF, page by page.
 ///
-/// Parses the PDF text, detects section headers, rules (numbered or
-/// bulleted items), and example sentences (quoted or indented text).
+/// Detects section headings, joins the prose under each into one passage, keeps
+/// quoted and `e.g.` lines as example sentences, and drops table rows and any
+/// passage too short to hold a rule.
 ///
 /// # Errors
 ///
-/// Returns an error if the PDF cannot be read or parsed.
+/// Returns an error if the PDF cannot be read or parsed, or if it holds no
+/// passage long enough to be grammar prose -- the answer for a page-scan PDF
+/// whose text layer is empty.
 pub fn extract(path: &Path) -> Result<GrammarContent, WisecrowError> {
     let canonical = path
         .canonicalize()
         .map_err(|e| WisecrowError::PdfExtractionError(format!("Invalid path: {e}")))?;
 
-    let text = pdf_extract::extract_text(&canonical)
+    let pages = pdf_extract::extract_text_by_pages(&canonical)
         .map_err(|e| WisecrowError::PdfExtractionError(format!("PDF extraction failed: {e}")))?;
 
-    let sections = parse_sections(&text);
+    let passages = parse_passages(&pages);
 
-    if sections.is_empty() {
+    if passages.is_empty() {
         return Err(WisecrowError::PdfExtractionError(
             "No grammar content found in PDF".to_owned(),
         ));
     }
 
-    Ok(GrammarContent { sections })
+    Ok(GrammarContent { passages })
 }
 
-fn parse_sections(text: &str) -> Vec<GrammarSection> {
-    let mut sections = Vec::new();
-    let mut current_title: Option<String> = None;
-    let mut current_rules: Vec<String> = Vec::new();
-    let mut current_examples: Vec<ExampleSentence> = Vec::new();
+/// Collects the passages of a document whose pages are already text.
+fn parse_passages(pages: &[String]) -> Vec<GrammarPassage> {
+    let mut passages = Vec::new();
 
-    for line in text.lines() {
-        let trimmed = line.trim();
+    for (index, page) in pages.iter().enumerate() {
+        let page_number = index.saturating_add(1);
+        let mut heading: Option<String> = None;
+        let mut prose: Vec<String> = Vec::new();
+        let mut examples: Vec<ExampleSentence> = Vec::new();
 
-        if trimmed.is_empty() {
-            continue;
-        }
+        for line in page.lines() {
+            let trimmed = line.trim();
 
-        if is_section_header(trimmed) {
-            if !current_rules.is_empty() || !current_examples.is_empty() {
-                sections.push(GrammarSection {
-                    title: current_title.take(),
-                    rules: std::mem::take(&mut current_rules),
-                    examples: std::mem::take(&mut current_examples),
-                });
+            if trimmed.is_empty() || is_table_row(trimmed) {
+                continue;
             }
-            current_title = Some(trimmed.to_owned());
-            continue;
+
+            if is_section_header(trimmed) {
+                push_passage(
+                    &mut passages,
+                    page_number,
+                    &mut heading,
+                    &mut prose,
+                    &mut examples,
+                );
+                heading = Some(trimmed.to_owned());
+                continue;
+            }
+
+            if is_example_sentence(trimmed) {
+                let (text, translation) = split_example(trimmed);
+                examples.push(ExampleSentence { text, translation });
+                continue;
+            }
+
+            let stripped = strip_prefix(trimmed);
+            if !stripped.is_empty() {
+                prose.push(stripped);
+            }
         }
 
-        if is_example_sentence(trimmed) {
-            let (text, translation) = split_example(trimmed);
-            current_examples.push(ExampleSentence { text, translation });
-        } else if is_numbered_rule(trimmed) || is_bulleted_rule(trimmed) {
-            let rule = strip_prefix(trimmed);
-            if !rule.is_empty() {
-                current_rules.push(rule);
-            }
-        } else if trimmed.len() > MIN_RULE_LINE_LENGTH {
-            current_rules.push(trimmed.to_owned());
-        }
+        push_passage(
+            &mut passages,
+            page_number,
+            &mut heading,
+            &mut prose,
+            &mut examples,
+        );
     }
 
-    if !current_rules.is_empty() || !current_examples.is_empty() {
-        sections.push(GrammarSection {
-            title: current_title,
-            rules: current_rules,
-            examples: current_examples,
+    passages
+}
+
+/// Joins the prose collected so far into a passage, unless it is too short.
+///
+/// The examples travel with the prose they sat among, and are discarded with it
+/// when the block is too short to be a rule -- an example without its rule is
+/// what the old line-by-line reading produced in quantity.
+fn push_passage(
+    passages: &mut Vec<GrammarPassage>,
+    page: usize,
+    heading: &mut Option<String>,
+    prose: &mut Vec<String>,
+    examples: &mut Vec<ExampleSentence>,
+) {
+    let text = std::mem::take(prose).join(" ");
+    let taken_examples = std::mem::take(examples);
+
+    if text.chars().count() >= MIN_PASSAGE_CHARS {
+        passages.push(GrammarPassage {
+            heading: heading.clone(), // clone: the heading also governs the next passage on the page
+            text,
+            page,
+            examples: taken_examples,
         });
     }
-
-    sections
 }
 
 fn is_section_header(line: &str) -> bool {
@@ -125,31 +176,27 @@ fn is_section_header(line: &str) -> bool {
             .all(|w| short_prepositions.contains(w) || w.starts_with(|c: char| c.is_uppercase()))
 }
 
+/// Reads a line as a row of a table rather than a sentence.
+///
+/// A text layer keeps a paradigm table's columns as runs of spaces, so a line
+/// holding several of them and ending without a full stop is a row of cells.
+/// Importing the Irish standard filed one such row, `don fhear throm don
+/// chuideachta ghnóthach`, as a grammar rule of its own.
+fn is_table_row(line: &str) -> bool {
+    if line.contains('\t') {
+        return true;
+    }
+    let gaps = line
+        .split(COLUMN_GAP)
+        .filter(|part| !part.is_empty())
+        .count();
+    gaps > MIN_COLUMN_GAPS && !line.ends_with('.')
+}
+
 fn is_example_sentence(line: &str) -> bool {
     (line.starts_with('"') || line.starts_with('\u{201C}'))
         || (line.starts_with("e.g.") || line.starts_with("E.g."))
         || (line.starts_with("Example:") || line.starts_with("Ex:"))
-}
-
-fn is_numbered_rule(line: &str) -> bool {
-    let mut chars = line.chars();
-    let first = chars.next().unwrap_or(' ');
-    if !first.is_ascii_digit() {
-        return false;
-    }
-    for ch in chars {
-        if ch == '.' || ch == ')' {
-            return true;
-        }
-        if !ch.is_ascii_digit() {
-            return false;
-        }
-    }
-    false
-}
-
-fn is_bulleted_rule(line: &str) -> bool {
-    BULLET_PREFIXES.iter().any(|p| line.starts_with(p))
 }
 
 fn strip_prefix(line: &str) -> String {
@@ -201,6 +248,9 @@ mod tests {
     use proptest::prelude::*;
     use rstest::rstest;
 
+    /// Prose long enough to pass [`MIN_PASSAGE_CHARS`], as a book states a rule.
+    const PRESENT_TENSE_PROSE: &str = "Regular verbs in the present tense take the endings of their conjugation class, which is fixed by the infinitive. A verb whose infinitive ends in -ar belongs to the first class, and one ending in -er or -ir to the second and third. The stem is what remains once the ending is removed, and every present-tense form is built on it.";
+
     #[rstest]
     #[case("Present Tense", true)]
     #[case("Chapter 1", true)]
@@ -215,19 +265,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case("1. Use the present tense", true)]
-    #[case("12) Another rule", true)]
-    #[case("Not a rule", false)]
-    fn numbered_rule_detected(#[case] input: &str, #[case] expected: bool) {
-        assert_eq!(is_numbered_rule(input), expected);
-    }
-
-    #[rstest]
-    #[case("- A rule", true)]
-    #[case("\u{2022} Another rule", true)]
-    #[case("Not a rule", false)]
-    fn bulleted_rule_detected(#[case] input: &str, #[case] expected: bool) {
-        assert_eq!(is_bulleted_rule(input), expected);
+    #[case("don fhear throm   don chuideachta ghnóthach   don bhean bhocht", true)]
+    #[case("feiceann\tchonaic\tní fhaca", true)]
+    #[case(
+        "The stem is what remains once the ending is removed from the infinitive.",
+        false
+    )]
+    #[case("A sentence with   one gap only.", false)]
+    fn table_row_detected(#[case] input: &str, #[case] expected: bool) {
+        assert_eq!(is_table_row(input), expected);
     }
 
     #[rstest]
@@ -270,20 +316,76 @@ mod tests {
     }
 
     #[test]
-    fn parse_sections_from_text() {
-        let text = "Present Tense\n\n1. Regular verbs end in -ar, -er, -ir\n2. Conjugate by removing the ending\n\n\"Yo hablo \u{2014} I speak\"\n\nPast Tense\n\n1. Add -\u{e9}, -aste, -\u{f3} endings\n";
-        let sections = parse_sections(text);
-        assert_eq!(sections.len(), 2);
-        assert_eq!(sections[0].title.as_deref(), Some("Present Tense"));
-        assert_eq!(sections[0].rules.len(), 2);
-        assert_eq!(sections[0].examples.len(), 1);
-        assert_eq!(sections[1].title.as_deref(), Some("Past Tense"));
+    fn a_passage_holds_the_prose_of_a_section_rather_than_one_line_each() {
+        let lines: Vec<&str> = PRESENT_TENSE_PROSE.split(". ").collect();
+        let page = format!(
+            "Present Tense\n\n{}\n\n\"Yo hablo \u{2014} I speak\"\n",
+            lines.join(".\n")
+        );
+
+        let passages = parse_passages(&[page]);
+
+        assert_eq!(
+            passages.len(),
+            1,
+            "the section is one passage, not one per line"
+        );
+        assert_eq!(passages[0].heading.as_deref(), Some("Present Tense"));
+        assert_eq!(passages[0].page, 1);
+        assert!(
+            passages[0].text.contains("first class")
+                && passages[0].text.contains("every present-tense form"),
+            "the whole section's prose is in one passage: {}",
+            passages[0].text
+        );
+        assert_eq!(passages[0].examples.len(), 1);
+    }
+
+    #[test]
+    fn a_paradigm_table_contributes_no_passage_text() {
+        let page = format!(
+            "An Aidiacht\n\n{PRESENT_TENSE_PROSE}\ndon fhear throm   don chuideachta ghnóthach   don bhean bhocht\nUATHA   IOLRA   GINIDEACH\n"
+        );
+
+        let passages = parse_passages(&[page]);
+
+        assert_eq!(passages.len(), 1);
+        assert!(
+            !passages[0].text.contains("chuideachta") && !passages[0].text.contains("IOLRA"),
+            "table rows are dropped, not stored as prose: {}",
+            passages[0].text
+        );
+    }
+
+    #[test]
+    fn fragments_shorter_than_a_rule_are_dropped() {
+        let page = "Na Forainmnigh Phearsanta\n8.2  Na Forainmnigh\nleathanach 148\n";
+
+        assert!(
+            parse_passages(&[page.to_owned()]).is_empty(),
+            "a heading, a numbered stub and a running head are not a rule"
+        );
+    }
+
+    #[test]
+    fn each_page_carries_its_own_number() {
+        let pages = vec![
+            format!("Present Tense\n{PRESENT_TENSE_PROSE}\n"),
+            format!("Past Tense\n{PRESENT_TENSE_PROSE}\n"),
+        ];
+
+        let passages = parse_passages(&pages);
+
+        assert_eq!(passages.len(), 2);
+        assert_eq!(passages[0].page, 1);
+        assert_eq!(passages[1].page, 2);
+        assert_eq!(passages[1].heading.as_deref(), Some("Past Tense"));
     }
 
     proptest! {
         #[test]
-        fn parse_sections_never_panics(text in "\\PC{0,500}") {
-            let _ = parse_sections(&text);
+        fn parse_passages_never_panics(text in "\\PC{0,500}") {
+            let _ = parse_passages(&[text]);
         }
 
         #[test]
@@ -294,6 +396,11 @@ mod tests {
         #[test]
         fn is_section_header_never_panics(line in "\\PC{0,200}") {
             let _ = is_section_header(&line);
+        }
+
+        #[test]
+        fn is_table_row_never_panics(line in "\\PC{0,200}") {
+            let _ = is_table_row(&line);
         }
     }
 }
