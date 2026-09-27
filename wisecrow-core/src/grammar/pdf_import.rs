@@ -14,7 +14,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 use sqlx::PgPool;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use super::pdf::GrammarPassage;
 use super::rules::{
@@ -58,6 +58,15 @@ pub const DOCUMENT_RULES_PER_LEVEL: u32 = 30;
 /// Thirty in one answer would meet [`MAX_LLM_TOKENS`], so the target is
 /// reached in rounds, each naming the titles the earlier ones produced.
 const SYNTHESIS_BATCH: u32 = 15;
+/// Appended to the prompt when the first answer was not JSON.
+///
+/// Asked for one point and told that fewer is correct, a model sometimes
+/// answers in prose. One more call, told plainly what shape is wanted, is
+/// cheaper than losing the document at that level, and cheaper still than
+/// losing the run.
+const JSON_NUDGE: &str = "\n\nYour previous answer was not a JSON array. Return only the JSON \
+                          array, with no text before or after it; return [] if the passages \
+                          hold nothing a learner at this level needs.";
 
 /// Document-backed points a level is still owed, or `None` at the target.
 fn document_shortfall(held: usize) -> Option<u32> {
@@ -315,7 +324,19 @@ pub async fn synthesise(
     let prompt = pdf_rules_prompt(language_name, cefr_level, wanted, covered, &excerpts);
     let response = provider.generate(&prompt, MAX_LLM_TOKENS).await?;
     let proposed: Vec<LlmPdfRule> =
-        crate::llm::parse_fenced_json(&response, "PDF grammar points as JSON")?;
+        match crate::llm::parse_fenced_json(&response, "PDF grammar points as JSON") {
+            Ok(proposed) => proposed,
+            Err(WisecrowError::LlmError(reason)) => {
+                warn!(
+                    "{reason}; asking {} once more for the array alone",
+                    provider.name()
+                );
+                let nudged = [prompt.as_str(), JSON_NUDGE].concat();
+                let response = provider.generate(&nudged, MAX_LLM_TOKENS).await?;
+                crate::llm::parse_fenced_json(&response, "PDF grammar points as JSON")?
+            }
+            Err(error) => return Err(error),
+        };
 
     let pages: Vec<usize> = selected.iter().map(|passage| passage.page).collect();
     Ok(gate(proposed, document, &pages, wanted))
@@ -450,6 +471,88 @@ mod tests {
         fn name(&self) -> &str {
             "stub"
         }
+    }
+
+    /// Answers each call with the next scripted response, and the last one
+    /// thereafter.
+    struct TurnProvider {
+        responses: Vec<String>,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl TurnProvider {
+        fn calls(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl LlmProvider for TurnProvider {
+        async fn generate(&self, prompt: &str, _max_tokens: u32) -> Result<String, WisecrowError> {
+            let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if call > 0 {
+                assert!(
+                    prompt.ends_with(JSON_NUDGE),
+                    "the second call carries the nudge"
+                );
+            }
+            let index = call.min(self.responses.len() - 1);
+            Ok(self.responses[index].clone()) // clone: the stub hands out an owned answer per call
+        }
+
+        fn name(&self) -> &str {
+            "stub"
+        }
+    }
+
+    #[tokio::test]
+    async fn a_prose_answer_is_asked_again_for_the_array_alone() {
+        let provider = TurnProvider {
+            responses: vec![
+                "The passages hold nothing further at this level.".to_owned(),
+                "[]".to_owned(),
+            ],
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        };
+
+        let synthesis = synthesise(
+            &provider,
+            "doc.pdf",
+            "French",
+            "C1",
+            1,
+            &[],
+            &[passage(1, "Le passé", 300)],
+        )
+        .await
+        .expect("the second answer parses");
+
+        assert_eq!(provider.calls(), 2);
+        assert!(synthesis.points.is_empty());
+        assert!(synthesis.rejected.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_second_prose_answer_is_the_error() {
+        let provider = TurnProvider {
+            responses: vec!["Nothing to add.".to_owned()],
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        };
+
+        let error = synthesise(
+            &provider,
+            "doc.pdf",
+            "French",
+            "C1",
+            1,
+            &[],
+            &[passage(1, "Le passé", 300)],
+        )
+        .await
+        .expect_err("two prose answers are a failure");
+
+        assert_eq!(provider.calls(), 2, "one retry, never more");
+        assert!(matches!(error, WisecrowError::LlmError(_)));
     }
 
     fn passage(page: usize, heading: &str, length: usize) -> GrammarPassage {

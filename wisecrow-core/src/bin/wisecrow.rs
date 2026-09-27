@@ -629,6 +629,7 @@ async fn handle_import_pdf(args: ImportPdfArgs) -> Result<(), Error> {
     };
 
     let mut placed = 0usize;
+    let mut skipped = 0usize;
     for &(level, document) in &schedule.calls {
         let lang = document_language(&args, document)?;
         let lang_name = resolve_language_name(lang)?;
@@ -644,8 +645,20 @@ async fn handle_import_pdf(args: ImportPdfArgs) -> Result<(), Error> {
             .unwrap_or("document");
         let extracted = passages.get(document).map_or(&[][..], Vec::as_slice);
 
+        // A model answer that will not parse, twice, is this document at this
+        // level and nothing more; the rest of the shelf still runs. A database
+        // or extraction failure is not the model's and still ends the run.
         let outcome =
-            import_passages(&pool, provider.as_ref(), target, name, extracted, options).await?;
+            match import_passages(&pool, provider.as_ref(), target, name, extracted, options).await
+            {
+                Ok(outcome) => outcome,
+                Err(WisecrowError::LlmError(reason)) => {
+                    warn!("Skipped: {} at {level}: {reason}", document.display());
+                    skipped = skipped.saturating_add(1);
+                    continue;
+                }
+                Err(error) => return Err(error.into()),
+            };
         if outcome.wanted == 0 {
             continue;
         }
@@ -676,7 +689,7 @@ async fn handle_import_pdf(args: ImportPdfArgs) -> Result<(), Error> {
 
     if schedule.calls.len() > 1 && !args.dry_run {
         info!(
-            "Placed {placed} grammar points over {} document-level runs",
+            "Placed {placed} grammar points over {} document-level runs ({skipped} skipped on a bad answer)",
             schedule.calls.len()
         );
     }

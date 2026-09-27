@@ -390,7 +390,10 @@ but not covering the levels of the run is skipped the same way, with the reason
 from its row; a `Levels` cell that names no CEFR level the syllabus has is
 reported and skipped. A dry run over a directory writes nothing, so every
 document sees the same empty level and pays the full two rounds; to judge a
-book, dry-run it alone at one level with `--max-rules`. A document outside a
+book, dry-run it alone at one level with `--max-rules`. An answer the model
+does not return as a JSON array is asked for once more, with the shape spelt
+out; a second such answer skips that document at that level, with a warning,
+and the run goes on. A document outside a
 language directory with no `--lang` is refused by name rather than guessed at.
 
 ---

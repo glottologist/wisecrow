@@ -56,10 +56,42 @@ where
         Ok(parsed) => Ok(parsed),
         Err(original) => escape_raw_control_characters(json_str)
             .and_then(|repaired| serde_json::from_str(&repaired).ok())
+            .or_else(|| {
+                json_span(json_str).and_then(|span| {
+                    serde_json::from_str(span).ok().or_else(|| {
+                        escape_raw_control_characters(span)
+                            .and_then(|repaired| serde_json::from_str(&repaired).ok())
+                    })
+                })
+            })
             .ok_or_else(|| {
                 WisecrowError::LlmError(format!("Failed to parse {context}: {original}"))
             }),
     }
+}
+
+/// The JSON array or object sitting inside prose, if the answer has one.
+///
+/// Asked for a single point and told that returning fewer is correct, a
+/// model sometimes explains itself around the array instead of returning the
+/// array alone; importing French C1 lost a shelf run to "expected value at
+/// line 1 column 1" that way. The span runs from the first opening bracket
+/// to the last closing bracket of the same kind, and is only tried after the
+/// straight and repaired parses have failed, so an answer that is already
+/// JSON is never re-cut. `None` when there is no such span or the span is the
+/// whole text, which spares a parse that would fail the same way.
+fn json_span(text: &str) -> Option<&str> {
+    let (start, closer) = text.char_indices().find_map(|(index, ch)| match ch {
+        '[' => Some((index, ']')),
+        '{' => Some((index, '}')),
+        _ => None,
+    })?;
+    let end = text.rfind(closer)?;
+    if end <= start {
+        return None;
+    }
+    let span = &text[start..=end];
+    (span.len() != text.len()).then_some(span)
 }
 
 /// Escapes control characters sitting raw inside a JSON string literal.
@@ -237,6 +269,33 @@ mod tests {
             parse_fenced_json::<Prose>(r#"{"explanation":"ends with \\"}"#, "prose").unwrap();
         assert_eq!(parsed.explanation, r"ends with \");
         assert!(escape_raw_control_characters(r#"{"explanation":"ends with \\"}"#).is_none());
+    }
+
+    /// Asked for one French C1 point, the model wrote a sentence, then the
+    /// array, then another sentence; the import died on the first byte.
+    #[test]
+    fn json_wrapped_in_prose_is_cut_out_and_parsed() {
+        let wrapped = "The passages hold nothing new at this level, so here is the array:\n\n[{\"value\":5}]\n\nNo further points apply.";
+        assert_eq!(
+            parse_fenced_json::<Vec<Sample>>(wrapped, "sample").unwrap(),
+            vec![Sample { value: 5 }]
+        );
+        assert_eq!(json_span(wrapped), Some("[{\"value\":5}]"));
+        assert_eq!(
+            parse_fenced_json::<Vec<Sample>>("Nothing to add here.\n\n[]", "sample").unwrap(),
+            Vec::new()
+        );
+    }
+
+    #[test]
+    fn prose_with_no_json_in_it_still_reports_the_original_error() {
+        let err =
+            parse_fenced_json::<Vec<Sample>>("The passages hold nothing at this level.", "sample")
+                .unwrap_err();
+        assert!(matches!(err, WisecrowError::LlmError(m) if m.contains("expected value")));
+        assert_eq!(json_span("no brackets"), None);
+        assert_eq!(json_span("an open [ bracket only"), None);
+        assert_eq!(json_span("[1, 2]"), None, "whole-text JSON is not re-cut");
     }
 
     /// The repair must not turn an unparseable answer into a silent success,
