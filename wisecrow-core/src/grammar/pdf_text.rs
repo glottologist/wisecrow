@@ -116,12 +116,39 @@ where
 /// and a document of unknown provenance is exactly what this module is for, so a
 /// panic is caught and reported as a failed reading.
 fn native_pages(path: &Path) -> Result<Vec<String>, String> {
-    let extraction = std::panic::catch_unwind(|| pdf_extract::extract_text_by_pages(path));
-    match extraction {
+    match silenced(|| pdf_extract::extract_text_by_pages(path)) {
         Ok(Ok(pages)) => Ok(pages),
         Ok(Err(error)) => Err(format!("pdf-extract failed: {error}")),
-        Err(_) => Err("pdf-extract panicked on a malformed document".to_owned()),
+        Err(()) => Err("pdf-extract panicked on a malformed document".to_owned()),
     }
+}
+
+/// Runs `work`, turning a panic on this thread into `Err(())` without the
+/// panic being printed.
+///
+/// A caught panic is an expected reading failure here, and the default hook
+/// would still write `thread 'main' panicked at …` to stderr before the catch,
+/// which reads as a crash in a run that goes on to succeed through poppler.
+/// The hook is global, so the replacement silences this thread only and hands
+/// every other thread's panic to the hook that was there, then puts that hook
+/// back.
+fn silenced<T>(work: impl FnOnce() -> T + std::panic::UnwindSafe) -> Result<T, ()> {
+    let previous = std::panic::take_hook();
+    let quiet_thread = std::thread::current().id();
+    let delegate = std::sync::Arc::new(previous);
+    let hook_delegate = std::sync::Arc::clone(&delegate); // clone: the hook and the restore both own the previous hook
+    std::panic::set_hook(Box::new(move |info| {
+        if std::thread::current().id() != quiet_thread {
+            hook_delegate(info);
+        }
+    }));
+    let outcome = std::panic::catch_unwind(work);
+    let _ = std::panic::take_hook();
+    match std::sync::Arc::try_unwrap(delegate) {
+        Ok(previous) => std::panic::set_hook(previous),
+        Err(shared) => std::panic::set_hook(Box::new(move |info| shared(info))),
+    }
+    outcome.map_err(|_| ())
 }
 
 /// Reads the document with poppler, keeping its column layout.
@@ -218,6 +245,33 @@ mod tests {
 
         assert_eq!(chosen.extractor, Extractor::Native);
         assert_eq!(chosen.density(), 90);
+    }
+
+    #[test]
+    fn a_silenced_panic_is_an_error_and_the_previous_hook_survives() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let seen = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&seen); // clone: the hook counts what the test reads
+        let this_thread = std::thread::current().id();
+        std::panic::set_hook(Box::new(move |_| {
+            if std::thread::current().id() == this_thread {
+                counter.fetch_add(1, Ordering::SeqCst);
+            }
+        }));
+
+        assert_eq!(silenced(|| 7), Ok(7));
+        assert_eq!(silenced(|| -> u8 { panic!("malformed") }), Err(()));
+        assert_eq!(
+            seen.load(Ordering::SeqCst),
+            0,
+            "the silenced panic reached no hook"
+        );
+
+        let _ = std::panic::catch_unwind(|| panic!("after"));
+        assert_eq!(seen.load(Ordering::SeqCst), 1, "the previous hook is back");
+        let _ = std::panic::take_hook();
     }
 
     #[test]
