@@ -177,6 +177,7 @@ impl SyncClient {
                     title: rule.title.clone(), // clone: building owned from borrowed sync data
                     explanation: rule.explanation.clone(), // clone: building owned from borrowed sync data
                     source,
+                    source_ref: None,
                     examples: rule
                         .examples
                         .iter()

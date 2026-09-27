@@ -43,7 +43,7 @@ RUN rm -rf wisecrow-web/dist \
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-        ca-certificates libssl3 tini wget \
+        ca-certificates libssl3 tini wget poppler-utils \
  && rm -rf /var/lib/apt/lists/*
 
 # Run as a non-root system user.

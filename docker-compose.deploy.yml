@@ -51,6 +51,12 @@ services:
       # re-fetch it, spending CereProc credits and image API quota to recover
       # files the deploy just deleted.
       - ${WISECROW_MEDIA_DIR:-/mnt/DATA2/wisecrow-media}:/var/lib/wisecrow
+      # The grammar shelf, one directory per language with SOURCES.md beside
+      # them. Mounted rather than baked into the image because it is nearly a
+      # gigabyte of PDFs that change independently of the code, and read-only
+      # because `import-pdf` only reads it. The record must travel with the
+      # documents: the licence gate refuses a document it cannot find a row for.
+      - ./grammar:/app/grammar:ro
     ports:
       - "${WISECROW_WEB_BIND:-0.0.0.0}:${WISECROW_WEB_PORT:-8443}:8443"
     # Liveness, not authorization: an unauthenticated GET / is answered with the

@@ -278,12 +278,32 @@ pub struct ImportGrammarArgs {
 
 #[derive(Args)]
 pub struct ImportPdfArgs {
+    /// Language code. Optional for a document inside a language directory, such
+    /// as `grammar/es/yo-puedo-1-2021.pdf`, whose path already states it.
     #[arg(short, long)]
-    pub lang: String,
+    pub lang: Option<String>,
     #[arg(short = 'L', long)]
     pub level: String,
+    /// PDF to import, or a directory whose PDFs are all imported.
     #[arg(short, long)]
     pub file: String,
+    /// Ask the model and print what it proposed, but write nothing.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Ceiling on the points asked for, beneath what the level is short.
+    #[arg(long)]
+    pub max_rules: Option<u32>,
+    /// Read a document its SOURCES.md row does not clear, for a model that is
+    /// hosted locally and so receives nothing a third party could.
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Args)]
+pub struct CheckPdfArgs {
+    /// PDF or directory of PDFs to screen; repeat the flag for several of either.
+    #[arg(short, long, required = true)]
+    pub file: Vec<String>,
 }
 
 #[derive(Args)]
@@ -613,6 +633,9 @@ pub enum Command {
     ImportGrammar(ImportGrammarArgs),
     #[command(aliases = ["ip"])]
     ImportPdf(ImportPdfArgs),
+    /// Report whether a PDF can supply grammar material before importing it.
+    #[command(aliases = ["cp"])]
+    CheckPdf(CheckPdfArgs),
     #[command(aliases = ["r"])]
     Learn(LearnArgs),
     #[command(aliases = ["nb"])]
@@ -690,6 +713,7 @@ mod tests {
                 | (Command::GradedReader(_), "GradedReader")
                 | (Command::ImportGrammar(_), "ImportGrammar")
                 | (Command::ImportPdf(_), "ImportPdf")
+                | (Command::CheckPdf(_), "CheckPdf")
                 | (Command::Ingest(_), "Ingest")
                 | (Command::Learn(_), "Learn")
                 | (Command::ListLanguages, "ListLanguages")
@@ -801,6 +825,13 @@ mod tests {
     #[case(&["wisecrow", "ig", "--lang", "es", "--file", "rules.json"], "ImportGrammar")]
     #[case(&["wisecrow", "import-pdf", "--lang", "es", "--level", "B1", "--file", "g.pdf"], "ImportPdf")]
     #[case(&["wisecrow", "ip", "--lang", "es", "--level", "B1", "--file", "g.pdf"], "ImportPdf")]
+    #[case(&["wisecrow", "import-pdf", "--level", "B1", "--file", "grammar/es"], "ImportPdf")]
+    #[case(&["wisecrow", "import-pdf", "--level", "B1", "--file", "grammar/es", "--dry-run"], "ImportPdf")]
+    #[case(&["wisecrow", "ip", "--level", "B1", "--file", "grammar/es", "--max-rules", "5"], "ImportPdf")]
+    #[case(&["wisecrow", "ip", "--level", "B2", "--file", "grammar/ga", "--force"], "ImportPdf")]
+    #[case(&["wisecrow", "check-pdf", "--file", "g.pdf"], "CheckPdf")]
+    #[case(&["wisecrow", "check-pdf", "--file", "grammar"], "CheckPdf")]
+    #[case(&["wisecrow", "cp", "-f", "a.pdf", "-f", "b.pdf"], "CheckPdf")]
     #[case(&["wisecrow", "sync", "--remote", "https://example.com"], "Sync")]
     #[case(&["wisecrow", "s", "--remote", "https://example.com"], "Sync")]
     #[case(&["wisecrow", "generate-exercises", "--lang", "es", "--level", "B1"], "GenerateExercises")]

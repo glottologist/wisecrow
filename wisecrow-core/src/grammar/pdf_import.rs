@@ -6,22 +6,30 @@
 //! line by line produced 7055 fragments, where the level wants fifteen points.
 //! A model is asked to state the points; nothing it returns is stored unless it
 //! carries the prose and examples a seeded point carries, and cites a page the
-//! prompt actually held.
+//! prompt actually held. What passes is placed the way a seeded point is, so an
+//! import fills a level's gaps and never moves a point already placed elsewhere.
+
+use std::collections::HashSet;
+use std::path::Path;
 
 use serde::Deserialize;
-use tracing::debug;
+use sqlx::PgPool;
+use tracing::{debug, info};
 
 use super::pdf::GrammarPassage;
-use super::rules::{slugify, NewGrammarRule, NewRuleExample, RuleSource};
+use super::rules::{
+    slugify, NewGrammarRule, NewRuleExample, RulePlacement, RuleRepository, RuleSource,
+};
 use crate::errors::WisecrowError;
 use crate::llm::prompts::{pdf_rules_prompt, PassageExcerpt};
 use crate::llm::LlmProvider;
 
 /// Output ceiling for one synthesis call.
 ///
-/// Matched to the seeder's ceiling: the answer has the same shape, a level's
-/// worth of points with prose and examples, and the seeder measured that at just
-/// over 4000 tokens for a full level.
+/// Matched to the seeder's ceiling: the answer has the same shape, a round of
+/// points with prose and examples, and the seeder measured a full fifteen at
+/// just over 4000 tokens. [`SYNTHESIS_BATCH`] keeps every call under it; the
+/// Anthropic client refuses an answer cut off at the ceiling outright.
 const MAX_LLM_TOKENS: u32 = 8192;
 /// Passage text sent in one call.
 ///
@@ -38,13 +46,25 @@ const MAX_TITLE_CHARS: usize = 100;
 const MIN_EXPLANATION_CHARS: usize = 120;
 const MIN_EXPLANATION_SENTENCES: usize = 2;
 const MIN_EXAMPLES: usize = 2;
+/// Document-backed points a level may hold beside the seeded ones.
+///
+/// Measured only against points whose source is `pdf`, so a level the seeder
+/// has already filled to [`super::seeder::RULES_PER_LEVEL`] still takes what
+/// the books have to add. The two targets are deliberately separate: raising
+/// the seeder's would have it invent points for levels no document covers.
+pub const DOCUMENT_RULES_PER_LEVEL: u32 = 30;
+/// Points asked for in one model call.
+///
+/// Thirty in one answer would meet [`MAX_LLM_TOKENS`], so the target is
+/// reached in rounds, each naming the titles the earlier ones produced.
+const SYNTHESIS_BATCH: u32 = 15;
 
-/// A point the model proposed and the gate accepted.
-#[derive(Debug, Clone)]
-pub struct SynthesisedPoint {
-    pub rule: NewGrammarRule,
-    /// Document and page the point was read from, e.g. `yo-puedo p.148`.
-    pub source_ref: String,
+/// Document-backed points a level is still owed, or `None` at the target.
+fn document_shortfall(held: usize) -> Option<u32> {
+    let held = u32::try_from(held).unwrap_or(u32::MAX);
+    DOCUMENT_RULES_PER_LEVEL
+        .checked_sub(held)
+        .filter(|wanted| *wanted > 0)
 }
 
 /// A point the gate refused, and why.
@@ -55,10 +75,183 @@ pub struct Rejection {
 }
 
 /// What one synthesis call produced.
-#[derive(Debug, Clone)]
+///
+/// Every point carries its citation in `source_ref`, e.g.
+/// `yo-puedo-1-2021.pdf p.148`.
+#[derive(Debug, Clone, Default)]
 pub struct Synthesis {
-    pub points: Vec<SynthesisedPoint>,
+    pub points: Vec<NewGrammarRule>,
     pub rejected: Vec<Rejection>,
+}
+
+/// The language and level an import writes to.
+#[derive(Debug, Clone, Copy)]
+pub struct ImportTarget<'a> {
+    pub language_id: i32,
+    pub language_name: &'a str,
+    pub cefr_level: &'a str,
+}
+
+/// How an import run is bounded.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ImportOptions {
+    /// Ask the model and report its answer, but write nothing.
+    pub dry_run: bool,
+    /// Ceiling on the points asked for, beneath what the level is short.
+    pub max_rules: Option<u32>,
+}
+
+/// What importing one document at one level came to.
+#[derive(Debug, Clone, Default)]
+pub struct ImportOutcome {
+    /// Points the level was asked for; zero when it was already full.
+    pub wanted: u32,
+    pub synthesis: Synthesis,
+    /// Points written, or that refreshed a point already at this level.
+    pub placed: usize,
+    /// Points the model proposed that already sit at another level, left there.
+    pub held: usize,
+}
+
+/// Synthesises a document's points for one level and places them.
+///
+/// The document is read, the level's shortfall against
+/// [`DOCUMENT_RULES_PER_LEVEL`], counted over its document-backed points, is
+/// measured, and the model is asked for at most that many points, capped again
+/// by `max_rules`. A level already holding that many document-backed points
+/// costs nothing; one that is short is asked in rounds of [`SYNTHESIS_BATCH`].
+/// Accepted points are written through
+/// [`RuleRepository::place_rule`], so an import can add to a level but can
+/// never move a point that already sits at another one.
+///
+/// # Errors
+///
+/// Returns an error when the document cannot be read, when the model call
+/// fails or its answer will not parse, or when the database refuses a write.
+pub async fn import_document(
+    pool: &PgPool,
+    provider: &dyn LlmProvider,
+    target: ImportTarget<'_>,
+    document: &Path,
+    options: ImportOptions,
+) -> Result<ImportOutcome, WisecrowError> {
+    let content = super::pdf::extract(document)?;
+    let name = document
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .unwrap_or("document");
+    import_passages(pool, provider, target, name, &content.passages, options).await
+}
+
+/// The part of [`import_document`] that needs no file: passages in, points
+/// placed.
+///
+/// # Errors
+///
+/// As [`import_document`], less the reading of the document.
+pub async fn import_passages(
+    pool: &PgPool,
+    provider: &dyn LlmProvider,
+    target: ImportTarget<'_>,
+    document: &str,
+    passages: &[GrammarPassage],
+    options: ImportOptions,
+) -> Result<ImportOutcome, WisecrowError> {
+    let cefr_level_id = RuleRepository::ensure_cefr_level(pool, target.cefr_level).await?;
+    let existing =
+        RuleRepository::rules_for_level(pool, target.language_id, target.cefr_level).await?;
+    let held_from_documents = existing
+        .iter()
+        .filter(|rule| rule.source == RuleSource::Pdf)
+        .count();
+    // A seeded or curated point at this level keeps its prose: `place_rule`
+    // would otherwise rewrite it as document-backed under the same slug.
+    let protected: HashSet<&str> = existing
+        .iter()
+        .filter(|rule| rule.source != RuleSource::Pdf)
+        .map(|rule| rule.slug.as_str())
+        .collect();
+    let mut covered: Vec<String> = existing.iter().map(|rule| rule.title.clone()).collect(); // clone: the covered list grows as rounds accept titles
+
+    let wanted = document_shortfall(held_from_documents)
+        .map(|short| options.max_rules.map_or(short, |cap| short.min(cap)))
+        .filter(|wanted| *wanted > 0);
+    let Some(wanted) = wanted else {
+        info!(
+            "{} {} already holds {DOCUMENT_RULES_PER_LEVEL} document-backed points; \
+             {document} was not read to the model",
+            target.language_name, target.cefr_level
+        );
+        return Ok(ImportOutcome::default());
+    };
+
+    let mut synthesis = Synthesis::default();
+    let mut placed = 0usize;
+    let mut held = 0usize;
+    let mut remaining = wanted;
+    while remaining > 0 {
+        let batch = remaining.min(SYNTHESIS_BATCH);
+        info!(
+            "Asking {} for {batch} {} {} points from {document}",
+            provider.name(),
+            target.language_name,
+            target.cefr_level
+        );
+        let round = synthesise(
+            provider,
+            document,
+            target.language_name,
+            target.cefr_level,
+            batch,
+            &covered,
+            passages,
+        )
+        .await?;
+        let accepted = u32::try_from(round.points.len()).unwrap_or(u32::MAX);
+        synthesis.rejected.extend(round.rejected);
+
+        for point in round.points {
+            covered.push(point.title.clone()); // clone: the title is both covered and stored
+            if !options.dry_run {
+                if protected.contains(point.slug.as_str()) {
+                    debug!(
+                        "Held \"{}\" at {} {}: the level already teaches it from another source",
+                        point.title, target.language_name, target.cefr_level
+                    );
+                    held = held.saturating_add(1);
+                } else {
+                    match RuleRepository::place_rule(
+                        pool,
+                        target.language_id,
+                        cefr_level_id,
+                        &point,
+                    )
+                    .await?
+                    {
+                        RulePlacement::Placed(_) => placed = placed.saturating_add(1),
+                        RulePlacement::HeldAtAnotherLevel(_) => {
+                            held = held.saturating_add(1);
+                        }
+                    }
+                }
+            }
+            synthesis.points.push(point);
+        }
+
+        remaining = remaining.saturating_sub(accepted);
+        if accepted < batch {
+            // Fewer than asked is the document running dry at this level;
+            // asking again would buy rewordings of what it already gave.
+            break;
+        }
+    }
+
+    Ok(ImportOutcome {
+        wanted,
+        synthesis,
+        placed,
+        held,
+    })
 }
 
 /// LLM response shape: [`crate::llm::prompts::grammar_seed_prompt`]'s contract
@@ -152,23 +345,21 @@ fn gate(proposed: Vec<LlmPdfRule>, document: &str, pages: &[usize], wanted: u32)
             continue;
         }
 
-        points.push(SynthesisedPoint {
-            source_ref: format!("{document} p.{}", rule.page),
-            rule: NewGrammarRule {
-                slug: slugify(&rule.title),
-                title: rule.title,
-                explanation: rule.explanation,
-                source: RuleSource::Pdf,
-                examples: rule
-                    .examples
-                    .into_iter()
-                    .map(|example| NewRuleExample {
-                        sentence: example.sentence,
-                        translation: example.translation,
-                        is_correct: example.is_correct,
-                    })
-                    .collect(),
-            },
+        points.push(NewGrammarRule {
+            slug: slugify(&rule.title),
+            title: rule.title,
+            explanation: rule.explanation,
+            source: RuleSource::Pdf,
+            source_ref: Some(format!("{document} p.{}", rule.page)),
+            examples: rule
+                .examples
+                .into_iter()
+                .map(|example| NewRuleExample {
+                    sentence: example.sentence,
+                    translation: example.translation,
+                    is_correct: example.is_correct,
+                })
+                .collect(),
         });
     }
 
@@ -307,11 +498,11 @@ mod tests {
         assert_eq!(synthesis.points.len(), 1);
         assert!(synthesis.rejected.is_empty());
         assert_eq!(
-            synthesis.points[0].source_ref,
-            "irish-caighdean-oifigiuil-2017 p.12"
+            synthesis.points[0].source_ref.as_deref(),
+            Some("irish-caighdean-oifigiuil-2017 p.12")
         );
-        assert_eq!(synthesis.points[0].rule.source, RuleSource::Pdf);
-        assert_eq!(synthesis.points[0].rule.examples.len(), 2);
+        assert_eq!(synthesis.points[0].source, RuleSource::Pdf);
+        assert_eq!(synthesis.points[0].examples.len(), 2);
     }
 
     #[tokio::test]
@@ -421,5 +612,17 @@ mod tests {
         assert_eq!(sentence_count("One sentence only."), 1);
         assert_eq!(sentence_count("First one. Second one."), 2);
         assert_eq!(sentence_count("Is it? It is! Yes."), 3);
+    }
+
+    #[test]
+    fn document_shortfall_counts_only_document_backed_points() {
+        assert_eq!(document_shortfall(0), Some(DOCUMENT_RULES_PER_LEVEL));
+        assert_eq!(
+            document_shortfall(12),
+            Some(18),
+            "twelve held, eighteen owed"
+        );
+        assert_eq!(document_shortfall(30), None, "the document target is met");
+        assert_eq!(document_shortfall(45), None, "past the target is still met");
     }
 }

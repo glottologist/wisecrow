@@ -112,6 +112,7 @@ pub async fn seed_grammar(
                 title: rule_import.title.clone(), // clone: building owned struct from borrowed import
                 explanation: rule_import.explanation.clone(), // clone: building owned struct from borrowed import
                 source: RuleSource::Llm,
+                source_ref: None,
                 examples: rule_import
                     .examples
                     .iter()

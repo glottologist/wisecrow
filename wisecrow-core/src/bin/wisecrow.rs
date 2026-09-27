@@ -12,7 +12,7 @@ use tokio::{
 use tracing::{error, info, warn};
 use wisecrow::{
     cli::{
-        is_supported_language, Cli, Command, DownloadAllArgs, EnsureSyllabusArgs,
+        is_supported_language, CheckPdfArgs, Cli, Command, DownloadAllArgs, EnsureSyllabusArgs,
         ExportGrammarArgs, ExtractPhrasesArgs, ExtractWordsArgs, FrequencyArgs,
         GenerateExercisesArgs, GenerateItemsArgs, GlossArgs, GlossDeckArgs, GradedReaderArgs,
         GradedReaderFormat, ImportGrammarArgs, ImportPdfArgs, IngestArgs, LanguageArgs, LearnArgs,
@@ -558,22 +558,199 @@ async fn handle_import_grammar(args: ImportGrammarArgs) -> Result<(), Error> {
     Ok(())
 }
 
+/// Imports one document, or every document in a directory.
+///
+/// The language of each document comes from `--lang` when it is given and from
+/// its language directory otherwise, so importing a whole shelf in one run needs
+/// no repetition. The level cannot be inferred and applies to every document in
+/// the run.
 async fn handle_import_pdf(args: ImportPdfArgs) -> Result<(), Error> {
-    let (_config, pool) = load_config_and_pool().await?;
-    let lang_name = resolve_language_name(&args.lang)?;
+    use wisecrow::grammar::pdf_import::{import_document, ImportOptions, ImportTarget};
+    use wisecrow::grammar::sources::{clearance, Clearance};
 
-    let persister = wisecrow::ingesting::persisting::DatabasePersister::new(
-        pool.clone(), // clone: PgPool is Arc-based
-    );
-    let language_id = persister.ensure_language(&args.lang, lang_name).await?;
+    let (config, pool) = load_config_and_pool().await?;
+    let provider = wisecrow::llm::create_provider(&config)?;
 
     let path = std::path::Path::new(&args.file)
         .canonicalize()
         .map_err(|_| WisecrowError::InvalidInput(format!("File not found: {}", args.file)))?;
+    let documents = wisecrow::grammar::library::documents(&path)?;
 
-    let count =
-        wisecrow::grammar::rules::import_from_pdf(&pool, language_id, &args.level, &path).await?;
-    info!("Imported {count} grammar rules from PDF {}", args.file);
+    // A refused document is passed over rather than ending the run, so that a
+    // language directory holding a standard beside its textbooks still imports
+    // the textbooks. A run left with nothing to read is an error.
+    let mut cleared = Vec::with_capacity(documents.len());
+    for document in documents {
+        match clearance(&document) {
+            Clearance::Permitted => cleared.push(document),
+            Clearance::Refused(reason) if args.force => {
+                warn!("{reason}; --force given, reading it to {}", provider.name());
+                cleared.push(document);
+            }
+            Clearance::Refused(reason) => {
+                warn!("Skipped: {reason}. Pass --force only for a model hosted locally.");
+            }
+        }
+    }
+    if cleared.is_empty() {
+        return Err(WisecrowError::InvalidInput(format!(
+            "No document under {} is cleared for synthesis in its SOURCES.md",
+            args.file
+        ))
+        .into());
+    }
+    let documents = cleared;
+
+    let persister = wisecrow::ingesting::persisting::DatabasePersister::new(
+        pool.clone(), // clone: PgPool is Arc-based
+    );
+    let options = ImportOptions {
+        dry_run: args.dry_run,
+        max_rules: args.max_rules,
+    };
+
+    let mut placed = 0usize;
+    for document in &documents {
+        let lang = document_language(&args, document)?;
+        let lang_name = resolve_language_name(lang)?;
+        let language_id = persister.ensure_language(lang, lang_name).await?;
+        let target = ImportTarget {
+            language_id,
+            language_name: lang_name,
+            cefr_level: &args.level,
+        };
+
+        let outcome = import_document(&pool, provider.as_ref(), target, document, options).await?;
+        if outcome.wanted == 0 {
+            continue;
+        }
+
+        let accepted = outcome.synthesis.points.len();
+        let refused = outcome.synthesis.rejected.len();
+        if args.dry_run {
+            print_proposed(document, &outcome.synthesis);
+            info!(
+                "Dry run: {accepted} points would be written for {lang} {} from {}, \
+                 {refused} refused; nothing was written",
+                args.level,
+                document.display()
+            );
+            continue;
+        }
+
+        for rejection in &outcome.synthesis.rejected {
+            warn!("Refused \"{}\": {}", rejection.title, rejection.reason);
+        }
+        info!(
+            "Placed {} {lang} {} points from {} ({} held at another level, {refused} refused)",
+            outcome.placed,
+            args.level,
+            document.display(),
+            outcome.held
+        );
+        placed = placed.saturating_add(outcome.placed);
+    }
+
+    if documents.len() > 1 && !args.dry_run {
+        info!(
+            "Placed {placed} grammar points from {} documents",
+            documents.len()
+        );
+    }
+    Ok(())
+}
+
+/// Prints a dry run's answer the way it would be stored, so it can be judged.
+fn print_proposed(
+    document: &std::path::Path,
+    synthesis: &wisecrow::grammar::pdf_import::Synthesis,
+) {
+    println!("{}", document.display());
+    for point in &synthesis.points {
+        println!(
+            "\n  {} [{}]\n  {}",
+            point.title,
+            point.source_ref.as_deref().unwrap_or("no citation"),
+            point.explanation
+        );
+        for example in &point.examples {
+            let mark = if example.is_correct { "ok " } else { "bad" };
+            match example.translation.as_deref() {
+                Some(translation) => println!("    {mark} {} -- {translation}", example.sentence),
+                None => println!("    {mark} {}", example.sentence),
+            }
+        }
+    }
+    for rejection in &synthesis.rejected {
+        println!("\n  refused \"{}\": {}", rejection.title, rejection.reason);
+    }
+    println!();
+}
+
+fn document_language<'a>(
+    args: &'a ImportPdfArgs,
+    document: &std::path::Path,
+) -> Result<&'a str, WisecrowError> {
+    if let Some(ref lang) = args.lang {
+        return Ok(lang);
+    }
+    wisecrow::grammar::library::language_from_path(document).ok_or_else(|| {
+        WisecrowError::InvalidInput(format!(
+            "{} is not inside a language directory, so --lang is required",
+            document.display()
+        ))
+    })
+}
+
+/// Screens candidate grammar PDFs, printing one block for each.
+///
+/// A path may name a document, a language directory or the whole shelf; each is
+/// expanded to the PDFs beneath it before anything is read.
+///
+/// The reports are held back until every document has been read, because
+/// `pdf-extract` writes its own font diagnostics to standard output as it works
+/// and would otherwise scatter the verdicts through thousands of lines of them.
+///
+/// The command exits with a failure when any document cannot be imported as it
+/// stands, so that a loop over a directory of candidates can act on the verdict
+/// rather than on the prose.
+fn handle_check_pdf(args: &CheckPdfArgs) -> Result<(), Error> {
+    let mut reports: Vec<wisecrow::grammar::pdf_check::PdfReport> = Vec::new();
+    let mut unreadable: Vec<String> = Vec::new();
+    for file in &args.file {
+        match wisecrow::grammar::library::documents(std::path::Path::new(file)) {
+            Ok(documents) => reports.extend(
+                documents
+                    .iter()
+                    .map(|document| wisecrow::grammar::pdf_check::check(document)),
+            ),
+            Err(error) => unreadable.push(format!("FAIL {file}\n  {error}")),
+        }
+    }
+
+    let usable = reports
+        .iter()
+        .filter(|report| report.verdict.is_usable())
+        .count();
+    for report in &reports {
+        print!("{report}");
+    }
+    for failure in &unreadable {
+        println!("{failure}");
+    }
+    let screened = reports.len().saturating_add(unreadable.len());
+    println!(
+        "{screened} screened, {usable} usable, {} not",
+        screened.saturating_sub(usable)
+    );
+
+    let rejected = screened.saturating_sub(usable);
+    if rejected > 0 {
+        return Err(WisecrowError::InvalidInput(format!(
+            "{rejected} of {screened} documents cannot supply grammar material"
+        ))
+        .into());
+    }
     Ok(())
 }
 
@@ -1158,6 +1335,7 @@ async fn main() -> Result<(), Error> {
         Command::GradedReader(args) => handle_graded_reader(args).await?,
         Command::ImportGrammar(args) => handle_import_grammar(args).await?,
         Command::ImportPdf(args) => handle_import_pdf(args).await?,
+        Command::CheckPdf(args) => handle_check_pdf(&args)?,
         Command::Ingest(args) => handle_ingest(args).await?,
         Command::Learn(args) => handle_learn(args).await?,
         Command::Nback(args) => handle_nback(args).await?,

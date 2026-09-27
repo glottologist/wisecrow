@@ -46,9 +46,11 @@ pub struct ExampleSentence {
 
 /// Extracts the prose passages of a grammar PDF, page by page.
 ///
-/// Detects section headings, joins the prose under each into one passage, keeps
-/// quoted and `e.g.` lines as example sentences, and drops table rows and any
-/// passage too short to hold a rule.
+/// The text comes from [`crate::grammar::pdf_text`], which falls back to poppler
+/// for a document the native extractor cannot read. Headings are detected, the
+/// prose under each is joined into one passage, quoted and `e.g.` lines are kept
+/// as example sentences, and table rows and any passage too short to hold a rule
+/// are dropped.
 ///
 /// # Errors
 ///
@@ -60,10 +62,9 @@ pub fn extract(path: &Path) -> Result<GrammarContent, WisecrowError> {
         .canonicalize()
         .map_err(|e| WisecrowError::PdfExtractionError(format!("Invalid path: {e}")))?;
 
-    let pages = pdf_extract::extract_text_by_pages(&canonical)
-        .map_err(|e| WisecrowError::PdfExtractionError(format!("PDF extraction failed: {e}")))?;
+    let text = crate::grammar::pdf_text::pages(&canonical)?;
 
-    let passages = parse_passages(&pages);
+    let passages = parse_passages(&text.pages);
 
     if passages.is_empty() {
         return Err(WisecrowError::PdfExtractionError(
@@ -75,7 +76,10 @@ pub fn extract(path: &Path) -> Result<GrammarContent, WisecrowError> {
 }
 
 /// Collects the passages of a document whose pages are already text.
-fn parse_passages(pages: &[String]) -> Vec<GrammarPassage> {
+///
+/// Exposed to the crate so that [`crate::grammar::pdf_check`] can report what an
+/// import would find without extracting the text a second time.
+pub(crate) fn parse_passages(pages: &[String]) -> Vec<GrammarPassage> {
     let mut passages = Vec::new();
 
     for (index, page) in pages.iter().enumerate() {

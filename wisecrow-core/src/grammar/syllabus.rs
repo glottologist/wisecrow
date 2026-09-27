@@ -271,6 +271,7 @@ pub async fn import_syllabus(
                         title: entry.title.clone(), // clone: building owned from borrowed entry
                         explanation: entry.explanation.clone(), // clone: building owned from borrowed entry
                         source,
+                        source_ref: None,
                         examples: vec![],
                     },
                 )

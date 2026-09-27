@@ -1,6 +1,6 @@
 # CLI reference
 
-The `wisecrow` binary ships with thirty subcommands. Most have a short alias
+The `wisecrow` binary ships with thirty-three subcommands. Most have a short alias
 (in parentheses below) for shell ergonomics.
 
 ## Synopsis
@@ -25,7 +25,8 @@ list.
 | [`list-languages`](#list-languages) | `l` | no | Print the supported-language table. |
 | [`seed-grammar`](#seed-grammar) | `sg` | yes + LLM | Generate grammar rules via an LLM. |
 | [`import-grammar`](#import-grammar) | `ig` | yes | Import grammar rules from a JSON file. |
-| [`import-pdf`](#import-pdf) | `ip` | yes | Import grammar rules extracted from a PDF. |
+| [`import-pdf`](#import-pdf) | `ip` | yes + LLM | Synthesise a level's grammar points from a PDF. |
+| [`check-pdf`](#check-pdf) | `cp` | no | Report whether a PDF can supply grammar material. |
 | [`generate-exercises`](#generate-exercises) | `ge` | yes + LLM | Generate cloze and MC quizzes from stored rules. |
 | [`quiz`](#quiz) | `q` | no | Run a quiz directly from a PDF. |
 | [`extract-words`](#extract-words) | — | yes | Count sentence words into word candidates. |
@@ -326,12 +327,114 @@ Example file shape:
 ## `import-pdf`
 
 ```sh
-wisecrow import-pdf --lang <CODE> --level <CEFR> --file path/to/grammar.pdf
+wisecrow import-pdf [--lang <CODE>] --level <CEFR> --file <PDF or DIRECTORY>
+                    [--dry-run] [--max-rules <N>] [--force]
 ```
 
-Extracts text from a PDF and stores each parsed rule with `source = 'pdf'`.
-The extraction is best-effort — see [Grammar workflows](../guides/grammar-workflows.md)
-for tips on cleaning the imported rules.
+Reads a grammar document and asks the configured model for the points one CEFR
+level should take from it, then places what passes a gate. A document is a
+source to reason from, not one to copy: the model is sent the document's prose
+passages, each marked with its page, and returns points in the shape
+[`seed-grammar`](#seed-grammar) produces. A point is stored only when it carries
+a title, an explanation of at least two sentences, a correct and an incorrect
+example, and a page the prompt actually held; anything short of that is refused
+and counted in the log. Stored points have `source = 'pdf'` and a `source_ref`
+naming the document and page, e.g. `yo-puedo-1-2021.pdf p.148`.
+
+Two targets govern a level. The seeder fills it to fifteen points of any
+source; the importer adds up to thirty document-backed points on top, counted
+only over points with `source = 'pdf'`, so a level the seeder has already
+filled still takes what the books have to add. The model is asked in rounds
+of at most fifteen, each naming every title the level holds and every title
+the earlier rounds produced, and the rounds stop at the target, at
+`--max-rules`, or when a round yields fewer points than it asked for. A level
+at the document target costs no call at all. Points are written the way
+seeding writes them: an import adds to a level and never moves a point that
+already sits at another one, and a proposed point whose slug matches a
+seeded or hand-written point at the same level is held rather than written
+over it.
+
+The source documents are kept one directory per language, as
+`grammar/<code>/<document>.pdf`, and the command reads that layout. `--file` may
+name a single document or a directory, in which case every PDF beneath it is
+read in turn until the level is full; `--lang` may be omitted for a document
+whose path states its language, and when given it overrides the path. The level
+applies to every document in the run.
+
+```sh
+wisecrow import-pdf --level B1 --file grammar/es --dry-run   # judge before writing
+wisecrow import-pdf --level B1 --file grammar/es/yo-puedo-1-2021.pdf
+wisecrow import-pdf --level B1 --file grammar/es --max-rules 5
+```
+
+| Flag | Effect |
+|------|--------|
+| `--dry-run` | Ask the model and print each point as it would be stored, with its refusals; write nothing. The call is still made. |
+| `--max-rules <N>` | Ask for at most `N` points, beneath what the level is short. |
+| `--force` | Read a document its `SOURCES.md` row does not clear. For a model hosted locally only. |
+
+Every document is checked against the shelf's provenance record before it is
+read to the model. `grammar/SOURCES.md` carries a `Synthesis` column, and a
+document is sent only when its row says `yes`; a document with no row, or with
+no record above it, is refused as well, since nothing is known about its
+licence. In a directory run a refused document is skipped with a warning and the
+rest proceed; a run left with nothing cleared is an error. A document outside a
+language directory with no `--lang` is refused by name rather than guessed at.
+
+---
+
+## `check-pdf`
+
+```sh
+wisecrow check-pdf --file <PDF or DIRECTORY> [--file <PDF or DIRECTORY>]
+```
+
+An import is only as good as the text layer beneath it, and three kinds of
+document give nothing back: a PDF built from page scans, an encrypted one, and a
+reference work whose pages are almost entirely paradigm tables. This command
+reads each file with the same extractor [`import-pdf`](#import-pdf) uses and
+reports what an import would find, so an unusable document is rejected before it
+costs a run. It touches neither the database nor an LLM. As with
+[`import-pdf`](#import-pdf), `--file` accepts a document or a directory, and may
+be repeated, so one language or the whole shelf is screened in a single pass:
+
+```sh
+wisecrow check-pdf --file grammar | tail -60
+wisecrow check-pdf --file grammar/gd --file grammar/ga
+```
+
+Two extractors stand behind all of this. `pdf-extract` is tried first, since it
+is pure Rust and needs nothing installed, and poppler's `pdftotext` is asked only
+when the native reading comes back under 200 characters a page or fails outright.
+Whichever read more of the document wins, and the report names it. The fallback is
+not a nicety: five commercial French grammars in the shelf yield between
+twenty-one and eighty-eight characters a page through `pdf-extract`, against six
+hundred to two thousand through poppler, and a sixth makes it panic. A machine
+without poppler installed still works, and simply keeps the thin reading.
+
+Each document earns one of three verdicts.
+
+| Verdict | Meaning |
+|---------|---------|
+| `OK` | Prose at the density of a grammar book; import from it. |
+| `THIN` | Text was extracted, but under 200 characters per page — partial OCR, or nothing but tables. |
+| `FAIL` | Nothing can be read: not a PDF, encrypted, unopenable, or holding no passage long enough to state a rule. |
+
+The report gives the page count, the characters extracted per page, the passages
+the extractor kept with their mean length, and three passages quoted from across
+the document rather than from its front matter. The command exits with a failure
+status if any document falls short of `OK`, which makes it usable as a gate in a
+shell loop.
+
+One wrinkle is worth knowing in advance: `pdf-extract` writes its own font
+diagnostics to standard output as it reads, and a long document produces
+thousands of such lines. The verdicts are therefore held back until every
+document has been read and printed together at the end, so passing the run
+through `tail` is enough to see them:
+
+```sh
+wisecrow check-pdf --file grammar | tail -60
+```
 
 ---
 

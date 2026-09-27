@@ -370,7 +370,8 @@ Run `wisecrow <command> --help` for the full flag list.
 | `prefetch-media` (`pm`) | Pre-fetch audio/images for a pair into the media cache. |
 | `seed-grammar` (`sg`) | LLM-seed CEFR grammar rules for a language and levels. |
 | `import-grammar` (`ig`) | Import grammar rules from a JSON file. |
-| `import-pdf` (`ip`) | Extract and import grammar rules from a PDF. |
+| `import-pdf` (`ip`) | Synthesise a level's grammar points from a PDF, or a language directory of them, through the LLM. |
+| `check-pdf` (`cp`) | Screen a PDF, or a directory of them, for a readable text layer before importing. |
 | `generate-exercises` (`ge`) | Generate LLM grammar exercises for a language/level. |
 | `user` (`u`) | Manage web accounts (see above). |
 | `sync-client` (`sc`) | Manage sync-client keys (see above). |

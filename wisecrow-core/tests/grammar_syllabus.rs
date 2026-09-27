@@ -173,6 +173,7 @@ async fn upsert_matches_on_slug_and_preserves_rule_id() -> TestResult {
         title: "Instrumental case with z".to_owned(),
         explanation: "First wording".to_owned(),
         source: RuleSource::Llm,
+        source_ref: None,
         examples: vec![],
     };
     RuleRepository::upsert_rule(&pool, language_id, level, &first).await?;
@@ -224,6 +225,7 @@ async fn rules_for_level_returns_syllabus_order() -> TestResult {
                 title: title.to_owned(),
                 explanation: "x".to_owned(),
                 source: RuleSource::Llm,
+                source_ref: None,
                 examples: vec![],
             },
         )
@@ -661,6 +663,7 @@ async fn a_point_repeated_at_a_higher_level_stays_where_it_was_first_placed() ->
         title: "The Genitive Case with Verbal Nouns".to_owned(),
         explanation: "As B2 explained it".to_owned(),
         source: RuleSource::Llm,
+        source_ref: None,
         examples: vec![],
     };
     let placed = RuleRepository::place_rule(&pool, language_id, b2, &at_b2).await?;
@@ -708,6 +711,7 @@ async fn re_seeding_the_same_level_still_refreshes_the_point() -> TestResult {
         title: "Soft mutation after i".to_owned(),
         explanation: "First wording".to_owned(),
         source: RuleSource::Llm,
+        source_ref: None,
         examples: vec![],
     };
     let RulePlacement::Placed(rule_id) =

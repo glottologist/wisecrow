@@ -61,23 +61,50 @@ override an AI-seeded rule simply by reusing its title.
 
 ## Import from PDF
 
-`import-pdf` runs `pdf-extract` over the file, splits it into sections, and
-upserts a rule per detected paragraph. It is best-effort:
+Before importing anything, screen the document. A PDF built from page scans holds
+no text at all, and an import from one produces nothing; `check-pdf` reports the
+characters per page and the passages the extractor keeps, and fails the run when a
+document cannot supply material:
 
 ```sh
-wisecrow import-pdf --lang es --level B1 --file ./grammar/spanish-b1.pdf
+wisecrow check-pdf --file ./grammar/es | tail -20
 ```
 
-Two things to know:
+`import-pdf` reads the file with `pdf-extract`, falling back to poppler's
+`pdftotext` when that returns too little to be prose, splits the text into
+passages, and asks the model for the points the requested level is short of,
+naming the points it already holds. What comes back is gated -- two sentences of
+explanation, a correct and an incorrect example, a page the prompt carried -- and
+placed the way `seed-grammar` places points, so an import can fill a level but
+never moves a point already placed at another. Documents live one directory per
+language, so the language comes from the path and a whole language imports in
+one command:
 
-1. The extracted titles are clipped at 100 characters with a UTF-8 boundary
-   check, so long headings get truncated rather than corrupting the row.
-2. PDF examples are imported as `is_correct = true` because there is no
-   reliable signal in unstructured text.
+```sh
+wisecrow import-pdf --level B1 --file ./grammar/es --dry-run
+wisecrow import-pdf --level B1 --file ./grammar/es/yo-puedo-1-2021.pdf
+wisecrow import-pdf --level B1 --file ./grammar/es
+```
 
-If the result is messy, export the rules with a SQL query, edit them, and
-re-import via `import-grammar` — `manual` overrides `pdf` on the next
-upsert.
+Three things to know:
+
+1. Run with `--dry-run` first. It costs the model call but writes nothing, and
+   prints every point as it would be stored, so a document that yields poor
+   points is found before it touches the syllabus.
+2. `grammar/SOURCES.md` decides what may be sent. A document is read to the
+   model only when its row's `Synthesis` cell says `yes`; the two standards
+   documents say `no`, because their terms do not allow reproduction to a third
+   party, and `--force` is for a locally hosted model only.
+3. Every stored point cites its source: `source_ref` holds the document and
+   page, and `source = 'pdf'`. A level holds up to thirty document-backed
+   points beside its fifteen seeded ones, asked for fifteen at a time; a run
+   over a level already at that target asks the model for nothing, and a
+   proposal that matches a seeded point's slug at the same level is held, not
+   written over it.
+
+A point that reads badly is edited like any other: export the level with
+`export-grammar`, correct it, and re-import via `import-grammar` -- `manual`
+overrides `pdf` on the next upsert.
 
 ## Generate quizzes from rules
 

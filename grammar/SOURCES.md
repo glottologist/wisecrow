@@ -5,22 +5,35 @@ Input for [`import-pdf`](../docs/src/reference/cli-reference.md#import-pdf) and
 an extractable text layer and then run through `pdf::extract`, so every one here
 yields quiz items rather than failing at import.
 
-| File | Work | Year | Licence |
-|------|------|-----:|---------|
-| `gaelic-calder-1923.pdf` | George Calder, *A Gaelic Grammar* | 1923 | public domain |
-| `welsh-evans-1910.pdf` | D. Simon Evans, *The Elements of Welsh Grammar* | 1910 | public domain |
-| `welsh-morris-jones-1913.pdf` | John Morris-Jones, *A Welsh Grammar, Historical and Comparative* | 1913 | public domain |
-| `irish-christian-brothers-1920.pdf` | *First Irish Grammar* | 1920 | public domain |
-| `french-liberte-2022.pdf` | Gretchen Angelo and Emmanuelle Remy, *Liberté* | 2022 | CC BY-SA 4.0 |
-| `french-bevier-1896.pdf` | Louis Bevier, *A French Grammar* | 1896 | public domain |
-| `italian-daccordo.pdf` | Italian faculty, University of Iowa, *D'Accordo!* | 2021 | CC BY-NC-SA 4.0 |
-| `spanish-olmsted-1920.pdf` | Everett Olmsted, *First Course in Spanish* | 1920 | public domain |
-| `spanish-coester-1912.pdf` | Alfred Coester, *A Spanish Grammar* | 1912 | public domain |
-| `irish-caighdean-oifigiuil-2017.pdf` | Houses of the Oireachtas, *Gramadach na Gaeilge: An Caighdeán Oifigiúil* | 2017 | no licence stated |
-| `gaelic-goc-2009.pdf` | SQA, *Gaelic Orthographic Conventions* | 2009 | reproduction limited to SQA qualifications |
-| `spanish-yo-puedo-1-2021.pdf` | Elizabeth Silvaggio-Adams and Rocío Vallejo-Alegre, *Yo puedo: para empezar* | 2021 | CC BY-NC 4.0 |
-| `italian-spunti-elementare-1-2019.pdf` | Daniel Leisawitz and Daniela Viale, *Spunti: Italiano elementare 1* | 2019 | CC BY-NC-SA 4.0 |
-| `french-interactif-ed4-2019.pdf` | Karen Kelton, Nancy Guilloteau and Carl Blyth, *Français interactif*, 4th edn | 2019 | CC BY 4.0 |
+The shelf is one directory per language, named by the code the CLI already
+accepts: `gd`, `ga`, `cy`, `fr`, `it` and `es`. The layout is not merely tidiness.
+`import-pdf` reads the language from the directory, so a document needs no
+`--lang` and a whole language can be imported in one command, and both it and
+`check-pdf` accept a directory wherever they accept a file.
+
+The `Synthesis` column is read by `import-pdf`, not merely by people. Importing
+sends a document's passages to the configured model, and for a hosted model that
+is a reproduction to a third party, so a document is read to the model only when
+its row here says `yes`. A document with no row is refused as well, since nothing
+is known about it; `--force` overrides the refusal for a model hosted locally,
+where no third party receives the text.
+
+| File | Work | Year | Licence | Synthesis |
+|------|------|-----:|---------|-----------|
+| `gd/calder-1923.pdf` | George Calder, *A Gaelic Grammar* | 1923 | public domain | yes |
+| `cy/evans-1910.pdf` | D. Simon Evans, *The Elements of Welsh Grammar* | 1910 | public domain | yes |
+| `cy/morris-jones-1913.pdf` | John Morris-Jones, *A Welsh Grammar, Historical and Comparative* | 1913 | public domain | yes |
+| `ga/christian-brothers-1920.pdf` | *First Irish Grammar* | 1920 | public domain | yes |
+| `fr/liberte-2022.pdf` | Gretchen Angelo and Emmanuelle Remy, *Liberté* | 2022 | CC BY-SA 4.0 | yes |
+| `fr/bevier-1896.pdf` | Louis Bevier, *A French Grammar* | 1896 | public domain | yes |
+| `it/daccordo.pdf` | Italian faculty, University of Iowa, *D'Accordo!* | 2021 | CC BY-NC-SA 4.0 | yes |
+| `es/olmsted-1920.pdf` | Everett Olmsted, *First Course in Spanish* | 1920 | public domain | yes |
+| `es/coester-1912.pdf` | Alfred Coester, *A Spanish Grammar* | 1912 | public domain | yes |
+| `ga/caighdean-oifigiuil-2017.pdf` | Houses of the Oireachtas, *Gramadach na Gaeilge: An Caighdeán Oifigiúil* | 2017 | no licence stated | no |
+| `gd/goc-2009.pdf` | SQA, *Gaelic Orthographic Conventions* | 2009 | reproduction limited to SQA qualifications | no |
+| `es/yo-puedo-1-2021.pdf` | Elizabeth Silvaggio-Adams and Rocío Vallejo-Alegre, *Yo puedo: para empezar* | 2021 | CC BY-NC 4.0 | yes |
+| `it/spunti-elementare-1-2019.pdf` | Daniel Leisawitz and Daniela Viale, *Spunti: Italiano elementare 1* | 2019 | CC BY-NC-SA 4.0 | yes |
+| `fr/interactif-ed4-2019.pdf` | Karen Kelton, Nancy Guilloteau and Carl Blyth, *Français interactif*, 4th edn | 2019 | CC BY 4.0 | yes |
 
 The Creative Commons works carry conditions the public-domain ones do not.
 *Liberté* is share-alike, so a derived syllabus exported from it inherits
@@ -33,8 +46,9 @@ redistributed.
 The two standards documents are not open at all. *An Caighdeán Oifigiúil*
 states no licence, and GOC allows reproduction only in support of SQA
 qualifications, with SQA acknowledged and no trade or commercial use. Both are
-safe to consult and to seed grammar rules from, since a rule statement is not
-their text, but neither may be redistributed with the application.
+safe to consult by hand, since a rule statement checked against them is not
+their text, but neither may be redistributed with the application nor sent to a
+hosted model, which is why their `Synthesis` cell says `no`.
 
 The Celtic school grammars are all from before the modern spelling reforms —
 Calder predates the 1981 Gaelic Orthographic Conventions — so their example
@@ -44,17 +58,102 @@ from Calder or the Christian Brothers can be checked against them. Welsh has no
 counterpart here: no modern Welsh grammar with a usable licence was found, and
 the two 1910s works stand alone.
 
+## Personal copies
+
+The shelf also holds the maintainer's own purchased copies of commercial titles,
+thirty of them across five languages. They are not in the table above because
+they belong to a different category: none of them may be redistributed, and none
+of them is in the repository -- `.gitignore` keeps every PDF out of it, and only
+this file is tracked. They are here because the application is single-user, so a
+rule synthesised from a book one owns goes no further than the machine one owns
+it on. Were Wisecrow ever to serve anyone else, these would have to come out, and
+the openly licensed works above are what would remain.
+
+The authors and titles below are taken from each file's own metadata rather than
+from its filename, or from the title page where the metadata is blank, and the
+pages from `pdfinfo`. The publication year is left out deliberately: the files
+carry a PDF creation date, which for several of them is the date the copy was
+made rather than the date the edition appeared, and a plausible-looking year is
+worse than none.
+
+Two rows say `no` under `Synthesis` although the documents read. *Easy Learning
+Spanish Grammar* and *Complete Irish* are scans with an OCR text layer, and the
+OCR drops the accents of the language being taught -- `bre6` for *breá*, `-i6`
+for *-ió* -- so a point synthesised from them would carry misspelt examples.
+They stay on the shelf for reading, not for the model.
+
+| File | Work | Pages | Read by | Synthesis |
+|------|------|------:|---------|-----------|
+| `es/Barron's 501 Verbs - Spanish.pdf` | Christopher Kendris, *501 Spanish Verbs* | 739 | poppler | yes |
+| `es/Collins Easy Learning Spanish Grammar.pdf` | HarperCollins, *Collins Easy Learning Spanish Grammar* (OCR layer) | 163 | pdf-extract | no |
+| `es/Practice Makes Perfect Advanced Spanish Grammar [True PDF].pdf` | Rogelio Alonso Vallecillos, *Practice Makes Perfect: Advanced Spanish Grammar* | 210 | poppler | yes |
+| `es/Practice Makes Perfect Basic Spanish.pdf` | Dorothy Devney Richmond, *Practice Makes Perfect: Basic Spanish* | 273 | pdf-extract | yes |
+| `es/Practice Makes Perfect Spanish Irregular Verbs.pdf` | Eric Vogt, *Practice Makes Perfect: Spanish Irregular Verbs Up Close* | 126 | pdf-extract | yes |
+| `es/Practice Makes Perfect Spanish Sentence Builder.pdf` | Gilda Nissenberg, *Practice Makes Perfect: Spanish Sentence Builder* | 224 | poppler | yes |
+| `es/Practice Makes Perfect Spanish Verb Tenses.pdf` | Dorothy Richmond, *Practice Makes Perfect: Spanish Verb Tenses*, 2nd edn | 353 | pdf-extract | yes |
+| `es/Practice Makes Perfect_ Complete Spanish All-in-One, Premium Second Edition.pdf` | Gilda Nissenberg, *Practice Makes Perfect: Complete Spanish All-in-One*, premium 2nd edn | 869 | poppler | yes |
+| `es/Spanish Grammar (Schaum's outlines).pdf` | Conrad J. Schmitt, *Schaum's Outline of Spanish Grammar* | 205 | pdf-extract | yes |
+| `es/[Bookflare.net] - Practice Makes Perfect Complete Spanish All-in-One, 2nd Edition.pdf` | Gilda Nissenberg, *Practice Makes Perfect: Complete Spanish All-in-One*, 2nd edn | 653 | pdf-extract | yes |
+| `fr/Les 500 exercices de grammaire + corrigés (B1) (French Edition)_nodrm.pdf` | Marie-Pierre Caquineau-Gündüz and others, *Les 500 exercices de grammaire, niveau B1* | 226 | poppler | yes |
+| `fr/Modern French Grammar - A Practical Guide (2nd Ed).pdf` | Margaret Lang and Isabelle Perez, *Modern French Grammar: A Practical Guide*, 2nd edn | 387 | poppler | yes |
+| `fr/Practice Makes Perfect  French Sentence Builder.pdf` | Eliane Kurbegov, *Practice Makes Perfect: French Sentence Builder* | 236 | pdf-extract | yes |
+| `fr/Practice Makes Perfect French Pronouns and Prepositions, Second Edition (Practice Makes Perfect Series) (French Edition).pdf` | Annie Heminway, *Practice Makes Perfect: French Pronouns and Prepositions*, 2nd edn | 375 | poppler | yes |
+| `fr/Practice Makes Perfect French Vocabulary.pdf` | Eliane Kurbegov, *Practice Makes Perfect: French Vocabulary* | 222 | pdf-extract | yes |
+| `fr/Practice Makes Perfect_ Complete French All-in-One, Premium Second Edition (French Edition) (Jason Ridgway-Taylor's conflicted copy 2025-12-27).pdf` | Annie Heminway, *Practice Makes Perfect: Complete French All-in-One*, premium 2nd edn | 1090 | poppler | yes |
+| `fr/Practice Makes Perfect_ Complete French Grammar, Premium Third Edition.pdf` | Annie Heminway, *Practice Makes Perfect: Complete French Grammar*, premium 3rd edn | 490 | poppler | yes |
+| `fr/Practice Makes Perfect_ French Verb Tenses (Practice Makes Perfect Series).pdf` | Trudie Booth, *Practice Makes Perfect: French Verb Tenses* | 862 | poppler | yes |
+| `fr/Schaum's Outline of French Grammar.pdf` | Mary E. Coffman Crocker, *Schaum's Outline of French Grammar* | 398 | pdf-extract | yes |
+| `fr/The Vocabulary of Modern French Origins, Structure and Function.pdf` | Hilary Wise, *The Vocabulary of Modern French: Origins, Structure and Function* | 271 | pdf-extract | yes |
+| `ga/04.Teach  yourself complete Irish.pdf` | Diarmuid Ó Sé and Joseph Sheils, *Teach Yourself Complete Irish* (OCR layer) | 208 | pdf-extract | no |
+| `ga/06.Colloquial Irish.pdf` | Thomas Ihde, Máire Ní Neachtain, Roslyn Blyn-LaDrew and John Gillen, *Colloquial Irish* | 260 | pdf-extract | yes |
+| `ga/10.Irish nouns a reference guide.pdf` | Andrew Carnie, *Irish Nouns: A Reference Guide* | 363 | pdf-extract | yes |
+| `ga/14.Intermediate Irish A Grammar and Workbook.pdf` | Nancy Stenson, *Intermediate Irish: A Grammar and Workbook* | 257 | pdf-extract | yes |
+| `it/Modern Italian Grammar Workbook (Modern Grammar Workbooks) (Italian Edition).pdf` | Anna Proudfoot, *Modern Italian Grammar Workbook* | 221 | poppler | yes |
+| `it/Practice Makes Perfect Italian Pronouns And Prepositions, Second Edition (Practice Makes Perfect Series) (Jason Ridgway-Taylor's conflicted copy 2025-12-26).pdf` | Daniela Gobetti, *Practice Makes Perfect: Italian Pronouns and Prepositions*, 2nd edn | 341 | poppler | yes |
+| `it/Practice Makes Perfect Italian Sentence Builder (Practice Makes Perfect Series) (Jason Ridgway-Taylor's conflicted copy 2025-12-26).pdf` | Paola Nanni-Tate, *Practice Makes Perfect: Italian Sentence Builder* | 208 | poppler | yes |
+| `it/Practice Makes Perfect Italian Verb Tenses 2_E (EBOOK)_ With 300 Exercises + Free Flashcard App.pdf` | Paola Nanni-Tate, *Practice Makes Perfect: Italian Verb Tenses*, 2nd edn | 357 | poppler | yes |
+| `it/Practice Makes Perfect_ Complete Italian Grammar (Practice Makes Perfect Series).pdf` | Marcel Danesi, *Practice Makes Perfect: Complete Italian Grammar* | 437 | poppler | yes |
+| `it/Thinking Italian Translation_ A Course in Translation Method_ Italian to English (Thinking Translation).pdf` | Sándor Hervey, Ian Higgins, Stella Cragie and Patrizia Gambarotta, *Thinking Italian Translation* | 237 | poppler | yes |
+
+Fifteen of the thirty need poppler, as the `Read by` column records. `pdf-extract`
+recovers between a sixteenth and a thirtieth of their text, because the
+McGraw-Hill and Routledge ebooks embed fonts with custom encodings, and it panics
+outright on *Les 500 exercices*. This is the reason the fallback described below
+exists.
+
+Three filenames deserve a note. *Complete French All-in-One* and the two Italian
+*Practice Makes Perfect* titles arrived through Dropbox as conflicted copies, and
+their names still say so; each is the only copy of its title on the shelf, and
+nothing depends on the name, so they have been left as they are rather than
+quietly renamed. Welsh gained nothing: the three candidates added to `cy/` were
+page scans with no text layer and were removed, as were thirteen Gaelic scans,
+one Irish and three Italian, so the two 1910s Welsh grammars still stand alone.
+
 ## Checking a new document
 
-A PDF built from page scans holds no text, and `pdf-extract` returns nothing
+A PDF built from page scans holds no text, and neither extractor returns anything
 from one. Two candidates were rejected for exactly that: the Google Books scans
 of Young's *An Italian Grammar* and Fuentes's *A Practical Spanish Grammar*
 carry text for the copyright notice and nothing else. A third, the *Libro Libre*
 Spanish open textbook, is encrypted with a key `lopdf` will not open and fails
 with `unsupported key length`.
 
-`pdf-text-check` in the agent-tools store reports characters per page, which
-separates the three cases before an import is attempted.
+`wisecrow check-pdf --file <path>` separates the three cases before an import is
+attempted, taking a single document, a language directory such as `grammar/gd`, or
+the whole of `grammar`. It reads the file with the extractor the import itself uses, so its
+verdict is the one that matters: `OK` for prose at the density of a grammar book,
+`THIN` for a document under two hundred characters a page, and `FAIL` for one
+that cannot be opened or holds no passage long enough to state a rule. The
+`pdf-text-check` tool in the agent-tools store remains useful for a candidate
+that is still a URL, since it downloads before it measures.
+
+Two extractors are tried: `pdf-extract` first, then poppler's `pdftotext` where
+that reads under two hundred characters a page. The commercial French grammars
+need the second — `pdf-extract` recovers barely a twentieth of their text, since
+their embedded fonts carry custom encodings — so poppler is a declared dependency
+in `devbox.json` rather than an optional extra. The report names the extractor
+that answered, which is worth reading: a document that only poppler can open is
+one to keep an eye on if the text ever looks mangled.
 
 Several hosts refuse an automated download even when the work itself is open.
 bepress repositories and the Milne and BCcampus catalogues answer `curl` with

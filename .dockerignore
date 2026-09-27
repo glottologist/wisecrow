@@ -17,3 +17,5 @@ node_modules/
 .env
 .env.*
 !.env.example
+# The PDF shelf is bind-mounted at run time, never baked into the image.
+grammar/

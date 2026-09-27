@@ -120,6 +120,9 @@ pub struct GrammarRule {
     pub title: String,
     pub explanation: String,
     pub source: RuleSource,
+    /// Document and page a synthesised point was read from; `None` for a point
+    /// that was seeded or written by hand.
+    pub source_ref: Option<String>,
     pub examples: Vec<RuleExample>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -139,6 +142,8 @@ pub struct NewGrammarRule {
     pub title: String,
     pub explanation: String,
     pub source: RuleSource,
+    /// Document and page the point was read from, when it came from one.
+    pub source_ref: Option<String>,
     pub examples: Vec<NewRuleExample>,
 }
 
@@ -210,13 +215,14 @@ impl RuleRepository {
         rule: &NewGrammarRule,
     ) -> Result<i32, WisecrowError> {
         let row = sqlx::query_scalar::<_, i32>(
-            "INSERT INTO grammar_rules (language_id, cefr_level_id, slug, title, explanation, source)
-             VALUES ($1, $2, $3, $4, $5, $6)
+            "INSERT INTO grammar_rules (language_id, cefr_level_id, slug, title, explanation, source, source_ref)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (language_id, slug)
              DO UPDATE SET cefr_level_id = EXCLUDED.cefr_level_id,
                            title = EXCLUDED.title,
                            explanation = EXCLUDED.explanation,
                            source = EXCLUDED.source,
+                           source_ref = EXCLUDED.source_ref,
                            updated_at = CURRENT_TIMESTAMP
              RETURNING id",
         )
@@ -226,6 +232,7 @@ impl RuleRepository {
         .bind(&rule.title)
         .bind(&rule.explanation)
         .bind(rule.source.as_str())
+        .bind(rule.source_ref.as_deref())
         .fetch_one(pool)
         .await?;
 
@@ -278,12 +285,13 @@ impl RuleRepository {
         // The level guard rides on the insert rather than a read before it, so
         // that two seeding runs at once cannot both decide a point is new.
         let placed = sqlx::query_scalar::<_, i32>(
-            "INSERT INTO grammar_rules (language_id, cefr_level_id, slug, title, explanation, source)
-             VALUES ($1, $2, $3, $4, $5, $6)
+            "INSERT INTO grammar_rules (language_id, cefr_level_id, slug, title, explanation, source, source_ref)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (language_id, slug)
              DO UPDATE SET title = EXCLUDED.title,
                            explanation = EXCLUDED.explanation,
                            source = EXCLUDED.source,
+                           source_ref = EXCLUDED.source_ref,
                            updated_at = CURRENT_TIMESTAMP
              WHERE grammar_rules.cefr_level_id = EXCLUDED.cefr_level_id
              RETURNING id",
@@ -294,6 +302,7 @@ impl RuleRepository {
         .bind(&rule.title)
         .bind(&rule.explanation)
         .bind(rule.source.as_str())
+        .bind(rule.source_ref.as_deref())
         .fetch_optional(pool)
         .await?;
 
@@ -347,12 +356,13 @@ impl RuleRepository {
                 String,
                 String,
                 String,
+                Option<String>,
                 DateTime<Utc>,
                 DateTime<Utc>,
             ),
         >(
             "SELECT gr.id, gr.language_id, gr.cefr_level_id, gr.slug, gr.title, gr.explanation,
-                    gr.source, gr.created_at, gr.updated_at
+                    gr.source, gr.source_ref, gr.created_at, gr.updated_at
              FROM grammar_rules gr
              JOIN cefr_levels cl ON cl.id = gr.cefr_level_id
              WHERE gr.language_id = $1 AND cl.code = $2
@@ -364,7 +374,18 @@ impl RuleRepository {
         .await?;
 
         let mut rules = Vec::with_capacity(rows.len());
-        for (id, lang_id, level_id, slug, title, explanation, source_str, created, updated) in rows
+        for (
+            id,
+            lang_id,
+            level_id,
+            slug,
+            title,
+            explanation,
+            source_str,
+            source_ref,
+            created,
+            updated,
+        ) in rows
         {
             let examples = sqlx::query_as::<_, (i32, String, Option<String>, bool)>(
                 "SELECT id, sentence, translation, is_correct
@@ -390,6 +411,7 @@ impl RuleRepository {
                 title,
                 explanation,
                 source: source_str.parse().unwrap_or(RuleSource::Manual),
+                source_ref,
                 examples,
                 created_at: created,
                 updated_at: updated,
@@ -444,6 +466,7 @@ pub async fn import_from_json(
             title: rule_import.title.clone(), // clone: building owned struct from borrowed import
             explanation: rule_import.explanation.clone(), // clone: building owned struct from borrowed import
             source: RuleSource::Manual,
+            source_ref: None,
             examples: rule_import
                 .examples
                 .iter()
@@ -459,60 +482,6 @@ pub async fn import_from_json(
     }
 
     Ok(count)
-}
-
-/// Imports the passages of a grammar PDF as rules at one CEFR level.
-///
-/// One rule per passage, its prose kept whole. Synthesising a level's points
-/// from the passages through a model, which is what makes them comparable with
-/// seeded points, is planned in
-/// `agents/2026-09-26-004-feature-pdf-import-synthesis-gate.md`; until then a
-/// passage stands as the rule's explanation.
-pub async fn import_from_pdf(
-    pool: &PgPool,
-    language_id: i32,
-    cefr_level_code: &str,
-    pdf_path: &std::path::Path,
-) -> Result<usize, WisecrowError> {
-    let content = crate::grammar::pdf::extract(pdf_path)?;
-    let cefr_level_id = RuleRepository::ensure_cefr_level(pool, cefr_level_code).await?;
-
-    let mut count = 0usize;
-    for passage in &content.passages {
-        let heading = passage.heading.as_deref().unwrap_or("Untitled Rule");
-        let pdf_title = format!("{heading}: {}", truncate(&passage.text, 100));
-        let new_rule = NewGrammarRule {
-            slug: slugify(&pdf_title),
-            title: pdf_title,
-            explanation: passage.text.clone(), // clone: building owned struct from borrowed extraction
-            source: RuleSource::Pdf,
-            examples: passage
-                .examples
-                .iter()
-                .map(|ex| NewRuleExample {
-                    sentence: ex.text.clone(), // clone: building owned struct from borrowed extraction
-                    translation: ex.translation.clone(), // clone: building owned struct from borrowed extraction
-                    is_correct: true,
-                })
-                .collect(),
-        };
-        RuleRepository::upsert_rule(pool, language_id, cefr_level_id, &new_rule).await?;
-        count = count.saturating_add(1);
-    }
-
-    Ok(count)
-}
-
-fn truncate(s: &str, max_len: usize) -> &str {
-    if s.len() <= max_len {
-        s
-    } else {
-        let mut end = max_len;
-        while !s.is_char_boundary(end) && end > 0 {
-            end = end.saturating_sub(1);
-        }
-        &s[..end]
-    }
 }
 
 #[cfg(test)]
