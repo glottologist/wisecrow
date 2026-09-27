@@ -5,11 +5,14 @@
 //! never moves a point that already sits at another one, and a dry run costs
 //! the model call but nothing in the database.
 
+use std::path::PathBuf;
+
 use sqlx::PgPool;
 use wisecrow::errors::WisecrowError;
 use wisecrow::grammar::pdf::{ExampleSentence, GrammarPassage};
 use wisecrow::grammar::pdf_import::{import_passages, ImportOptions, ImportTarget};
 use wisecrow::grammar::rules::{NewGrammarRule, RuleRepository, RuleSource};
+use wisecrow::grammar::sources::{import_schedule, LevelCoverage};
 use wisecrow::llm::LlmProvider;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -450,5 +453,67 @@ async fn max_rules_caps_what_is_kept_beneath_the_shortfall() -> TestResult {
         1,
         "the second point was owed no place"
     );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn the_lowest_covering_level_claims_a_point_two_documents_propose() -> TestResult {
+    let pool = reset_pool().await?;
+    let language_id = seed_language(&pool).await?;
+    let rows = vec![
+        (
+            PathBuf::from("es/grammar.pdf"),
+            LevelCoverage::Stated(vec!["B1"]),
+        ),
+        (
+            PathBuf::from("es/beginner.pdf"),
+            LevelCoverage::Stated(vec!["A1", "B1"]),
+        ),
+    ];
+    let schedule = import_schedule(&rows, None)?;
+    let order: Vec<(&str, &str)> = schedule
+        .calls
+        .iter()
+        .map(|(level, document)| (*level, document.to_str().expect("utf-8")))
+        .collect();
+    assert_eq!(
+        order,
+        [
+            ("A1", "es/beginner.pdf"),
+            ("B1", "es/grammar.pdf"),
+            ("B1", "es/beginner.pdf")
+        ]
+    );
+    let provider = StubProvider::answering(format!("[{}]", point("Personal a", 12)));
+
+    let mut placed = 0;
+    let mut held = 0;
+    for (level, document) in &schedule.calls {
+        let name = document
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            .expect("name");
+        let outcome = import_passages(
+            &pool,
+            &provider,
+            target(language_id, level),
+            name,
+            &[passage(12)],
+            ImportOptions::default(),
+        )
+        .await?;
+        placed += outcome.placed;
+        held += outcome.held;
+    }
+
+    assert_eq!((placed, held), (1, 2), "stored once, held twice");
+    let a1 = RuleRepository::rules_for_level(&pool, language_id, "A1").await?;
+    assert_eq!(a1.len(), 1);
+    assert_eq!(a1[0].slug, "personal-a");
+    assert_eq!(a1[0].source_ref.as_deref(), Some("beginner.pdf p.12"));
+    assert!(RuleRepository::rules_for_level(&pool, language_id, "B1")
+        .await?
+        .is_empty());
     Ok(())
 }

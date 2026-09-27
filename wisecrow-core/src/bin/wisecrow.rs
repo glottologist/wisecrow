@@ -565,8 +565,10 @@ async fn handle_import_grammar(args: ImportGrammarArgs) -> Result<(), Error> {
 /// no repetition. The level cannot be inferred and applies to every document in
 /// the run.
 async fn handle_import_pdf(args: ImportPdfArgs) -> Result<(), Error> {
-    use wisecrow::grammar::pdf_import::{import_document, ImportOptions, ImportTarget};
-    use wisecrow::grammar::sources::{clearance, Clearance};
+    use std::collections::HashMap;
+    use wisecrow::grammar::pdf::GrammarPassage;
+    use wisecrow::grammar::pdf_import::{import_passages, ImportOptions, ImportTarget};
+    use wisecrow::grammar::sources::{import_schedule, lookup, Clearance};
 
     let (config, pool) = load_config_and_pool().await?;
     let provider = wisecrow::llm::create_provider(&config)?;
@@ -581,25 +583,42 @@ async fn handle_import_pdf(args: ImportPdfArgs) -> Result<(), Error> {
     // the textbooks. A run left with nothing to read is an error.
     let mut cleared = Vec::with_capacity(documents.len());
     for document in documents {
-        match clearance(&document) {
-            Clearance::Permitted => cleared.push(document),
+        let found = lookup(&document);
+        match found.clearance {
+            Clearance::Permitted => cleared.push((document, found.levels)),
             Clearance::Refused(reason) if args.force => {
                 warn!("{reason}; --force given, reading it to {}", provider.name());
-                cleared.push(document);
+                cleared.push((document, found.levels));
             }
             Clearance::Refused(reason) => {
                 warn!("Skipped: {reason}. Pass --force only for a model hosted locally.");
             }
         }
     }
-    if cleared.is_empty() {
+
+    let schedule = import_schedule(&cleared, args.level.as_deref())?;
+    for (document, reason) in &schedule.skipped {
+        warn!("Skipped: {}: {reason}", document.display());
+    }
+    if schedule.calls.is_empty() {
         return Err(WisecrowError::InvalidInput(format!(
-            "No document under {} is cleared for synthesis in its SOURCES.md",
-            args.file
+            "No document under {} is cleared for synthesis at {} in its SOURCES.md",
+            args.file,
+            args.level.as_deref().unwrap_or("any level it states")
         ))
         .into());
     }
-    let documents = cleared;
+
+    // One extraction per document, however many levels it is read at.
+    let mut passages: HashMap<&std::path::Path, Vec<GrammarPassage>> = HashMap::new();
+    for &(_, document) in &schedule.calls {
+        if !passages.contains_key(document) {
+            passages.insert(
+                document,
+                wisecrow::grammar::pdf::extract(document)?.passages,
+            );
+        }
+    }
 
     let persister = wisecrow::ingesting::persisting::DatabasePersister::new(
         pool.clone(), // clone: PgPool is Arc-based
@@ -610,17 +629,23 @@ async fn handle_import_pdf(args: ImportPdfArgs) -> Result<(), Error> {
     };
 
     let mut placed = 0usize;
-    for document in &documents {
+    for &(level, document) in &schedule.calls {
         let lang = document_language(&args, document)?;
         let lang_name = resolve_language_name(lang)?;
         let language_id = persister.ensure_language(lang, lang_name).await?;
         let target = ImportTarget {
             language_id,
             language_name: lang_name,
-            cefr_level: &args.level,
+            cefr_level: level,
         };
+        let name = document
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            .unwrap_or("document");
+        let extracted = passages.get(document).map_or(&[][..], Vec::as_slice);
 
-        let outcome = import_document(&pool, provider.as_ref(), target, document, options).await?;
+        let outcome =
+            import_passages(&pool, provider.as_ref(), target, name, extracted, options).await?;
         if outcome.wanted == 0 {
             continue;
         }
@@ -630,9 +655,8 @@ async fn handle_import_pdf(args: ImportPdfArgs) -> Result<(), Error> {
         if args.dry_run {
             print_proposed(document, &outcome.synthesis);
             info!(
-                "Dry run: {accepted} points would be written for {lang} {} from {}, \
+                "Dry run: {accepted} points would be written for {lang} {level} from {}, \
                  {refused} refused; nothing was written",
-                args.level,
                 document.display()
             );
             continue;
@@ -642,19 +666,18 @@ async fn handle_import_pdf(args: ImportPdfArgs) -> Result<(), Error> {
             warn!("Refused \"{}\": {}", rejection.title, rejection.reason);
         }
         info!(
-            "Placed {} {lang} {} points from {} ({} held at another level, {refused} refused)",
+            "Placed {} {lang} {level} points from {} ({} held at another level, {refused} refused)",
             outcome.placed,
-            args.level,
             document.display(),
             outcome.held
         );
         placed = placed.saturating_add(outcome.placed);
     }
 
-    if documents.len() > 1 && !args.dry_run {
+    if schedule.calls.len() > 1 && !args.dry_run {
         info!(
-            "Placed {placed} grammar points from {} documents",
-            documents.len()
+            "Placed {placed} grammar points over {} document-level runs",
+            schedule.calls.len()
         );
     }
     Ok(())

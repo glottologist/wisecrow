@@ -282,8 +282,11 @@ pub struct ImportPdfArgs {
     /// as `grammar/es/yo-puedo-1-2021.pdf`, whose path already states it.
     #[arg(short, long)]
     pub lang: Option<String>,
+    /// CEFR level to read the document at. Optional: the document's `Levels`
+    /// cell in `SOURCES.md` states the levels it covers, and a run without
+    /// this flag reads every document at every level its row names.
     #[arg(short = 'L', long)]
-    pub level: String,
+    pub level: Option<String>,
     /// PDF to import, or a directory whose PDFs are all imported.
     #[arg(short, long)]
     pub file: String,
@@ -829,6 +832,8 @@ mod tests {
     #[case(&["wisecrow", "import-pdf", "--level", "B1", "--file", "grammar/es", "--dry-run"], "ImportPdf")]
     #[case(&["wisecrow", "ip", "--level", "B1", "--file", "grammar/es", "--max-rules", "5"], "ImportPdf")]
     #[case(&["wisecrow", "ip", "--level", "B2", "--file", "grammar/ga", "--force"], "ImportPdf")]
+    #[case(&["wisecrow", "import-pdf", "--file", "grammar/es"], "ImportPdf")]
+    #[case(&["wisecrow", "ip", "-f", "grammar/es/yo-puedo-1-2021.pdf", "--dry-run"], "ImportPdf")]
     #[case(&["wisecrow", "check-pdf", "--file", "g.pdf"], "CheckPdf")]
     #[case(&["wisecrow", "check-pdf", "--file", "grammar"], "CheckPdf")]
     #[case(&["wisecrow", "cp", "-f", "a.pdf", "-f", "b.pdf"], "CheckPdf")]

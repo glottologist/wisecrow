@@ -327,7 +327,7 @@ Example file shape:
 ## `import-pdf`
 
 ```sh
-wisecrow import-pdf [--lang <CODE>] --level <CEFR> --file <PDF or DIRECTORY>
+wisecrow import-pdf [--lang <CODE>] [--level <CEFR>] --file <PDF or DIRECTORY>
                     [--dry-run] [--max-rules <N>] [--force]
 ```
 
@@ -357,18 +357,25 @@ over it.
 The source documents are kept one directory per language, as
 `grammar/<code>/<document>.pdf`, and the command reads that layout. `--file` may
 name a single document or a directory, in which case every PDF beneath it is
-read in turn until the level is full; `--lang` may be omitted for a document
-whose path states its language, and when given it overrides the path. The level
-applies to every document in the run.
+read; `--lang` may be omitted for a document whose path states its language,
+and when given it overrides the path. `--level` works the same way: each row
+of `grammar/SOURCES.md` has a `Levels` cell naming the CEFR levels the
+document covers, and a run without `--level` reads every document at every
+level its row names, lowest level first across the whole run so that the
+beginner books have the first claim on a point two books both teach. With
+`--level`, only the documents whose row names that level are read, and a
+document whose cell is empty is read at it because the operator said so. A
+document is extracted once however many levels it is read at.
 
 ```sh
-wisecrow import-pdf --level B1 --file grammar/es --dry-run   # judge before writing
-wisecrow import-pdf --level B1 --file grammar/es/yo-puedo-1-2021.pdf
-wisecrow import-pdf --level B1 --file grammar/es --max-rules 5
+wisecrow import-pdf --file grammar/es/yo-puedo-1-2021.pdf --level A1 --max-rules 5 --dry-run   # judge one book at one level
+wisecrow import-pdf --file grammar/es              # the whole shelf, each book at its own levels
+wisecrow import-pdf --file grammar/es --level B1   # only the books that cover B1
 ```
 
 | Flag | Effect |
 |------|--------|
+| `--level <CEFR>` | Read only at this level, and only the documents whose `Levels` cell names it (or names nothing). Absent, every document is read at every level its row names. |
 | `--dry-run` | Ask the model and print each point as it would be stored, with its refusals; write nothing. The call is still made. |
 | `--max-rules <N>` | Ask for at most `N` points, beneath what the level is short. |
 | `--force` | Read a document its `SOURCES.md` row does not clear. For a model hosted locally only. |
@@ -378,7 +385,12 @@ read to the model. `grammar/SOURCES.md` carries a `Synthesis` column, and a
 document is sent only when its row says `yes`; a document with no row, or with
 no record above it, is refused as well, since nothing is known about its
 licence. In a directory run a refused document is skipped with a warning and the
-rest proceed; a run left with nothing cleared is an error. A document outside a
+rest proceed; a run left with nothing cleared is an error. A document cleared
+but not covering the levels of the run is skipped the same way, with the reason
+from its row; a `Levels` cell that names no CEFR level the syllabus has is
+reported and skipped. A dry run over a directory writes nothing, so every
+document sees the same empty level and pays the full two rounds; to judge a
+book, dry-run it alone at one level with `--max-rules`. A document outside a
 language directory with no `--lang` is refused by name rather than guessed at.
 
 ---

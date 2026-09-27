@@ -81,9 +81,9 @@ language, so the language comes from the path and a whole language imports in
 one command:
 
 ```sh
-wisecrow import-pdf --level B1 --file ./grammar/es --dry-run
-wisecrow import-pdf --level B1 --file ./grammar/es/yo-puedo-1-2021.pdf
-wisecrow import-pdf --level B1 --file ./grammar/es
+wisecrow import-pdf --file ./grammar/es/yo-puedo-1-2021.pdf --level A1 --max-rules 5 --dry-run
+wisecrow import-pdf --file ./grammar/es              # the whole shelf, each book at its own levels
+wisecrow import-pdf --file ./grammar/es --level B1   # only the books that cover B1
 ```
 
 Three things to know:
@@ -91,10 +91,13 @@ Three things to know:
 1. Run with `--dry-run` first. It costs the model call but writes nothing, and
    prints every point as it would be stored, so a document that yields poor
    points is found before it touches the syllabus.
-2. `grammar/SOURCES.md` decides what may be sent. A document is read to the
-   model only when its row's `Synthesis` cell says `yes`; the two standards
-   documents say `no`, because their terms do not allow reproduction to a third
-   party, and `--force` is for a locally hosted model only.
+2. `grammar/SOURCES.md` decides what may be sent and where it is read. A
+   document is read to the model only when its row's `Synthesis` cell says
+   `yes` -- the two standards documents say `no`, because their terms do not
+   allow reproduction to a third party, and `--force` is for a locally hosted
+   model only -- and only at the levels its `Levels` cell names. Without
+   `--level` the whole shelf is walked lowest level first; with it, only the
+   rows naming that level.
 3. Every stored point cites its source: `source_ref` holds the document and
    page, and `source = 'pdf'`. A level holds up to thirty document-backed
    points beside its fifteen seeded ones, asked for fifteen at a time; a run

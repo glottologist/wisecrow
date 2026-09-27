@@ -18,22 +18,33 @@ its row here says `yes`. A document with no row is refused as well, since nothin
 is known about it; `--force` overrides the refusal for a model hosted locally,
 where no third party receives the text.
 
-| File | Work | Year | Licence | Synthesis |
-|------|------|-----:|---------|-----------|
-| `gd/calder-1923.pdf` | George Calder, *A Gaelic Grammar* | 1923 | public domain | yes |
-| `cy/evans-1910.pdf` | D. Simon Evans, *The Elements of Welsh Grammar* | 1910 | public domain | yes |
-| `cy/morris-jones-1913.pdf` | John Morris-Jones, *A Welsh Grammar, Historical and Comparative* | 1913 | public domain | yes |
-| `ga/christian-brothers-1920.pdf` | *First Irish Grammar* | 1920 | public domain | yes |
-| `fr/liberte-2022.pdf` | Gretchen Angelo and Emmanuelle Remy, *Liberté* | 2022 | CC BY-SA 4.0 | yes |
-| `fr/bevier-1896.pdf` | Louis Bevier, *A French Grammar* | 1896 | public domain | yes |
-| `it/daccordo.pdf` | Italian faculty, University of Iowa, *D'Accordo!* | 2021 | CC BY-NC-SA 4.0 | yes |
-| `es/olmsted-1920.pdf` | Everett Olmsted, *First Course in Spanish* | 1920 | public domain | yes |
-| `es/coester-1912.pdf` | Alfred Coester, *A Spanish Grammar* | 1912 | public domain | yes |
-| `ga/caighdean-oifigiuil-2017.pdf` | Houses of the Oireachtas, *Gramadach na Gaeilge: An Caighdeán Oifigiúil* | 2017 | no licence stated | no |
-| `gd/goc-2009.pdf` | SQA, *Gaelic Orthographic Conventions* | 2009 | reproduction limited to SQA qualifications | no |
-| `es/yo-puedo-1-2021.pdf` | Elizabeth Silvaggio-Adams and Rocío Vallejo-Alegre, *Yo puedo: para empezar* | 2021 | CC BY-NC 4.0 | yes |
-| `it/spunti-elementare-1-2019.pdf` | Daniel Leisawitz and Daniela Viale, *Spunti: Italiano elementare 1* | 2019 | CC BY-NC-SA 4.0 | yes |
-| `fr/interactif-ed4-2019.pdf` | Karen Kelton, Nancy Guilloteau and Carl Blyth, *Français interactif*, 4th edn | 2019 | CC BY 4.0 | yes |
+The `Levels` column says which CEFR levels a document is worth reading at,
+as a range (`A1–B1`), a list (`A1, C2`) or `all`, and `import-pdf` reads it:
+a run without `--level` reads each document at every level its row names,
+and a run with `--level` reads only the documents whose row names that
+level. An empty cell keeps a document out of a language run without changing
+whether it may be sent at all -- the verb tables, the vocabulary book and the
+translation course are cleared but not levelled, and are read only when
+`--level` says where. The values are a reading of each title, not a
+measurement, and are the place to correct when a document turns out to
+belong elsewhere.
+
+| File | Work | Year | Licence | Synthesis | Levels |
+|------|------|-----:|---------|-----------|--------|
+| `gd/calder-1923.pdf` | George Calder, *A Gaelic Grammar* | 1923 | public domain | yes | B1–C2 |
+| `cy/evans-1910.pdf` | D. Simon Evans, *The Elements of Welsh Grammar* | 1910 | public domain | yes | A2–B2 |
+| `cy/morris-jones-1913.pdf` | John Morris-Jones, *A Welsh Grammar, Historical and Comparative* | 1913 | public domain | yes | C1–C2 |
+| `ga/christian-brothers-1920.pdf` | *First Irish Grammar* | 1920 | public domain | yes | A1–B1 |
+| `fr/liberte-2022.pdf` | Gretchen Angelo and Emmanuelle Remy, *Liberté* | 2022 | CC BY-SA 4.0 | yes | A1–A2 |
+| `fr/bevier-1896.pdf` | Louis Bevier, *A French Grammar* | 1896 | public domain | yes | B1–C1 |
+| `it/daccordo.pdf` | Italian faculty, University of Iowa, *D'Accordo!* | 2021 | CC BY-NC-SA 4.0 | yes | A1–A2 |
+| `es/olmsted-1920.pdf` | Everett Olmsted, *First Course in Spanish* | 1920 | public domain | yes | A1–B1 |
+| `es/coester-1912.pdf` | Alfred Coester, *A Spanish Grammar* | 1912 | public domain | yes | B1–C1 |
+| `ga/caighdean-oifigiuil-2017.pdf` | Houses of the Oireachtas, *Gramadach na Gaeilge: An Caighdeán Oifigiúil* | 2017 | no licence stated | no | C1–C2 |
+| `gd/goc-2009.pdf` | SQA, *Gaelic Orthographic Conventions* | 2009 | reproduction limited to SQA qualifications | no | C1–C2 |
+| `es/yo-puedo-1-2021.pdf` | Elizabeth Silvaggio-Adams and Rocío Vallejo-Alegre, *Yo puedo: para empezar* | 2021 | CC BY-NC 4.0 | yes | A1–A2 |
+| `it/spunti-elementare-1-2019.pdf` | Daniel Leisawitz and Daniela Viale, *Spunti: Italiano elementare 1* | 2019 | CC BY-NC-SA 4.0 | yes | A1–A2 |
+| `fr/interactif-ed4-2019.pdf` | Karen Kelton, Nancy Guilloteau and Carl Blyth, *Français interactif*, 4th edn | 2019 | CC BY 4.0 | yes | A1–A2 |
 
 The Creative Commons works carry conditions the public-domain ones do not.
 *Liberté* is share-alike, so a derived syllabus exported from it inherits
@@ -82,38 +93,38 @@ OCR drops the accents of the language being taught -- `bre6` for *breá*, `-i6`
 for *-ió* -- so a point synthesised from them would carry misspelt examples.
 They stay on the shelf for reading, not for the model.
 
-| File | Work | Pages | Read by | Synthesis |
-|------|------|------:|---------|-----------|
-| `es/Barron's 501 Verbs - Spanish.pdf` | Christopher Kendris, *501 Spanish Verbs* | 739 | poppler | yes |
-| `es/Collins Easy Learning Spanish Grammar.pdf` | HarperCollins, *Collins Easy Learning Spanish Grammar* (OCR layer) | 163 | pdf-extract | no |
-| `es/Practice Makes Perfect Advanced Spanish Grammar [True PDF].pdf` | Rogelio Alonso Vallecillos, *Practice Makes Perfect: Advanced Spanish Grammar* | 210 | poppler | yes |
-| `es/Practice Makes Perfect Basic Spanish.pdf` | Dorothy Devney Richmond, *Practice Makes Perfect: Basic Spanish* | 273 | pdf-extract | yes |
-| `es/Practice Makes Perfect Spanish Irregular Verbs.pdf` | Eric Vogt, *Practice Makes Perfect: Spanish Irregular Verbs Up Close* | 126 | pdf-extract | yes |
-| `es/Practice Makes Perfect Spanish Sentence Builder.pdf` | Gilda Nissenberg, *Practice Makes Perfect: Spanish Sentence Builder* | 224 | poppler | yes |
-| `es/Practice Makes Perfect Spanish Verb Tenses.pdf` | Dorothy Richmond, *Practice Makes Perfect: Spanish Verb Tenses*, 2nd edn | 353 | pdf-extract | yes |
-| `es/Practice Makes Perfect_ Complete Spanish All-in-One, Premium Second Edition.pdf` | Gilda Nissenberg, *Practice Makes Perfect: Complete Spanish All-in-One*, premium 2nd edn | 869 | poppler | yes |
-| `es/Spanish Grammar (Schaum's outlines).pdf` | Conrad J. Schmitt, *Schaum's Outline of Spanish Grammar* | 205 | pdf-extract | yes |
-| `es/[Bookflare.net] - Practice Makes Perfect Complete Spanish All-in-One, 2nd Edition.pdf` | Gilda Nissenberg, *Practice Makes Perfect: Complete Spanish All-in-One*, 2nd edn | 653 | pdf-extract | yes |
-| `fr/Les 500 exercices de grammaire + corrigés (B1) (French Edition)_nodrm.pdf` | Marie-Pierre Caquineau-Gündüz and others, *Les 500 exercices de grammaire, niveau B1* | 226 | poppler | yes |
-| `fr/Modern French Grammar - A Practical Guide (2nd Ed).pdf` | Margaret Lang and Isabelle Perez, *Modern French Grammar: A Practical Guide*, 2nd edn | 387 | poppler | yes |
-| `fr/Practice Makes Perfect  French Sentence Builder.pdf` | Eliane Kurbegov, *Practice Makes Perfect: French Sentence Builder* | 236 | pdf-extract | yes |
-| `fr/Practice Makes Perfect French Pronouns and Prepositions, Second Edition (Practice Makes Perfect Series) (French Edition).pdf` | Annie Heminway, *Practice Makes Perfect: French Pronouns and Prepositions*, 2nd edn | 375 | poppler | yes |
-| `fr/Practice Makes Perfect French Vocabulary.pdf` | Eliane Kurbegov, *Practice Makes Perfect: French Vocabulary* | 222 | pdf-extract | yes |
-| `fr/Practice Makes Perfect_ Complete French All-in-One, Premium Second Edition (French Edition) (Jason Ridgway-Taylor's conflicted copy 2025-12-27).pdf` | Annie Heminway, *Practice Makes Perfect: Complete French All-in-One*, premium 2nd edn | 1090 | poppler | yes |
-| `fr/Practice Makes Perfect_ Complete French Grammar, Premium Third Edition.pdf` | Annie Heminway, *Practice Makes Perfect: Complete French Grammar*, premium 3rd edn | 490 | poppler | yes |
-| `fr/Practice Makes Perfect_ French Verb Tenses (Practice Makes Perfect Series).pdf` | Trudie Booth, *Practice Makes Perfect: French Verb Tenses* | 862 | poppler | yes |
-| `fr/Schaum's Outline of French Grammar.pdf` | Mary E. Coffman Crocker, *Schaum's Outline of French Grammar* | 398 | pdf-extract | yes |
-| `fr/The Vocabulary of Modern French Origins, Structure and Function.pdf` | Hilary Wise, *The Vocabulary of Modern French: Origins, Structure and Function* | 271 | pdf-extract | yes |
-| `ga/04.Teach  yourself complete Irish.pdf` | Diarmuid Ó Sé and Joseph Sheils, *Teach Yourself Complete Irish* (OCR layer) | 208 | pdf-extract | no |
-| `ga/06.Colloquial Irish.pdf` | Thomas Ihde, Máire Ní Neachtain, Roslyn Blyn-LaDrew and John Gillen, *Colloquial Irish* | 260 | pdf-extract | yes |
-| `ga/10.Irish nouns a reference guide.pdf` | Andrew Carnie, *Irish Nouns: A Reference Guide* | 363 | pdf-extract | yes |
-| `ga/14.Intermediate Irish A Grammar and Workbook.pdf` | Nancy Stenson, *Intermediate Irish: A Grammar and Workbook* | 257 | pdf-extract | yes |
-| `it/Modern Italian Grammar Workbook (Modern Grammar Workbooks) (Italian Edition).pdf` | Anna Proudfoot, *Modern Italian Grammar Workbook* | 221 | poppler | yes |
-| `it/Practice Makes Perfect Italian Pronouns And Prepositions, Second Edition (Practice Makes Perfect Series) (Jason Ridgway-Taylor's conflicted copy 2025-12-26).pdf` | Daniela Gobetti, *Practice Makes Perfect: Italian Pronouns and Prepositions*, 2nd edn | 341 | poppler | yes |
-| `it/Practice Makes Perfect Italian Sentence Builder (Practice Makes Perfect Series) (Jason Ridgway-Taylor's conflicted copy 2025-12-26).pdf` | Paola Nanni-Tate, *Practice Makes Perfect: Italian Sentence Builder* | 208 | poppler | yes |
-| `it/Practice Makes Perfect Italian Verb Tenses 2_E (EBOOK)_ With 300 Exercises + Free Flashcard App.pdf` | Paola Nanni-Tate, *Practice Makes Perfect: Italian Verb Tenses*, 2nd edn | 357 | poppler | yes |
-| `it/Practice Makes Perfect_ Complete Italian Grammar (Practice Makes Perfect Series).pdf` | Marcel Danesi, *Practice Makes Perfect: Complete Italian Grammar* | 437 | poppler | yes |
-| `it/Thinking Italian Translation_ A Course in Translation Method_ Italian to English (Thinking Translation).pdf` | Sándor Hervey, Ian Higgins, Stella Cragie and Patrizia Gambarotta, *Thinking Italian Translation* | 237 | poppler | yes |
+| File | Work | Pages | Read by | Synthesis | Levels |
+|------|------|------:|---------|-----------|--------|
+| `es/Barron's 501 Verbs - Spanish.pdf` | Christopher Kendris, *501 Spanish Verbs* | 739 | poppler | yes | |
+| `es/Collins Easy Learning Spanish Grammar.pdf` | HarperCollins, *Collins Easy Learning Spanish Grammar* (OCR layer) | 163 | pdf-extract | no | A1–B1 |
+| `es/Practice Makes Perfect Advanced Spanish Grammar [True PDF].pdf` | Rogelio Alonso Vallecillos, *Practice Makes Perfect: Advanced Spanish Grammar* | 210 | poppler | yes | C1–C2 |
+| `es/Practice Makes Perfect Basic Spanish.pdf` | Dorothy Devney Richmond, *Practice Makes Perfect: Basic Spanish* | 273 | pdf-extract | yes | A1–A2 |
+| `es/Practice Makes Perfect Spanish Irregular Verbs.pdf` | Eric Vogt, *Practice Makes Perfect: Spanish Irregular Verbs Up Close* | 126 | pdf-extract | yes | B1–B2 |
+| `es/Practice Makes Perfect Spanish Sentence Builder.pdf` | Gilda Nissenberg, *Practice Makes Perfect: Spanish Sentence Builder* | 224 | poppler | yes | B1–B2 |
+| `es/Practice Makes Perfect Spanish Verb Tenses.pdf` | Dorothy Richmond, *Practice Makes Perfect: Spanish Verb Tenses*, 2nd edn | 353 | pdf-extract | yes | A2–B2 |
+| `es/Practice Makes Perfect_ Complete Spanish All-in-One, Premium Second Edition.pdf` | Gilda Nissenberg, *Practice Makes Perfect: Complete Spanish All-in-One*, premium 2nd edn | 869 | poppler | yes | A1–B2 |
+| `es/Spanish Grammar (Schaum's outlines).pdf` | Conrad J. Schmitt, *Schaum's Outline of Spanish Grammar* | 205 | pdf-extract | yes | B1–C1 |
+| `es/[Bookflare.net] - Practice Makes Perfect Complete Spanish All-in-One, 2nd Edition.pdf` | Gilda Nissenberg, *Practice Makes Perfect: Complete Spanish All-in-One*, 2nd edn | 653 | pdf-extract | yes | |
+| `fr/Les 500 exercices de grammaire + corrigés (B1) (French Edition)_nodrm.pdf` | Marie-Pierre Caquineau-Gündüz and others, *Les 500 exercices de grammaire, niveau B1* | 226 | poppler | yes | B1 |
+| `fr/Modern French Grammar - A Practical Guide (2nd Ed).pdf` | Margaret Lang and Isabelle Perez, *Modern French Grammar: A Practical Guide*, 2nd edn | 387 | poppler | yes | B1–C1 |
+| `fr/Practice Makes Perfect  French Sentence Builder.pdf` | Eliane Kurbegov, *Practice Makes Perfect: French Sentence Builder* | 236 | pdf-extract | yes | B1–B2 |
+| `fr/Practice Makes Perfect French Pronouns and Prepositions, Second Edition (Practice Makes Perfect Series) (French Edition).pdf` | Annie Heminway, *Practice Makes Perfect: French Pronouns and Prepositions*, 2nd edn | 375 | poppler | yes | A2–B2 |
+| `fr/Practice Makes Perfect French Vocabulary.pdf` | Eliane Kurbegov, *Practice Makes Perfect: French Vocabulary* | 222 | pdf-extract | yes | |
+| `fr/Practice Makes Perfect_ Complete French All-in-One, Premium Second Edition (French Edition) (Jason Ridgway-Taylor's conflicted copy 2025-12-27).pdf` | Annie Heminway, *Practice Makes Perfect: Complete French All-in-One*, premium 2nd edn | 1090 | poppler | yes | A1–B2 |
+| `fr/Practice Makes Perfect_ Complete French Grammar, Premium Third Edition.pdf` | Annie Heminway, *Practice Makes Perfect: Complete French Grammar*, premium 3rd edn | 490 | poppler | yes | A1–B2 |
+| `fr/Practice Makes Perfect_ French Verb Tenses (Practice Makes Perfect Series).pdf` | Trudie Booth, *Practice Makes Perfect: French Verb Tenses* | 862 | poppler | yes | A2–B2 |
+| `fr/Schaum's Outline of French Grammar.pdf` | Mary E. Coffman Crocker, *Schaum's Outline of French Grammar* | 398 | pdf-extract | yes | B1–C1 |
+| `fr/The Vocabulary of Modern French Origins, Structure and Function.pdf` | Hilary Wise, *The Vocabulary of Modern French: Origins, Structure and Function* | 271 | pdf-extract | yes | |
+| `ga/04.Teach  yourself complete Irish.pdf` | Diarmuid Ó Sé and Joseph Sheils, *Teach Yourself Complete Irish* (OCR layer) | 208 | pdf-extract | no | A1–A2 |
+| `ga/06.Colloquial Irish.pdf` | Thomas Ihde, Máire Ní Neachtain, Roslyn Blyn-LaDrew and John Gillen, *Colloquial Irish* | 260 | pdf-extract | yes | A1–A2 |
+| `ga/10.Irish nouns a reference guide.pdf` | Andrew Carnie, *Irish Nouns: A Reference Guide* | 363 | pdf-extract | yes | B2–C2 |
+| `ga/14.Intermediate Irish A Grammar and Workbook.pdf` | Nancy Stenson, *Intermediate Irish: A Grammar and Workbook* | 257 | pdf-extract | yes | B1–B2 |
+| `it/Modern Italian Grammar Workbook (Modern Grammar Workbooks) (Italian Edition).pdf` | Anna Proudfoot, *Modern Italian Grammar Workbook* | 221 | poppler | yes | B1–C1 |
+| `it/Practice Makes Perfect Italian Pronouns And Prepositions, Second Edition (Practice Makes Perfect Series) (Jason Ridgway-Taylor's conflicted copy 2025-12-26).pdf` | Daniela Gobetti, *Practice Makes Perfect: Italian Pronouns and Prepositions*, 2nd edn | 341 | poppler | yes | A2–B2 |
+| `it/Practice Makes Perfect Italian Sentence Builder (Practice Makes Perfect Series) (Jason Ridgway-Taylor's conflicted copy 2025-12-26).pdf` | Paola Nanni-Tate, *Practice Makes Perfect: Italian Sentence Builder* | 208 | poppler | yes | B1–B2 |
+| `it/Practice Makes Perfect Italian Verb Tenses 2_E (EBOOK)_ With 300 Exercises + Free Flashcard App.pdf` | Paola Nanni-Tate, *Practice Makes Perfect: Italian Verb Tenses*, 2nd edn | 357 | poppler | yes | A2–B2 |
+| `it/Practice Makes Perfect_ Complete Italian Grammar (Practice Makes Perfect Series).pdf` | Marcel Danesi, *Practice Makes Perfect: Complete Italian Grammar* | 437 | poppler | yes | A1–B2 |
+| `it/Thinking Italian Translation_ A Course in Translation Method_ Italian to English (Thinking Translation).pdf` | Sándor Hervey, Ian Higgins, Stella Cragie and Patrizia Gambarotta, *Thinking Italian Translation* | 237 | poppler | yes | |
 
 Fifteen of the thirty need poppler, as the `Read by` column records. `pdf-extract`
 recovers between a sixteenth and a thirtieth of their text, because the
