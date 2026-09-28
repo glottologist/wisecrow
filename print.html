@@ -38,10 +38,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-3e801ce8.js";
+            window.path_to_searchindex_js = "searchindex-a17a6d85.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-d4c59dab.js"></script>
+        <script src="toc-a32f9be8.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -454,6 +454,251 @@ and the <a href="#dual-n-back">Dual n-back guide</a>.</li>
 <li>Move data between machines — see <a href="#sync-workflow">Sync workflow</a>.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="android-build-install-and-use"><a class="header" href="#android-build-install-and-use">Android: build, install and use</a></h1>
+<p>Open <code>https://wisecrow.glottologist.co.uk:8443</code> in your phone’s browser to use
+Wise Crow today. The native Android application still needs the connections
+described below before it can sign in, download lessons or work offline.</p>
+<p>This guide covers a Linux workstation and a USB-connected Android phone. Build
+on the workstation where the repository lives; calypso continues to run the
+server. The Android build does not require a local PostgreSQL database.</p>
+<h2 id="current-readiness"><a class="header" href="#current-readiness">Current readiness</a></h2>
+<p><strong>Checked on 28 September 2026: no working APK installation has been verified.</strong>
+These are application gaps, so installing more SDK packages will not resolve
+them:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Area</th><th>Current state</th></tr>
+</thead>
+<tbody>
+<tr><td>Launchable package</td><td><code>wisecrow-mobile/Dioxus.toml</code> selects <code>android/AndroidManifest.xml</code> as the complete application manifest. It has permissions and an <code>&lt;application&gt;</code> element, but no activity or launcher intent. Dioxus CLI 0.7.10 copies this file instead of its generated launcher manifest. This needs correction before the APK can be opened normally.</td></tr>
+<tr><td>Server connection and local data</td><td><code>src/transport/api.rs</code> holds a server origin but does not implement <code>MobileApi</code>. The Android entry point in <code>src/main.rs</code> launches <code>app</code>, without the store/API/media contexts supplied by <code>app_with_media</code> in <code>src/lib.rs</code>.</td></tr>
+<tr><td>User interface</td><td><code>src/components/home.rs</code> displays a fixed “Local storage is ready.” message. That message does not check the database. Learn and N-back are placeholders; the navigation has only Home. There is no login, server-settings or download screen. Grammar components exist but need the missing store context and downloaded data.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The <code>src/</code> paths in this table are relative to <code>wisecrow-mobile/</code>. The underlying
+storage, sync and grammar code has automated tests, but that is not evidence of
+a working installed app. Fast mode is not a route in the mobile shell.</p>
+<p><strong>The following commands are the development build/install procedure. They do
+not complete these missing features.</strong> Fix the launcher manifest first; finish
+the application connections before expecting a usable offline learning app.</p>
+<h2 id="prepare-the-workstation"><a class="header" href="#prepare-the-workstation">Prepare the workstation</a></h2>
+<p>Allow approximately <strong>30–60 minutes</strong> for a first-time SDK/toolchain setup,
+depending on downloads. The examples use Bash.</p>
+<ol>
+<li>
+<p>Open the mobile crate from your existing checkout:</p>
+<pre><code class="language-bash">cd /home/glottologist/development/glottologist/wisecrow/wisecrow-mobile
+</code></pre>
+<p>On another machine, replace the path with your checkout location. The
+repository’s Devbox configuration supplies Rust development tools, but does
+not provision the Android SDK or NDK.</p>
+</li>
+<li>
+<p>Check Rust and the Dioxus CLI:</p>
+<pre><code class="language-bash">rustc --version
+cargo --version
+dx --version
+rustup target add aarch64-linux-android
+</code></pre>
+<p>This guide’s command options were checked against <strong>Dioxus CLI 0.7.10</strong>; the
+app pins the top-level Dioxus and Manganis crates to <strong>0.7.9</strong>. If <code>dx</code> is
+missing, install this CLI version:</p>
+<pre><code class="language-bash">cargo install dioxus-cli --version 0.7.10 --locked
+</code></pre>
+<p>CLI source compilation can take another <strong>10–20 minutes</strong>. Do not change the
+application’s dependency versions just to remove a version warning.</p>
+</li>
+<li>
+<p>Install Android Studio and use <strong>Tools → SDK Manager</strong> to install the
+components below. The declared application settings use API 35 and a minimum
+SDK of 26; minimum-device compatibility still needs an actual APK test.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>SDK Manager tab</th><th>Components</th></tr>
+</thead>
+<tbody>
+<tr><td>SDK Platforms</td><td>Android 15 / API 35</td></tr>
+<tr><td>SDK Tools</td><td>Android SDK Platform-Tools, Command-line Tools, Build-Tools 35.0.0</td></tr>
+<tr><td>SDK Tools</td><td>NDK (Side by side), CMake</td></tr>
+</tbody>
+</table>
+</div>
+<p>Use a JDK capable of running the Android Gradle build; the checked-in Kotlin
+module targets Java 17. Android Studio supplies a JDK. Record the SDK and NDK
+paths shown by SDK Manager. See the official
+<a href="https://developer.android.com/studio/projects/install-ndk">NDK installation instructions</a>
+for selecting a specific version.</p>
+</li>
+<li>
+<p>Set the paths in the same terminal. <strong>Replace both angle-bracket values</strong>
+with the actual installed paths/version before running this block:</p>
+<pre><code class="language-bash">export JAVA_HOME="&lt;absolute-path-to-your-jdk&gt;"
+export ANDROID_HOME="$HOME/Android/Sdk"
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/&lt;installed-version&gt;"
+export NDK_HOME="$ANDROID_NDK_HOME"
+export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$PATH"
+sdkmanager --licenses
+dx doctor --offline
+</code></pre>
+<p>Adjust <code>ANDROID_HOME</code> if SDK Manager shows a different directory. Read and
+accept the SDK licences when prompted. <code>dx doctor</code> should now identify the
+Android SDK, NDK, Java and adb. Its unrelated iOS/macOS warnings do not block
+an Android build. On NixOS, use Android tools supplied by your Nix environment
+if downloaded tools cannot execute; this repository does not provide a
+complete Android Nix shell.</p>
+</li>
+</ol>
+<p>The upstream <a href="https://dioxuslabs.com/learn/0.7/guides/platforms/mobile/">Dioxus Android setup guide</a>
+provides the corresponding macOS and Windows environment setup.</p>
+<h2 id="build-an-apk-for-a-phone"><a class="header" href="#build-an-apk-for-a-phone">Build an APK for a phone</a></h2>
+<p>Allow approximately <strong>10–30 minutes</strong> for the first build after setup. These
+commands target a 64-bit ARM phone. Keep the terminal open for installation.</p>
+<ol>
+<li>
+<p>From <code>wisecrow-mobile/</code>, request an APK explicitly:</p>
+<pre><code class="language-bash">dx bundle --platform android --features mobile \
+  --target aarch64-linux-android --package-types apk \
+  --out-dir dist/android-arm64 --locked
+</code></pre>
+<p><code>--package-types apk</code> matters: CLI 0.7.10 otherwise defaults to an Android App
+Bundle (<code>.aab</code>), which is not directly installed with <code>adb install</code>. This is
+a development build. The CLI’s generated Gradle project uses debug signing
+when release signing has not been configured.</p>
+</li>
+<li>
+<p>Check that the command succeeded and locate the output:</p>
+<pre><code class="language-bash">rg --files --hidden --no-ignore dist/android-arm64 -g '*.apk'
+</code></pre>
+<p>Use the APK path printed by this command. Do not assume an APK left by a
+previous failed build contains your latest changes.</p>
+</li>
+<li>
+<p>Inspect its signature and packaged manifest, substituting that path:</p>
+<pre><code class="language-bash">export WISECROW_APK="/absolute/path/to/the-built.apk"
+"$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$WISECROW_APK"
+"$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$WISECROW_APK"
+</code></pre>
+<p>Check for package <code>org.wisecrow.mobile</code>, the intended SDK requirements and a
+<code>launchable-activity</code> entry. <strong>Stop here if the launcher entry is absent</strong>;
+the current custom manifest needs fixing. Signature verification is
+described in the official <a href="https://developer.android.com/tools/apksigner">apksigner reference</a>.</p>
+</li>
+</ol>
+<p>For an x86-64 emulator, install the <code>x86_64-linux-android</code> Rust target and replace
+the build target and output directory accordingly. Use Android Studio’s Device
+Manager to start the emulator. For development with a running target, the CLI
+also accepts <code>dx serve --platform android --features mobile</code>.</p>
+<h2 id="install-over-usb"><a class="header" href="#install-over-usb">Install over USB</a></h2>
+<p>Allow <strong>2–5 minutes</strong> once a launchable APK exists.</p>
+<ol>
+<li>
+<p>On the phone, enable <strong>Developer options → USB debugging</strong>, connect a data
+cable and accept the computer’s debugging authorization prompt. The official
+<a href="https://developer.android.com/studio/run/device">hardware-device setup guide</a>
+covers phone-specific setup and Linux USB permissions.</p>
+</li>
+<li>
+<p>Identify the phone from your workstation:</p>
+<pre><code class="language-bash">adb devices -l
+</code></pre>
+<p>Its status must be <code>device</code>. If it says <code>unauthorized</code>, unlock the phone and
+accept the prompt. Copy its serial number into the next command; selecting
+it explicitly avoids installing on the wrong device when an emulator is open.</p>
+</li>
+<li>
+<p>Install the APK:</p>
+<pre><code class="language-bash">export WISECROW_DEVICE="&lt;serial-from-adb-devices&gt;"
+adb -s "$WISECROW_DEVICE" install -r "$WISECROW_APK"
+</code></pre>
+<p>Expect <code>Success</code>. The <code>-r</code> option reinstalls the same application while
+retaining its data; see the <a href="https://developer.android.com/tools/adb#move">adb installation reference</a>.
+Matching package signatures are required for an update.</p>
+</li>
+<li>
+<p>Open Wise Crow from the phone’s app launcher. Alternatively, resolve its
+launch activity for diagnosis:</p>
+<pre><code class="language-bash">adb -s "$WISECROW_DEVICE" shell cmd package resolve-activity --brief org.wisecrow.mobile
+</code></pre>
+<p>An installed package with no launch activity is a packaging problem, not a
+server connection problem.</p>
+</li>
+</ol>
+<h2 id="use-on-android"><a class="header" href="#use-on-android">Use on Android</a></h2>
+<p>For the current usable interface:</p>
+<ol>
+<li>Open <code>https://wisecrow.glottologist.co.uk:8443</code> in the phone’s browser.</li>
+<li>Sign in with your existing Wise Crow account.</li>
+<li>Select the language and learning mode on the website.</li>
+</ol>
+<p>The website needs network access. Installing the native shell does not add
+offline support to the website.</p>
+<p>For the <strong>native APK</strong>, after the launcher is fixed, the current code aims to
+show Home and its fixed storage message. There are no working sign-in or
+download instructions to follow yet. Rebuilding the server or copying grammar
+PDFs to the phone will not fill those missing application connections.</p>
+<p>The native release should be accepted only after these flows are implemented
+and verified on a device:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flow</th><th>What must work</th></tr>
+</thead>
+<tbody>
+<tr><td>Connect</td><td>Configure <code>https://wisecrow.glottologist.co.uk:8443</code> as the server origin, authenticate and register the device. The URL is the server root, not a <code>/fast</code> or <code>/api</code> route.</td></tr>
+<tr><td>Download</td><td>Select a language, complete the initial vocabulary and grammar sync, and display completion.</td></tr>
+<tr><td>Learn offline</td><td>Open downloaded lessons without a network connection and save answers locally.</td></tr>
+<tr><td>Reconnect</td><td>Upload pending answers and refresh progress without duplicates.</td></tr>
+<tr><td>Audio</td><td>Download an example clip while online and play the cached clip in airplane mode.</td></tr>
+</tbody>
+</table>
+</div>
+<p>These are acceptance requirements, not existing menu labels. The current router
+and screens do not expose this workflow. The
+<a href="#wisecrow-mobile-1">mobile API reference</a> describes the underlying pieces.</p>
+<h2 id="update-an-installed-build"><a class="header" href="#update-an-installed-build">Update an installed build</a></h2>
+<ol>
+<li>Re-run the APK build with the updated source and the same signing key.</li>
+<li>Verify the newly produced APK and run the same <code>adb ... install -r</code> command.</li>
+</ol>
+<p>Keep the signing key used for your installations. An APK signed with a different
+key cannot replace the installed package. Do not use uninstall/reinstall as the
+default fix: uninstalling deletes app-local data, which could include unsynced
+answers once offline learning is connected. A distribution release needs its
+own maintained signing configuration; <code>--release</code> alone does not establish one.</p>
+<h2 id="troubleshooting"><a class="header" href="#troubleshooting">Troubleshooting</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Symptom</th><th>Next action</th></tr>
+</thead>
+<tbody>
+<tr><td><code>dx doctor</code> cannot find SDK/NDK/Java</td><td>Set the paths in the build terminal and run it again. An <code>adb</code> executable alone is not the SDK/NDK.</td></tr>
+<tr><td>NDK linker missing or cannot execute on NixOS</td><td>Check <code>ANDROID_NDK_HOME</code> and the executable’s host compatibility. Use the Nix-provided Android toolchain/environment.</td></tr>
+<tr><td>Gradle reports a dependency needs a newer <code>compileSdk</code></td><td>Follow the concrete build error and update the app and Kotlin module settings together; installed API 35 alone cannot satisfy a dependency requiring a newer API.</td></tr>
+<tr><td><code>INSTALL_FAILED_NO_MATCHING_ABIS</code></td><td>Compare <code>adb -s "$WISECROW_DEVICE" shell getprop ro.product.cpu.abilist</code> with the Rust build target.</td></tr>
+<tr><td><code>INSTALL_FAILED_UPDATE_INCOMPATIBLE</code></td><td>Rebuild with the signing key used for the installed app.</td></tr>
+<tr><td>Install succeeds but no app icon appears</td><td>Inspect the packaged manifest’s launcher activity; the current override omits it.</td></tr>
+<tr><td>Only Home appears, with no login or download controls</td><td>This matches the current shell. The missing application UI and wiring need implementation.</td></tr>
+</tbody>
+</table>
+</div>
+<p>For a startup failure, collect the crash buffer after reproducing it:</p>
+<pre><code class="language-bash">adb -s "$WISECROW_DEVICE" logcat -b crash -d
+</code></pre>
+<p>Build diagnostics can be collected by repeating the build with <code>--verbose</code>.
+Review logs for credentials or private content before sharing them.</p>
+<h2 id="what-was-checked-for-this-guide"><a class="header" href="#what-was-checked-for-this-guide">What was checked for this guide</a></h2>
+<p>The commands were checked against the installed <code>dx</code> 0.7.10 help and Android
+packaging source, the repository configuration and entry point, and official
+Android/Dioxus documentation. <code>dx doctor --offline</code> found the Rust Android
+targets here, but no configured SDK, NDK or Java home. No APK build, installation,
+release signing or phone playback was verified.</p>
+<p>Start with <code>dx doctor --offline</code> from <code>wisecrow-mobile/</code> to see the workstation’s
+remaining setup requirements.</p>
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="ingesting-corpora"><a class="header" href="#ingesting-corpora">Ingesting corpora</a></h1>
 <p><code>ingest</code> is Wisecrow’s main data-acquisition command. This guide covers the
 trade-offs and patterns you will hit once you move past the introductory
@@ -590,7 +835,7 @@ This is not a CLI command yet, but the function is exposed in the library:</p>
 FrequencyUpdater::update_from_hermit_dave(&amp;pool, "es").await?;</code></pre>
 <p>It rewrites <code>translations.frequency</code> in batches of 1000 with values from
 the public 50k-word frequency lists. Source: <code>wisecrow-core/src/frequency.rs</code>.</p>
-<h2 id="troubleshooting"><a class="header" href="#troubleshooting">Troubleshooting</a></h2>
+<h2 id="troubleshooting-1"><a class="header" href="#troubleshooting-1">Troubleshooting</a></h2>
 <ul>
 <li><strong>Stuck at “Downloading…”</strong> — check egress to <code>object.pouta.csc.fi</code>. The
 default connect timeout is 30 s; the per-attempt read timeout is 5 min.</li>
@@ -1301,20 +1546,67 @@ overwrites the previous run.</p>
 <p>The flow shares the upsert key with <code>seed-grammar</code>, so a manual edit can
 override an AI-seeded rule simply by reusing its title.</p>
 <h2 id="import-from-pdf"><a class="header" href="#import-from-pdf">Import from PDF</a></h2>
-<p><code>import-pdf</code> runs <code>pdf-extract</code> over the file, splits it into sections, and
-upserts a rule per detected paragraph. It is best-effort:</p>
-<pre><code class="language-sh">wisecrow import-pdf --lang es --level B1 --file ./grammar/spanish-b1.pdf
+<p>For the six-language calypso shelf, use the
+<a href="../../DEPLOYMENT.html#sync-grammar-files-and-run-imports">sync and batch-run instructions</a>.
+<code>scripts/import-grammar.sh</code> imports the eligible documents and reports A1–C2
+coverage; <code>scripts/prefetch-grammar-audio.sh</code> prepares and verifies their audio.</p>
+<p>Before importing anything, screen the document. A PDF built from page scans holds
+no text at all, and an import from one produces nothing; <code>check-pdf</code> reports the
+characters per page and the passages the extractor keeps, and fails the run when a
+document cannot supply material:</p>
+<pre><code class="language-sh">wisecrow check-pdf --file ./grammar/es | tail -20
 </code></pre>
-<p>Two things to know:</p>
+<p><code>import-pdf</code> reads the file with <code>pdf-extract</code>, falling back to poppler’s
+<code>pdftotext</code> when that returns too little to be prose, splits the text into
+passages, and asks the model for rules at the requested levels. With
+<code>--incremental</code>, every prose chunk is visited without a total rule ceiling.
+Proposals need at least 120 characters and two sentences of explanation, a
+correct and an incorrect example, and a page the prompt carried. Exact matches
+are skipped, and a second model pass screens for rewordings against the entire
+language syllabus. Existing rules and example IDs are preserved.
+Documents live one directory per
+language, so the language comes from the path and a whole language imports in
+one command:</p>
+<pre><code class="language-sh">wisecrow import-pdf --file ./grammar/es/yo-puedo-1-2021.pdf --level A1 --max-rules 5 --dry-run
+wisecrow import-pdf --incremental --file ./grammar/es              # every eligible book and level
+wisecrow import-pdf --incremental --file ./grammar/es --level B1   # only the books that cover B1
+</code></pre>
+<p>Three things to know:</p>
 <ol>
-<li>The extracted titles are clipped at 100 characters with a UTF-8 boundary
-check, so long headings get truncated rather than corrupting the row.</li>
-<li>PDF examples are imported as <code>is_correct = true</code> because there is no
-reliable signal in unstructured text.</li>
+<li>Run with <code>--dry-run</code> first. It costs the model call but writes nothing, and
+prints every point as it would be stored, so a document that yields poor
+points is found before it touches the syllabus. This is a bounded sample;
+<code>--incremental</code> cannot be combined with <code>--dry-run</code> or <code>--max-rules</code>.</li>
+<li><code>grammar/SOURCES.md</code> decides what may be sent and where it is read. A
+document is read to the model only when its row’s <code>Synthesis</code> cell says
+<code>yes</code> – the two standards documents say <code>no</code>, because their terms do not
+allow reproduction to a third party, and <code>--force</code> is for a locally hosted
+model only – and only at the levels its <code>Levels</code> cell names. Without
+<code>--level</code> the whole shelf is walked lowest level first; with it, only the
+rows naming that level.</li>
+<li>Every stored point cites its document and page. Incremental imports record
+progress in PostgreSQL by file contents, language and level. Reruns skip
+completed files even if renamed, resume failures and process changed files
+or new levels. Old imports without progress records receive one catch-up
+scan. Every productive batch continues, including short answers; a round
+with no new rules ends that chunk. Semantic deduplication is model judgment and
+should be reviewed. Without <code>--incremental</code>, the legacy thirty-PDF-rule
+target still applies.</li>
 </ol>
-<p>If the result is messy, export the rules with a SQL query, edit them, and
-re-import via <code>import-grammar</code> — <code>manual</code> overrides <code>pdf</code> on the next
-upsert.</p>
+<p>A point that reads badly is edited like any other: export the level with
+<code>export-grammar</code>, correct it, and re-import via <code>import-grammar</code> – <code>manual</code>
+overrides <code>pdf</code> on the next upsert.</p>
+<h2 id="voice-the-examples"><a class="header" href="#voice-the-examples">Voice the examples</a></h2>
+<p>Grammar practice on the web shows a point’s correct examples after an answer,
+each with a play button. The clip is generated on first play if it has to be,
+but a level’s worth of sentences is cheap to prepare ahead of time:</p>
+<pre><code class="language-sh">wisecrow prefetch-grammar-audio --lang es --dry-run   # what is missing
+wisecrow prefetch-grammar-audio --lang es             # voice it
+</code></pre>
+<p>Only correct examples are spoken. Clips are keyed by the sentence rather
+than the example row, so re-seeding or re-importing a point costs nothing
+for sentences that did not change; <code>--prune</code> reclaims clips whose sentences
+no longer appear anywhere.</p>
 <h2 id="generate-quizzes-from-rules"><a class="header" href="#generate-quizzes-from-rules">Generate quizzes from rules</a></h2>
 <p>Once rules exist for a <code>(language, level)</code> pair, you can ask the LLM to
 turn them into exercises:</p>
@@ -1835,7 +2127,7 @@ never use <code>format!()</code> for URL parts.</p>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="cli-reference"><a class="header" href="#cli-reference">CLI reference</a></h1>
-<p>The <code>wisecrow</code> binary ships with thirty subcommands. Most have a short alias
+<p>The <code>wisecrow</code> binary ships with thirty-three subcommands. Most have a short alias
 (in parentheses below) for shell ergonomics.</p>
 <h2 id="synopsis"><a class="header" href="#synopsis">Synopsis</a></h2>
 <pre><code class="language-text">wisecrow &lt;COMMAND&gt; [ARGS...]
@@ -1858,12 +2150,14 @@ list.</p>
 <tr><td><a href="#list-languages"><code>list-languages</code></a></td><td><code>l</code></td><td style="text-align: center">no</td><td>Print the supported-language table.</td></tr>
 <tr><td><a href="#seed-grammar"><code>seed-grammar</code></a></td><td><code>sg</code></td><td style="text-align: center">yes + LLM</td><td>Generate grammar rules via an LLM.</td></tr>
 <tr><td><a href="#import-grammar"><code>import-grammar</code></a></td><td><code>ig</code></td><td style="text-align: center">yes</td><td>Import grammar rules from a JSON file.</td></tr>
-<tr><td><a href="#import-pdf"><code>import-pdf</code></a></td><td><code>ip</code></td><td style="text-align: center">yes</td><td>Import grammar rules extracted from a PDF.</td></tr>
+<tr><td><a href="#import-pdf"><code>import-pdf</code></a></td><td><code>ip</code></td><td style="text-align: center">yes + LLM</td><td>Synthesise a level’s grammar points from a PDF.</td></tr>
+<tr><td><a href="#check-pdf"><code>check-pdf</code></a></td><td><code>cp</code></td><td style="text-align: center">no</td><td>Report whether a PDF can supply grammar material.</td></tr>
 <tr><td><a href="#generate-exercises"><code>generate-exercises</code></a></td><td><code>ge</code></td><td style="text-align: center">yes + LLM</td><td>Generate cloze and MC quizzes from stored rules.</td></tr>
 <tr><td><a href="#quiz"><code>quiz</code></a></td><td><code>q</code></td><td style="text-align: center">no</td><td>Run a quiz directly from a PDF.</td></tr>
 <tr><td><a href="#extract-words"><code>extract-words</code></a></td><td>—</td><td style="text-align: center">yes</td><td>Count sentence words into word candidates.</td></tr>
 <tr><td><a href="#promote-words"><code>promote-words</code></a></td><td>—</td><td style="text-align: center">yes + LLM</td><td>Give candidates meanings and link them to learning rows.</td></tr>
 <tr><td><a href="#prefetch-media"><code>prefetch-media</code></a></td><td><code>pm</code></td><td style="text-align: center">yes</td><td>Pre-warm the audio/image cache.</td></tr>
+<tr><td><a href="#prefetch-grammar-audio"><code>prefetch-grammar-audio</code></a></td><td><code>pga</code></td><td style="text-align: center">yes</td><td>Voice a language’s grammar example sentences.</td></tr>
 <tr><td><a href="#sync-1"><code>sync</code></a></td><td><code>s</code></td><td style="text-align: center">yes</td><td>Pull data from a remote Wisecrow.</td></tr>
 <tr><td><a href="#gloss"><code>gloss</code></a></td><td><code>gl</code></td><td style="text-align: center">yes + LLM</td><td>Leipzig interlinear gloss for a sentence (cached).</td></tr>
 <tr><td><a href="#graded-reader-1"><code>graded-reader</code></a></td><td><code>gr</code></td><td style="text-align: center">yes + LLM</td><td>Generate a CEFR-graded passage from learned vocab.</td></tr>
@@ -2143,11 +2437,139 @@ safe.</p>
 </code></pre>
 <hr>
 <h2 id="import-pdf"><a class="header" href="#import-pdf"><code>import-pdf</code></a></h2>
-<pre><code class="language-sh">wisecrow import-pdf --lang &lt;CODE&gt; --level &lt;CEFR&gt; --file path/to/grammar.pdf
+<pre><code class="language-sh">wisecrow import-pdf [--lang &lt;CODE&gt;] [--level &lt;CEFR&gt;] --file &lt;PDF or DIRECTORY&gt;
+                    [--incremental | --dry-run] [--max-rules &lt;N&gt;] [--force]
 </code></pre>
-<p>Extracts text from a PDF and stores each parsed rule with <code>source = 'pdf'</code>.
-The extraction is best-effort — see <a href="#grammar-workflows">Grammar workflows</a>
-for tips on cleaning the imported rules.</p>
+<p>Reads a grammar document and asks the configured model for the points one CEFR
+level should take from it, then places what passes a gate. A document is a
+source to reason from, not one to copy: the model is sent the document’s prose
+passages, each marked with its page, and returns points in the shape
+<a href="#seed-grammar"><code>seed-grammar</code></a> produces. A point is stored only when it carries
+a title, an explanation of at least two sentences, a correct and an incorrect
+example, and a page the prompt actually held; anything short of that is refused
+and counted in the log. Stored points have <code>source = 'pdf'</code> and a <code>source_ref</code>
+naming the document and page, e.g. <code>yo-puedo-1-2021.pdf p.148</code>.</p>
+<p>With <code>--incremental</code>, the importer visits all extracted prose in bounded chunks
+with <strong>no total rule ceiling</strong>. Every productive batch continues, including short
+answers; a batch adding no new rules finishes the chunk. Exact slug matches
+are skipped and a separate model pass compares proposed meanings with all
+existing rules in the language, including other levels and sources. Related
+topics may remain when their conditions or uses differ. Semantic review is model
+judgment, not a guarantee that every near-duplicate is found.</p>
+<p>New rules, examples and progress commit together. Existing rules, examples and
+source references are never rewritten by this mode. PostgreSQL tracks PDF
+SHA-256, language, level and importer version; reruns skip completed files even
+if renamed, resume unfinished chunks and process changed contents or newly
+enabled levels. Earlier imports receive one catch-up scan because citations do
+not prove full-document coverage. Model failures leave a run pending and cause
+a nonzero exit status. Quality refusals are logged; a round adding no new rules
+with unresolved refusals leaves its chunk pending. <code>--incremental</code> conflicts with <code>--dry-run</code> and
+<code>--max-rules</code>.</p>
+<p>Without <code>--incremental</code>, two targets govern a level. The seeder fills it to fifteen points of any
+source; the importer adds up to thirty document-backed points on top, counted
+only over points with <code>source = 'pdf'</code>, so a level the seeder has already
+filled still takes what the books have to add. The model is asked in rounds
+of at most fifteen, each naming every title the level holds and every title
+the earlier rounds produced, and the rounds stop at the target, at
+<code>--max-rules</code>, or when a round yields fewer points than it asked for. A level
+at the document target costs no call at all. Points are written the way
+seeding writes them: an import adds to a level and never moves a point that
+already sits at another one, and a proposed point whose slug matches a
+seeded or hand-written point at the same level is held rather than written
+over it.</p>
+<p>The source documents are kept one directory per language, as
+<code>grammar/&lt;code&gt;/&lt;document&gt;.pdf</code>, and the command reads that layout. <code>--file</code> may
+name a single document or a directory, in which case every PDF beneath it is
+read; <code>--lang</code> may be omitted for a document whose path states its language,
+and when given it overrides the path. <code>--level</code> works the same way: each row
+of <code>grammar/SOURCES.md</code> has a <code>Levels</code> cell naming the CEFR levels the
+document covers, and a run without <code>--level</code> reads every document at every
+level its row names, lowest level first across the whole run so that the
+beginner books have the first claim on a point two books both teach. With
+<code>--level</code>, only the documents whose row names that level are read, and a
+document whose cell is empty is read at it because the operator said so. A
+document is extracted once however many levels it is read at.</p>
+<pre><code class="language-sh">wisecrow import-pdf --file grammar/es/yo-puedo-1-2021.pdf --level A1 --max-rules 5 --dry-run   # judge one book at one level
+wisecrow import-pdf --incremental --file grammar/es              # every eligible book and level
+wisecrow import-pdf --incremental --file grammar/es --level B1   # only the books that cover B1
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Effect</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--incremental</code></td><td>No total rule quota; traverse all prose, preserve existing rules, compare meanings and resume database-recorded progress.</td></tr>
+<tr><td><code>--level &lt;CEFR&gt;</code></td><td>Read only at this level, and only the documents whose <code>Levels</code> cell names it (or names nothing). Absent, every document is read at every level its row names.</td></tr>
+<tr><td><code>--dry-run</code></td><td>Ask the model and print each point as it would be stored, with its refusals; write nothing. The call is still made.</td></tr>
+<tr><td><code>--max-rules &lt;N&gt;</code></td><td>Ask for at most <code>N</code> points, beneath what the level is short.</td></tr>
+<tr><td><code>--force</code></td><td>Read a document its <code>SOURCES.md</code> row does not clear. For a model hosted locally only.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Every document is checked against the shelf’s provenance record before it is
+read to the model. <code>grammar/SOURCES.md</code> carries a <code>Synthesis</code> column, and a
+document is sent only when its row says <code>yes</code>; a document with no row, or with
+no record above it, is refused as well, since nothing is known about its
+licence. In a directory run a refused document is skipped with a warning and the
+rest proceed; a run left with nothing cleared is an error. A document cleared
+but not covering the levels of the run is skipped the same way, with the reason
+from its row; a <code>Levels</code> cell that names no CEFR level the syllabus has is
+reported and skipped. A dry run over a directory writes nothing, so every
+document sees the same empty level and pays the full two rounds; to judge a
+book, dry-run it alone at one level with <code>--max-rules</code>. An answer the model
+does not return as a JSON array is asked for once more, with the shape spelt
+out; a second such answer skips that document at that level, with a warning,
+and the run goes on. A document outside a
+language directory with no <code>--lang</code> is refused by name rather than guessed at.</p>
+<hr>
+<h2 id="check-pdf"><a class="header" href="#check-pdf"><code>check-pdf</code></a></h2>
+<pre><code class="language-sh">wisecrow check-pdf --file &lt;PDF or DIRECTORY&gt; [--file &lt;PDF or DIRECTORY&gt;]
+</code></pre>
+<p>An import is only as good as the text layer beneath it, and three kinds of
+document give nothing back: a PDF built from page scans, an encrypted one, and a
+reference work whose pages are almost entirely paradigm tables. This command
+reads each file with the same extractor <a href="#import-pdf"><code>import-pdf</code></a> uses and
+reports what an import would find, so an unusable document is rejected before it
+costs a run. It touches neither the database nor an LLM. As with
+<a href="#import-pdf"><code>import-pdf</code></a>, <code>--file</code> accepts a document or a directory, and may
+be repeated, so one language or the whole shelf is screened in a single pass:</p>
+<pre><code class="language-sh">wisecrow check-pdf --file grammar | tail -60
+wisecrow check-pdf --file grammar/gd --file grammar/ga
+</code></pre>
+<p>Two extractors stand behind all of this. <code>pdf-extract</code> is tried first, since it
+is pure Rust and needs nothing installed, and poppler’s <code>pdftotext</code> is asked only
+when the native reading comes back under 200 characters a page or fails outright.
+Whichever read more of the document wins, and the report names it. The fallback is
+not a nicety: five commercial French grammars in the shelf yield between
+twenty-one and eighty-eight characters a page through <code>pdf-extract</code>, against six
+hundred to two thousand through poppler, and a sixth makes it panic. A machine
+without poppler installed still works, and simply keeps the thin reading.</p>
+<p>Each document earns one of three verdicts.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Verdict</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>OK</code></td><td>Prose at the density of a grammar book; import from it.</td></tr>
+<tr><td><code>THIN</code></td><td>Text was extracted, but under 200 characters per page — partial OCR, or nothing but tables.</td></tr>
+<tr><td><code>FAIL</code></td><td>Nothing can be read: not a PDF, encrypted, unopenable, or holding no passage long enough to state a rule.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The report gives the page count, the characters extracted per page, the passages
+the extractor kept with their mean length, and three passages quoted from across
+the document rather than from its front matter. The command exits with a failure
+status if any document falls short of <code>OK</code>, which makes it usable as a gate in a
+shell loop.</p>
+<p>One wrinkle is worth knowing in advance: <code>pdf-extract</code> writes its own font
+diagnostics to standard output as it reads, and a long document produces
+thousands of such lines. The verdicts are therefore held back until every
+document has been read and printed together at the end, so passing the run
+through <code>tail</code> is enough to see them:</p>
+<pre><code class="language-sh">wisecrow check-pdf --file grammar | tail -60
+</code></pre>
 <hr>
 <h2 id="generate-exercises"><a class="header" href="#generate-exercises"><code>generate-exercises</code></a></h2>
 <pre><code class="language-sh">wisecrow generate-exercises --lang &lt;CODE&gt; --level &lt;CEFR&gt; [--count N]
@@ -2231,6 +2653,40 @@ and the next offset, then exits nonzero when any medium failed, was refused
 by the budget or is unsupported, naming the first affected IDs so the same
 range can be retried before advancing. A preview’s missing entries are
 expected and do not fail the run.</p>
+<hr>
+<h2 id="prefetch-grammar-audio"><a class="header" href="#prefetch-grammar-audio"><code>prefetch-grammar-audio</code></a></h2>
+<pre><code class="language-sh">wisecrow prefetch-grammar-audio --lang &lt;CODE&gt; [--level &lt;CEFR&gt;] [--dry-run] [--prune]
+</code></pre>
+<p>Speaks every correct example sentence of a language’s grammar points into
+the media cache, so that grammar practice on the web plays them without a
+wait. Incorrect examples are never voiced: a learner should not hear a wrong
+form spoken as though it were right. A sentence two points quote is spoken
+once, because clips are keyed by the sentence’s speech fingerprint (text,
+language and voice) rather than by the example row; re-seeding or re-importing
+a point with the same sentences finds its clips already there, and an edited
+sentence is a new clip. The voice is the one <code>prefetch-media</code> would use for
+the language: CereProc where configured, Edge otherwise.</p>
+<pre><code class="language-sh">wisecrow prefetch-grammar-audio --lang es --dry-run            # what is missing
+wisecrow prefetch-grammar-audio --lang es                      # voice it
+wisecrow prefetch-grammar-audio --lang es --level B1 --prune   # one level, then reclaim stale clips
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th style="text-align: right">Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--level</code></td><td style="text-align: right">every level</td><td>One CEFR level’s points only.</td></tr>
+<tr><td><code>--dry-run</code></td><td style="text-align: right">off</td><td>Report cached and missing clips; generate nothing, apply no migrations, create no directory.</td></tr>
+<tr><td><code>--prune</code></td><td style="text-align: right">off</td><td>After voicing, delete every stored clip that no current correct example of any language names. Ignored in a dry run.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The run prints example and distinct-sentence counts, per-outcome counters and
+bytes generated, then exits nonzero when any sentence failed or the language
+has no voice, so the same command can be re-run once the cause is fixed. At
+most four sentences are in flight at once. A clip is a few tens of kilobytes;
+a level’s worth is well under a megabyte, so there is no byte budget.</p>
 <hr>
 <h2 id="sync-1"><a class="header" href="#sync-1"><code>sync</code></a></h2>
 <pre><code class="language-sh">wisecrow sync --remote https://wisecrow.example.com [--api-key KEY]
@@ -2965,7 +3421,7 @@ FK to <code>translations</code>. <code>--refresh</code> forces an <code>INSERT .
 on every <code>wisecrow gloss</code> call and TUI <code>g</code>-overlay fetch.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="troubleshooting-1"><a class="header" href="#troubleshooting-1">Troubleshooting</a></h1>
+<h1 id="troubleshooting-2"><a class="header" href="#troubleshooting-2">Troubleshooting</a></h1>
 <p>A non-exhaustive list of failure modes and their root causes. Issues are
 grouped by where they tend to surface.</p>
 <h2 id="configuration-3"><a class="header" href="#configuration-3">Configuration</a></h2>
@@ -4188,10 +4644,12 @@ in <code>main.rs</code>:</p>
 launch(app);</code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="wisecrow-mobile-1"><a class="header" href="#wisecrow-mobile-1">wisecrow-mobile</a></h1>
-<p><code>wisecrow-mobile</code> is the Dioxus shell for Android and the desktop. Unlike
-<code>wisecrow-web</code> it is offline first: every page reads the device’s own SQLite
-database, and a sync engine reconciles that database with the server when a
-connection happens to be there. Nothing the learner does waits on the network.</p>
+<p><code>wisecrow-mobile</code> contains a Dioxus shell for Android and the desktop, SQLite
+storage, and an offline sync engine. The production launch path does not yet
+connect the storage and server API to the shell. Home, Learn and N-back are
+placeholders; the grammar pages require an injected local store.</p>
+<p>See <a href="#android-build-install-and-use">Android: build, install and use</a> for the build
+procedure, verified packaging gaps and the current limits of an installed app.</p>
 <h2 id="crate-structure-1"><a class="header" href="#crate-structure-1">Crate structure</a></h2>
 <pre><code class="language-text">wisecrow-mobile/
 ├── migrations/          # SQLite migrations, applied on open
@@ -4298,8 +4756,10 @@ pub struct QueuedAttempt {
 }
 pub struct GrammarCursors { pub bank: i64, pub mastery: i64 }</code></pre>
 <h2 id="server-adapter"><a class="header" href="#server-adapter">Server adapter</a></h2>
-<p><code>MobileApi</code> is the port and <code>transport::HttpMobileApi</code> the adapter. Protocol 2
-is asked for separately:</p>
+<p><code>MobileApi</code> is the port. <code>transport::HttpMobileApi</code> currently stores only a
+normalized server origin; it does not implement the protocol methods yet.
+The sync engine is exercised with test implementations of the port. Protocol 2
+is requested through these methods:</p>
 <pre><code class="language-rust ignore">async fn capabilities_v2(&amp;self) -&gt; Result&lt;Option&lt;MobileCapabilitiesDto&gt;, MobileError&gt;;
 async fn grammar_bank_changes(&amp;self, ..) -&gt; Result&lt;GrammarBankChangePageDto, MobileError&gt;;
 async fn grammar_mastery_changes(&amp;self, ..) -&gt; Result&lt;GrammarMasteryChangePageDto, MobileError&gt;;

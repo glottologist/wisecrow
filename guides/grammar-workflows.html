@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-3e801ce8.js";
+            window.path_to_searchindex_js = "../searchindex-a17a6d85.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-d4c59dab.js"></script>
+        <script src="../toc-a32f9be8.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -232,20 +232,67 @@ overwrites the previous run.</p>
 <p>The flow shares the upsert key with <code>seed-grammar</code>, so a manual edit can
 override an AI-seeded rule simply by reusing its title.</p>
 <h2 id="import-from-pdf"><a class="header" href="#import-from-pdf">Import from PDF</a></h2>
-<p><code>import-pdf</code> runs <code>pdf-extract</code> over the file, splits it into sections, and
-upserts a rule per detected paragraph. It is best-effort:</p>
-<pre><code class="language-sh">wisecrow import-pdf --lang es --level B1 --file ./grammar/spanish-b1.pdf
+<p>For the six-language calypso shelf, use the
+<a href="../../../DEPLOYMENT.html#sync-grammar-files-and-run-imports">sync and batch-run instructions</a>.
+<code>scripts/import-grammar.sh</code> imports the eligible documents and reports A1–C2
+coverage; <code>scripts/prefetch-grammar-audio.sh</code> prepares and verifies their audio.</p>
+<p>Before importing anything, screen the document. A PDF built from page scans holds
+no text at all, and an import from one produces nothing; <code>check-pdf</code> reports the
+characters per page and the passages the extractor keeps, and fails the run when a
+document cannot supply material:</p>
+<pre><code class="language-sh">wisecrow check-pdf --file ./grammar/es | tail -20
 </code></pre>
-<p>Two things to know:</p>
+<p><code>import-pdf</code> reads the file with <code>pdf-extract</code>, falling back to poppler’s
+<code>pdftotext</code> when that returns too little to be prose, splits the text into
+passages, and asks the model for rules at the requested levels. With
+<code>--incremental</code>, every prose chunk is visited without a total rule ceiling.
+Proposals need at least 120 characters and two sentences of explanation, a
+correct and an incorrect example, and a page the prompt carried. Exact matches
+are skipped, and a second model pass screens for rewordings against the entire
+language syllabus. Existing rules and example IDs are preserved.
+Documents live one directory per
+language, so the language comes from the path and a whole language imports in
+one command:</p>
+<pre><code class="language-sh">wisecrow import-pdf --file ./grammar/es/yo-puedo-1-2021.pdf --level A1 --max-rules 5 --dry-run
+wisecrow import-pdf --incremental --file ./grammar/es              # every eligible book and level
+wisecrow import-pdf --incremental --file ./grammar/es --level B1   # only the books that cover B1
+</code></pre>
+<p>Three things to know:</p>
 <ol>
-<li>The extracted titles are clipped at 100 characters with a UTF-8 boundary
-check, so long headings get truncated rather than corrupting the row.</li>
-<li>PDF examples are imported as <code>is_correct = true</code> because there is no
-reliable signal in unstructured text.</li>
+<li>Run with <code>--dry-run</code> first. It costs the model call but writes nothing, and
+prints every point as it would be stored, so a document that yields poor
+points is found before it touches the syllabus. This is a bounded sample;
+<code>--incremental</code> cannot be combined with <code>--dry-run</code> or <code>--max-rules</code>.</li>
+<li><code>grammar/SOURCES.md</code> decides what may be sent and where it is read. A
+document is read to the model only when its row’s <code>Synthesis</code> cell says
+<code>yes</code> – the two standards documents say <code>no</code>, because their terms do not
+allow reproduction to a third party, and <code>--force</code> is for a locally hosted
+model only – and only at the levels its <code>Levels</code> cell names. Without
+<code>--level</code> the whole shelf is walked lowest level first; with it, only the
+rows naming that level.</li>
+<li>Every stored point cites its document and page. Incremental imports record
+progress in PostgreSQL by file contents, language and level. Reruns skip
+completed files even if renamed, resume failures and process changed files
+or new levels. Old imports without progress records receive one catch-up
+scan. Every productive batch continues, including short answers; a round
+with no new rules ends that chunk. Semantic deduplication is model judgment and
+should be reviewed. Without <code>--incremental</code>, the legacy thirty-PDF-rule
+target still applies.</li>
 </ol>
-<p>If the result is messy, export the rules with a SQL query, edit them, and
-re-import via <code>import-grammar</code> — <code>manual</code> overrides <code>pdf</code> on the next
-upsert.</p>
+<p>A point that reads badly is edited like any other: export the level with
+<code>export-grammar</code>, correct it, and re-import via <code>import-grammar</code> – <code>manual</code>
+overrides <code>pdf</code> on the next upsert.</p>
+<h2 id="voice-the-examples"><a class="header" href="#voice-the-examples">Voice the examples</a></h2>
+<p>Grammar practice on the web shows a point’s correct examples after an answer,
+each with a play button. The clip is generated on first play if it has to be,
+but a level’s worth of sentences is cheap to prepare ahead of time:</p>
+<pre><code class="language-sh">wisecrow prefetch-grammar-audio --lang es --dry-run   # what is missing
+wisecrow prefetch-grammar-audio --lang es             # voice it
+</code></pre>
+<p>Only correct examples are spoken. Clips are keyed by the sentence rather
+than the example row, so re-seeding or re-importing a point costs nothing
+for sentences that did not change; <code>--prune</code> reclaims clips whose sentences
+no longer appear anywhere.</p>
 <h2 id="generate-quizzes-from-rules"><a class="header" href="#generate-quizzes-from-rules">Generate quizzes from rules</a></h2>
 <p>Once rules exist for a <code>(language, level)</code> pair, you can ask the LLM to
 turn them into exercises:</p>

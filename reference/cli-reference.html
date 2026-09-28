@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-3e801ce8.js";
+            window.path_to_searchindex_js = "../searchindex-a17a6d85.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-d4c59dab.js"></script>
+        <script src="../toc-a32f9be8.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -180,7 +180,7 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="cli-reference"><a class="header" href="#cli-reference">CLI reference</a></h1>
-<p>The <code>wisecrow</code> binary ships with thirty subcommands. Most have a short alias
+<p>The <code>wisecrow</code> binary ships with thirty-three subcommands. Most have a short alias
 (in parentheses below) for shell ergonomics.</p>
 <h2 id="synopsis"><a class="header" href="#synopsis">Synopsis</a></h2>
 <pre><code class="language-text">wisecrow &lt;COMMAND&gt; [ARGS...]
@@ -203,12 +203,14 @@ list.</p>
 <tr><td><a href="#list-languages"><code>list-languages</code></a></td><td><code>l</code></td><td style="text-align: center">no</td><td>Print the supported-language table.</td></tr>
 <tr><td><a href="#seed-grammar"><code>seed-grammar</code></a></td><td><code>sg</code></td><td style="text-align: center">yes + LLM</td><td>Generate grammar rules via an LLM.</td></tr>
 <tr><td><a href="#import-grammar"><code>import-grammar</code></a></td><td><code>ig</code></td><td style="text-align: center">yes</td><td>Import grammar rules from a JSON file.</td></tr>
-<tr><td><a href="#import-pdf"><code>import-pdf</code></a></td><td><code>ip</code></td><td style="text-align: center">yes</td><td>Import grammar rules extracted from a PDF.</td></tr>
+<tr><td><a href="#import-pdf"><code>import-pdf</code></a></td><td><code>ip</code></td><td style="text-align: center">yes + LLM</td><td>Synthesise a level’s grammar points from a PDF.</td></tr>
+<tr><td><a href="#check-pdf"><code>check-pdf</code></a></td><td><code>cp</code></td><td style="text-align: center">no</td><td>Report whether a PDF can supply grammar material.</td></tr>
 <tr><td><a href="#generate-exercises"><code>generate-exercises</code></a></td><td><code>ge</code></td><td style="text-align: center">yes + LLM</td><td>Generate cloze and MC quizzes from stored rules.</td></tr>
 <tr><td><a href="#quiz"><code>quiz</code></a></td><td><code>q</code></td><td style="text-align: center">no</td><td>Run a quiz directly from a PDF.</td></tr>
 <tr><td><a href="#extract-words"><code>extract-words</code></a></td><td>—</td><td style="text-align: center">yes</td><td>Count sentence words into word candidates.</td></tr>
 <tr><td><a href="#promote-words"><code>promote-words</code></a></td><td>—</td><td style="text-align: center">yes + LLM</td><td>Give candidates meanings and link them to learning rows.</td></tr>
 <tr><td><a href="#prefetch-media"><code>prefetch-media</code></a></td><td><code>pm</code></td><td style="text-align: center">yes</td><td>Pre-warm the audio/image cache.</td></tr>
+<tr><td><a href="#prefetch-grammar-audio"><code>prefetch-grammar-audio</code></a></td><td><code>pga</code></td><td style="text-align: center">yes</td><td>Voice a language’s grammar example sentences.</td></tr>
 <tr><td><a href="#sync"><code>sync</code></a></td><td><code>s</code></td><td style="text-align: center">yes</td><td>Pull data from a remote Wisecrow.</td></tr>
 <tr><td><a href="#gloss"><code>gloss</code></a></td><td><code>gl</code></td><td style="text-align: center">yes + LLM</td><td>Leipzig interlinear gloss for a sentence (cached).</td></tr>
 <tr><td><a href="#graded-reader"><code>graded-reader</code></a></td><td><code>gr</code></td><td style="text-align: center">yes + LLM</td><td>Generate a CEFR-graded passage from learned vocab.</td></tr>
@@ -488,11 +490,139 @@ safe.</p>
 </code></pre>
 <hr>
 <h2 id="import-pdf"><a class="header" href="#import-pdf"><code>import-pdf</code></a></h2>
-<pre><code class="language-sh">wisecrow import-pdf --lang &lt;CODE&gt; --level &lt;CEFR&gt; --file path/to/grammar.pdf
+<pre><code class="language-sh">wisecrow import-pdf [--lang &lt;CODE&gt;] [--level &lt;CEFR&gt;] --file &lt;PDF or DIRECTORY&gt;
+                    [--incremental | --dry-run] [--max-rules &lt;N&gt;] [--force]
 </code></pre>
-<p>Extracts text from a PDF and stores each parsed rule with <code>source = 'pdf'</code>.
-The extraction is best-effort — see <a href="../guides/grammar-workflows.html">Grammar workflows</a>
-for tips on cleaning the imported rules.</p>
+<p>Reads a grammar document and asks the configured model for the points one CEFR
+level should take from it, then places what passes a gate. A document is a
+source to reason from, not one to copy: the model is sent the document’s prose
+passages, each marked with its page, and returns points in the shape
+<a href="#seed-grammar"><code>seed-grammar</code></a> produces. A point is stored only when it carries
+a title, an explanation of at least two sentences, a correct and an incorrect
+example, and a page the prompt actually held; anything short of that is refused
+and counted in the log. Stored points have <code>source = 'pdf'</code> and a <code>source_ref</code>
+naming the document and page, e.g. <code>yo-puedo-1-2021.pdf p.148</code>.</p>
+<p>With <code>--incremental</code>, the importer visits all extracted prose in bounded chunks
+with <strong>no total rule ceiling</strong>. Every productive batch continues, including short
+answers; a batch adding no new rules finishes the chunk. Exact slug matches
+are skipped and a separate model pass compares proposed meanings with all
+existing rules in the language, including other levels and sources. Related
+topics may remain when their conditions or uses differ. Semantic review is model
+judgment, not a guarantee that every near-duplicate is found.</p>
+<p>New rules, examples and progress commit together. Existing rules, examples and
+source references are never rewritten by this mode. PostgreSQL tracks PDF
+SHA-256, language, level and importer version; reruns skip completed files even
+if renamed, resume unfinished chunks and process changed contents or newly
+enabled levels. Earlier imports receive one catch-up scan because citations do
+not prove full-document coverage. Model failures leave a run pending and cause
+a nonzero exit status. Quality refusals are logged; a round adding no new rules
+with unresolved refusals leaves its chunk pending. <code>--incremental</code> conflicts with <code>--dry-run</code> and
+<code>--max-rules</code>.</p>
+<p>Without <code>--incremental</code>, two targets govern a level. The seeder fills it to fifteen points of any
+source; the importer adds up to thirty document-backed points on top, counted
+only over points with <code>source = 'pdf'</code>, so a level the seeder has already
+filled still takes what the books have to add. The model is asked in rounds
+of at most fifteen, each naming every title the level holds and every title
+the earlier rounds produced, and the rounds stop at the target, at
+<code>--max-rules</code>, or when a round yields fewer points than it asked for. A level
+at the document target costs no call at all. Points are written the way
+seeding writes them: an import adds to a level and never moves a point that
+already sits at another one, and a proposed point whose slug matches a
+seeded or hand-written point at the same level is held rather than written
+over it.</p>
+<p>The source documents are kept one directory per language, as
+<code>grammar/&lt;code&gt;/&lt;document&gt;.pdf</code>, and the command reads that layout. <code>--file</code> may
+name a single document or a directory, in which case every PDF beneath it is
+read; <code>--lang</code> may be omitted for a document whose path states its language,
+and when given it overrides the path. <code>--level</code> works the same way: each row
+of <code>grammar/SOURCES.md</code> has a <code>Levels</code> cell naming the CEFR levels the
+document covers, and a run without <code>--level</code> reads every document at every
+level its row names, lowest level first across the whole run so that the
+beginner books have the first claim on a point two books both teach. With
+<code>--level</code>, only the documents whose row names that level are read, and a
+document whose cell is empty is read at it because the operator said so. A
+document is extracted once however many levels it is read at.</p>
+<pre><code class="language-sh">wisecrow import-pdf --file grammar/es/yo-puedo-1-2021.pdf --level A1 --max-rules 5 --dry-run   # judge one book at one level
+wisecrow import-pdf --incremental --file grammar/es              # every eligible book and level
+wisecrow import-pdf --incremental --file grammar/es --level B1   # only the books that cover B1
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Effect</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--incremental</code></td><td>No total rule quota; traverse all prose, preserve existing rules, compare meanings and resume database-recorded progress.</td></tr>
+<tr><td><code>--level &lt;CEFR&gt;</code></td><td>Read only at this level, and only the documents whose <code>Levels</code> cell names it (or names nothing). Absent, every document is read at every level its row names.</td></tr>
+<tr><td><code>--dry-run</code></td><td>Ask the model and print each point as it would be stored, with its refusals; write nothing. The call is still made.</td></tr>
+<tr><td><code>--max-rules &lt;N&gt;</code></td><td>Ask for at most <code>N</code> points, beneath what the level is short.</td></tr>
+<tr><td><code>--force</code></td><td>Read a document its <code>SOURCES.md</code> row does not clear. For a model hosted locally only.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Every document is checked against the shelf’s provenance record before it is
+read to the model. <code>grammar/SOURCES.md</code> carries a <code>Synthesis</code> column, and a
+document is sent only when its row says <code>yes</code>; a document with no row, or with
+no record above it, is refused as well, since nothing is known about its
+licence. In a directory run a refused document is skipped with a warning and the
+rest proceed; a run left with nothing cleared is an error. A document cleared
+but not covering the levels of the run is skipped the same way, with the reason
+from its row; a <code>Levels</code> cell that names no CEFR level the syllabus has is
+reported and skipped. A dry run over a directory writes nothing, so every
+document sees the same empty level and pays the full two rounds; to judge a
+book, dry-run it alone at one level with <code>--max-rules</code>. An answer the model
+does not return as a JSON array is asked for once more, with the shape spelt
+out; a second such answer skips that document at that level, with a warning,
+and the run goes on. A document outside a
+language directory with no <code>--lang</code> is refused by name rather than guessed at.</p>
+<hr>
+<h2 id="check-pdf"><a class="header" href="#check-pdf"><code>check-pdf</code></a></h2>
+<pre><code class="language-sh">wisecrow check-pdf --file &lt;PDF or DIRECTORY&gt; [--file &lt;PDF or DIRECTORY&gt;]
+</code></pre>
+<p>An import is only as good as the text layer beneath it, and three kinds of
+document give nothing back: a PDF built from page scans, an encrypted one, and a
+reference work whose pages are almost entirely paradigm tables. This command
+reads each file with the same extractor <a href="#import-pdf"><code>import-pdf</code></a> uses and
+reports what an import would find, so an unusable document is rejected before it
+costs a run. It touches neither the database nor an LLM. As with
+<a href="#import-pdf"><code>import-pdf</code></a>, <code>--file</code> accepts a document or a directory, and may
+be repeated, so one language or the whole shelf is screened in a single pass:</p>
+<pre><code class="language-sh">wisecrow check-pdf --file grammar | tail -60
+wisecrow check-pdf --file grammar/gd --file grammar/ga
+</code></pre>
+<p>Two extractors stand behind all of this. <code>pdf-extract</code> is tried first, since it
+is pure Rust and needs nothing installed, and poppler’s <code>pdftotext</code> is asked only
+when the native reading comes back under 200 characters a page or fails outright.
+Whichever read more of the document wins, and the report names it. The fallback is
+not a nicety: five commercial French grammars in the shelf yield between
+twenty-one and eighty-eight characters a page through <code>pdf-extract</code>, against six
+hundred to two thousand through poppler, and a sixth makes it panic. A machine
+without poppler installed still works, and simply keeps the thin reading.</p>
+<p>Each document earns one of three verdicts.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Verdict</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>OK</code></td><td>Prose at the density of a grammar book; import from it.</td></tr>
+<tr><td><code>THIN</code></td><td>Text was extracted, but under 200 characters per page — partial OCR, or nothing but tables.</td></tr>
+<tr><td><code>FAIL</code></td><td>Nothing can be read: not a PDF, encrypted, unopenable, or holding no passage long enough to state a rule.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The report gives the page count, the characters extracted per page, the passages
+the extractor kept with their mean length, and three passages quoted from across
+the document rather than from its front matter. The command exits with a failure
+status if any document falls short of <code>OK</code>, which makes it usable as a gate in a
+shell loop.</p>
+<p>One wrinkle is worth knowing in advance: <code>pdf-extract</code> writes its own font
+diagnostics to standard output as it reads, and a long document produces
+thousands of such lines. The verdicts are therefore held back until every
+document has been read and printed together at the end, so passing the run
+through <code>tail</code> is enough to see them:</p>
+<pre><code class="language-sh">wisecrow check-pdf --file grammar | tail -60
+</code></pre>
 <hr>
 <h2 id="generate-exercises"><a class="header" href="#generate-exercises"><code>generate-exercises</code></a></h2>
 <pre><code class="language-sh">wisecrow generate-exercises --lang &lt;CODE&gt; --level &lt;CEFR&gt; [--count N]
@@ -576,6 +706,40 @@ and the next offset, then exits nonzero when any medium failed, was refused
 by the budget or is unsupported, naming the first affected IDs so the same
 range can be retried before advancing. A preview’s missing entries are
 expected and do not fail the run.</p>
+<hr>
+<h2 id="prefetch-grammar-audio"><a class="header" href="#prefetch-grammar-audio"><code>prefetch-grammar-audio</code></a></h2>
+<pre><code class="language-sh">wisecrow prefetch-grammar-audio --lang &lt;CODE&gt; [--level &lt;CEFR&gt;] [--dry-run] [--prune]
+</code></pre>
+<p>Speaks every correct example sentence of a language’s grammar points into
+the media cache, so that grammar practice on the web plays them without a
+wait. Incorrect examples are never voiced: a learner should not hear a wrong
+form spoken as though it were right. A sentence two points quote is spoken
+once, because clips are keyed by the sentence’s speech fingerprint (text,
+language and voice) rather than by the example row; re-seeding or re-importing
+a point with the same sentences finds its clips already there, and an edited
+sentence is a new clip. The voice is the one <code>prefetch-media</code> would use for
+the language: CereProc where configured, Edge otherwise.</p>
+<pre><code class="language-sh">wisecrow prefetch-grammar-audio --lang es --dry-run            # what is missing
+wisecrow prefetch-grammar-audio --lang es                      # voice it
+wisecrow prefetch-grammar-audio --lang es --level B1 --prune   # one level, then reclaim stale clips
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th style="text-align: right">Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--level</code></td><td style="text-align: right">every level</td><td>One CEFR level’s points only.</td></tr>
+<tr><td><code>--dry-run</code></td><td style="text-align: right">off</td><td>Report cached and missing clips; generate nothing, apply no migrations, create no directory.</td></tr>
+<tr><td><code>--prune</code></td><td style="text-align: right">off</td><td>After voicing, delete every stored clip that no current correct example of any language names. Ignored in a dry run.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The run prints example and distinct-sentence counts, per-outcome counters and
+bytes generated, then exits nonzero when any sentence failed or the language
+has no voice, so the same command can be re-run once the cause is fixed. At
+most four sentences are in flight at once. A clip is a few tens of kilobytes;
+a level’s worth is well under a megabyte, so there is no byte budget.</p>
 <hr>
 <h2 id="sync"><a class="header" href="#sync"><code>sync</code></a></h2>
 <pre><code class="language-sh">wisecrow sync --remote https://wisecrow.example.com [--api-key KEY]

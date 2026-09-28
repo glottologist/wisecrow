@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-3e801ce8.js";
+            window.path_to_searchindex_js = "../searchindex-a17a6d85.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-d4c59dab.js"></script>
+        <script src="../toc-a32f9be8.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -180,10 +180,12 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="wisecrow-mobile"><a class="header" href="#wisecrow-mobile">wisecrow-mobile</a></h1>
-<p><code>wisecrow-mobile</code> is the Dioxus shell for Android and the desktop. Unlike
-<code>wisecrow-web</code> it is offline first: every page reads the device’s own SQLite
-database, and a sync engine reconciles that database with the server when a
-connection happens to be there. Nothing the learner does waits on the network.</p>
+<p><code>wisecrow-mobile</code> contains a Dioxus shell for Android and the desktop, SQLite
+storage, and an offline sync engine. The production launch path does not yet
+connect the storage and server API to the shell. Home, Learn and N-back are
+placeholders; the grammar pages require an injected local store.</p>
+<p>See <a href="../guides/android.html">Android: build, install and use</a> for the build
+procedure, verified packaging gaps and the current limits of an installed app.</p>
 <h2 id="crate-structure"><a class="header" href="#crate-structure">Crate structure</a></h2>
 <pre><code class="language-text">wisecrow-mobile/
 ├── migrations/          # SQLite migrations, applied on open
@@ -290,8 +292,10 @@ pub struct QueuedAttempt {
 }
 pub struct GrammarCursors { pub bank: i64, pub mastery: i64 }</code></pre>
 <h2 id="server-adapter"><a class="header" href="#server-adapter">Server adapter</a></h2>
-<p><code>MobileApi</code> is the port and <code>transport::HttpMobileApi</code> the adapter. Protocol 2
-is asked for separately:</p>
+<p><code>MobileApi</code> is the port. <code>transport::HttpMobileApi</code> currently stores only a
+normalized server origin; it does not implement the protocol methods yet.
+The sync engine is exercised with test implementations of the port. Protocol 2
+is requested through these methods:</p>
 <pre><code class="language-rust ignore">async fn capabilities_v2(&amp;self) -&gt; Result&lt;Option&lt;MobileCapabilitiesDto&gt;, MobileError&gt;;
 async fn grammar_bank_changes(&amp;self, ..) -&gt; Result&lt;GrammarBankChangePageDto, MobileError&gt;;
 async fn grammar_mastery_changes(&amp;self, ..) -&gt; Result&lt;GrammarMasteryChangePageDto, MobileError&gt;;
