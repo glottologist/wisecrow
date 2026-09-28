@@ -343,8 +343,8 @@ and counted in the log. Stored points have `source = 'pdf'` and a `source_ref`
 naming the document and page, e.g. `yo-puedo-1-2021.pdf p.148`.
 
 With `--incremental`, the importer visits all extracted prose in bounded chunks
-with **no total rule ceiling**. Full productive batches continue; a short model
-answer or a batch adding no new rules finishes the chunk. Exact slug matches
+with **no total rule ceiling**. Every productive batch continues, including short
+answers; a batch adding no new rules finishes the chunk. Exact slug matches
 are skipped and a separate model pass compares proposed meanings with all
 existing rules in the language, including other levels and sources. Related
 topics may remain when their conditions or uses differ. Semantic review is model
@@ -356,8 +356,8 @@ SHA-256, language, level and importer version; reruns skip completed files even
 if renamed, resume unfinished chunks and process changed contents or newly
 enabled levels. Earlier imports receive one catch-up scan because citations do
 not prove full-document coverage. Model failures leave a run pending and cause
-a nonzero exit status. Quality refusals are logged; a wholly refused response
-leaves its chunk pending. `--incremental` conflicts with `--dry-run` and
+a nonzero exit status. Quality refusals are logged; a round adding no new rules
+with unresolved refusals leaves its chunk pending. `--incremental` conflicts with `--dry-run` and
 `--max-rules`.
 
 Without `--incremental`, two targets govern a level. The seeder fills it to fifteen points of any

@@ -110,8 +110,8 @@ Three things to know:
    progress in PostgreSQL by file contents, language and level. Reruns skip
    completed files even if renamed, resume failures and process changed files
    or new levels. Old imports without progress records receive one catch-up
-   scan. Productive full batches continue; a short answer or a round with no
-   new rules ends that chunk. Semantic deduplication is model judgment and
+   scan. Every productive batch continues, including short answers; a round
+   with no new rules ends that chunk. Semantic deduplication is model judgment and
    should be reviewed. Without `--incremental`, the legacy thirty-PDF-rule
    target still applies.
 

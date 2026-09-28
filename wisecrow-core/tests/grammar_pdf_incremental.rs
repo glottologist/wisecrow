@@ -49,7 +49,12 @@ impl LlmProvider for Model {
                 .ok_or_else(|| WisecrowError::LlmError("missing candidates".into()))?;
             let keep: Vec<&Value> = candidates
                 .iter()
-                .filter(|candidate| candidate["title"].as_str() != self.reject_title)
+                .filter(|candidate| {
+                    candidate["title"].as_str() != self.reject_title
+                        || !data["existing"].as_array().is_some_and(|existing| {
+                            existing.iter().any(|rule| rule["title"] == "Original rule")
+                        })
+                })
                 .map(|candidate| &candidate["index"])
                 .collect();
             return Ok(json!({"keep": keep}).to_string());
@@ -123,7 +128,7 @@ async fn completed_and_renamed_files_cost_no_calls_and_preserve_examples(
     pool: PgPool,
 ) -> TestResult {
     let lang = language(&pool).await?;
-    let model = Model::new(vec![points(0, 2, 1)]);
+    let model = Model::new(vec![points(0, 2, 1), points(0, 0, 1)]);
     let first = import_passages(
         &pool,
         &model,
@@ -158,13 +163,18 @@ async fn completed_and_renamed_files_cost_no_calls_and_preserve_examples(
 
 #[sqlx::test(migrations = "./migrations")]
 #[ignore = "requires PostgreSQL with database creation privileges"]
-async fn imports_beyond_thirty_and_visits_later_chunks(pool: PgPool) -> TestResult {
+async fn imports_beyond_thirty_after_short_batches_and_visits_later_chunks(
+    pool: PgPool,
+) -> TestResult {
     let lang = language(&pool).await?;
     let model = Model::new(vec![
         points(0, 15, 1),
         points(15, 15, 1),
         points(30, 5, 1),
-        points(35, 1, 2),
+        points(35, 1, 1),
+        points(0, 0, 1),
+        points(36, 1, 2),
+        points(0, 0, 2),
     ]);
     let passages = [passage(1, 1200), passage(2, 1200)];
     let result = import_passages(
@@ -175,11 +185,11 @@ async fn imports_beyond_thirty_and_visits_later_chunks(pool: PgPool) -> TestResu
         &passages,
     )
     .await?;
-    assert_eq!(result.placed, 36);
+    assert_eq!(result.placed, 37);
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM grammar_rules")
         .fetch_one(&pool)
         .await?;
-    assert_eq!(count, 36);
+    assert_eq!(count, 37);
     assert!(is_complete(&pool, target(lang, "A1"), &[1; 32]).await?);
     Ok(())
 }
@@ -190,7 +200,20 @@ async fn preserves_exact_duplicates_and_rejects_rewordings_across_levels(
     pool: PgPool,
 ) -> TestResult {
     let lang = language(&pool).await?;
-    let first = Model::new(vec![json!([point("Original rule", 1)]).to_string()]);
+    // Put the semantic match beyond the first review batch, among other sources.
+    sqlx::query(
+        "INSERT INTO grammar_rules (language_id, cefr_level_id, slug, title, explanation, source)
+                 SELECT $1, (SELECT id FROM cefr_levels WHERE code = 'A1'),
+                        'seed-' || n, 'Seed ' || n, 'An unrelated rule.', 'llm'
+                 FROM generate_series(1, 65) AS n",
+    )
+    .bind(lang)
+    .execute(&pool)
+    .await?;
+    let first = Model::new(vec![
+        json!([point("Original rule", 1)]).to_string(),
+        points(0, 0, 1),
+    ]);
     import_passages(
         &pool,
         &first,
@@ -203,12 +226,15 @@ async fn preserves_exact_duplicates_and_rejects_rewordings_across_levels(
         sqlx::query_as("SELECT id, sentence FROM rule_examples ORDER BY id")
             .fetch_all(&pool)
             .await?;
-    let mut second = Model::new(vec![json!([
-        point("Original rule", 1),
-        point("Reworded rule", 1),
-        point("Distinct rule", 1)
-    ])
-    .to_string()]);
+    let mut second = Model::new(vec![
+        json!([
+            point("Original rule", 1),
+            point("Reworded rule", 1),
+            point("Distinct rule", 1)
+        ])
+        .to_string(),
+        points(0, 0, 1),
+    ]);
     second.reject_title = Some("Reworded rule");
     let result = import_passages(
         &pool,
@@ -239,7 +265,7 @@ async fn failure_retries_only_unfinished_chunks_and_changed_content_is_new(
 ) -> TestResult {
     let lang = language(&pool).await?;
     let passages = [passage(1, 1200), passage(2, 1200)];
-    let failing = Model::new(vec![points(0, 1, 1)]);
+    let failing = Model::new(vec![points(0, 1, 1), points(0, 0, 1)]);
     assert!(import_passages(
         &pool,
         &failing,
@@ -250,7 +276,7 @@ async fn failure_retries_only_unfinished_chunks_and_changed_content_is_new(
     .await
     .is_err());
     assert!(!is_complete(&pool, target(lang, "A1"), &[1; 32]).await?);
-    let resumed = Model::new(vec![points(1, 1, 2)]);
+    let resumed = Model::new(vec![points(1, 1, 2), points(0, 0, 2)]);
     let result = import_passages(
         &pool,
         &resumed,
@@ -260,12 +286,12 @@ async fn failure_retries_only_unfinished_chunks_and_changed_content_is_new(
     )
     .await?;
     assert_eq!(result.placed, 1);
-    assert_eq!(resumed.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(resumed.calls.load(Ordering::SeqCst), 3);
     let changed = DocumentIdentity {
         fingerprint: [2; 32],
         ..document("book.pdf")
     };
-    let additional = Model::new(vec![points(2, 1, 1)]);
+    let additional = Model::new(vec![points(2, 1, 1), points(0, 0, 1)]);
     let result = import_passages(
         &pool,
         &additional,
@@ -282,7 +308,7 @@ async fn failure_retries_only_unfinished_chunks_and_changed_content_is_new(
 #[ignore = "requires PostgreSQL with database creation privileges"]
 async fn concurrent_importers_share_one_completed_pass(pool: PgPool) -> TestResult {
     let lang = language(&pool).await?;
-    let model = Model::new(vec![points(0, 1, 1)]);
+    let model = Model::new(vec![points(0, 1, 1), points(0, 0, 1)]);
     let passages = [passage(1, 10)];
     let (first, second) = tokio::join!(
         import_passages(
@@ -301,7 +327,7 @@ async fn concurrent_importers_share_one_completed_pass(pool: PgPool) -> TestResu
         )
     );
     assert_eq!(first?.placed + second?.placed, 1);
-    assert_eq!(model.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(model.calls.load(Ordering::SeqCst), 3);
     Ok(())
 }
 
@@ -379,7 +405,7 @@ async fn invalid_novelty_and_example_write_failure_leave_the_round_retryable(
     let counts: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT COUNT(*) FROM grammar_rules), (SELECT COUNT(*) FROM rule_examples), (SELECT COUNT(*) FROM grammar_import_progress)")
         .fetch_one(&pool).await?;
     assert_eq!(counts, (0, 0, 0));
-    let repaired = Model::new(vec![points(0, 1, 1)]);
+    let repaired = Model::new(vec![points(0, 1, 1), points(0, 0, 1)]);
     let result = import_passages(
         &pool,
         &repaired,
@@ -389,6 +415,50 @@ async fn invalid_novelty_and_example_write_failure_leave_the_round_retryable(
     )
     .await?;
     assert_eq!(result.placed, 1);
+    Ok(())
+}
+
+#[sqlx::test(migrations = "./migrations")]
+#[ignore = "requires PostgreSQL with database creation privileges"]
+async fn quality_refusals_stay_pending_even_alongside_duplicates(pool: PgPool) -> TestResult {
+    let lang = language(&pool).await?;
+    let passages = [passage(1, 10)];
+    let mut invalid = point("Needs repair", 1);
+    invalid["explanation"] = json!("Only one short sentence.");
+    let response = json!([point("Original rule", 1), invalid]).to_string();
+    let failing = Model::new(vec![response.clone(), response]);
+    assert!(import_passages(
+        &pool,
+        &failing,
+        target(lang, "A1"),
+        document("book.pdf"),
+        &passages
+    )
+    .await
+    .is_err());
+    let progress: (i32, bool) =
+        sqlx::query_as("SELECT next_chunk, completed FROM grammar_import_progress")
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(progress, (0, false));
+    let repaired = Model::new(vec![
+        json!([point("Needs repair", 1)]).to_string(),
+        points(0, 0, 1),
+    ]);
+    let result = import_passages(
+        &pool,
+        &repaired,
+        target(lang, "A1"),
+        document("book.pdf"),
+        &passages,
+    )
+    .await?;
+    assert_eq!(result.placed, 1);
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM grammar_rules")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(count, 2);
+    assert!(is_complete(&pool, target(lang, "A1"), &[1; 32]).await?);
     Ok(())
 }
 
@@ -434,7 +504,7 @@ async fn cancellation_releases_the_lock_and_does_not_complete_the_chunk(
     }
     drop(import);
     assert!(!is_complete(&pool, target(lang, "A1"), &[1; 32]).await?);
-    let resumed = Model::new(vec![points(0, 1, 1)]);
+    let resumed = Model::new(vec![points(0, 1, 1), points(0, 0, 1)]);
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(5),
         import_passages(

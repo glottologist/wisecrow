@@ -98,8 +98,8 @@ pub async fn is_complete(
 ///
 /// Every round atomically commits new rules, examples and progress. Existing
 /// language/slug identities are never rewritten, irrespective of level or source.
-/// Full productive rounds continue without a total rule limit. A short answer or
-/// a round containing only duplicates finishes its chunk. Semantic distinctions
+/// Productive rounds continue without a total rule limit, even after short
+/// answers. A round with no new rules finishes its chunk. Semantic distinctions
 /// are reviewed by the provider against the complete existing language syllabus.
 ///
 /// # Errors
@@ -183,12 +183,6 @@ pub async fn import_passages(
         for rejected in &round.rejected {
             warn!("Refused {:?}: {}", rejected.title, rejected.reason);
         }
-        if round.points.is_empty() && !round.rejected.is_empty() {
-            return Err(WisecrowError::LlmError(
-                "No valid rules in the round; chunk remains pending".into(),
-            ));
-        }
-        let proposed = round.points.len().saturating_add(round.rejected.len());
         let accepted = round.points.len();
         let distinct =
             distinct_rules(provider, target.language_name, round.points, &existing).await?;
@@ -198,8 +192,12 @@ pub async fn import_passages(
                 insert_rule(&mut transaction, target.language_id, level_id, point).await?,
             );
         }
-        let advance =
-            proposed < usize::try_from(SYNTHESIS_BATCH).unwrap_or(usize::MAX) || placed == 0;
+        let advance = placed == 0;
+        if advance && !round.rejected.is_empty() {
+            return Err(WisecrowError::LlmError(
+                "No new rules and unresolved refusals; chunk remains pending".into(),
+            ));
+        }
         let next_chunk = cursor + usize::from(advance);
         let completed = next_chunk == chunks.len();
         save_progress(
