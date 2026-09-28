@@ -453,6 +453,24 @@ pub struct PrefetchMediaArgs {
 }
 
 #[derive(Args)]
+pub struct PrefetchGrammarAudioArgs {
+    /// Language whose grammar example sentences are voiced.
+    #[arg(short, long)]
+    pub lang: String,
+    /// One CEFR level; every level when omitted.
+    #[arg(short = 'L', long)]
+    pub level: Option<String>,
+    /// Report cached and missing clips without generating anything. Opens
+    /// the database and cache read-only and applies no migrations.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// After voicing, remove clips no current correct example of any
+    /// language needs. Ignored with --dry-run.
+    #[arg(long)]
+    pub prune: bool,
+}
+
+#[derive(Args)]
 pub struct ExtractPhrasesArgs {
     /// The language whose corpus is mined for frequent phrases.
     #[arg(short, long)]
@@ -647,6 +665,9 @@ pub enum Command {
     ListLanguages,
     #[command(aliases = ["pm"])]
     PrefetchMedia(PrefetchMediaArgs),
+    /// Voice a language's grammar example sentences into the media cache.
+    #[command(aliases = ["pga"])]
+    PrefetchGrammarAudio(PrefetchGrammarAudioArgs),
     /// Extract frequent multi-word phrases from the corpus into staging.
     ExtractPhrases(ExtractPhrasesArgs),
     /// Translate staged phrases with the LLM and promote them into decks.
@@ -722,6 +743,7 @@ mod tests {
                 | (Command::ListLanguages, "ListLanguages")
                 | (Command::Nback(_), "Nback")
                 | (Command::PrefetchMedia(_), "PrefetchMedia")
+                | (Command::PrefetchGrammarAudio(_), "PrefetchGrammarAudio")
                 | (Command::ExtractPhrases(_), "ExtractPhrases")
                 | (Command::TranslatePhrases(_), "TranslatePhrases")
                 | (Command::ExtractWords(_), "ExtractWords")
@@ -774,6 +796,19 @@ mod tests {
             (100, 0, 67_108_864, false)
         );
         assert_eq!((args.audio, args.images), (true, true));
+        Ok(())
+    }
+
+    #[test]
+    fn prefetch_grammar_audio_defaults_to_every_level_and_no_prune() -> Result<(), clap::Error> {
+        let cli = Cli::try_parse_from(["wisecrow", "prefetch-grammar-audio", "--lang", "es"])?;
+        let Command::PrefetchGrammarAudio(args) = cli.command else {
+            panic!("expected prefetch-grammar-audio");
+        };
+        assert_eq!(
+            (args.lang.as_str(), args.level, args.dry_run, args.prune),
+            ("es", None, false, false)
+        );
         Ok(())
     }
 
@@ -864,6 +899,8 @@ mod tests {
         "TranslatePhrases"
     )]
     #[case(&["wisecrow", "pm", "-n", "en", "-f", "de"], "PrefetchMedia")]
+    #[case(&["wisecrow", "prefetch-grammar-audio", "--lang", "es"], "PrefetchGrammarAudio")]
+    #[case(&["wisecrow", "pga", "--lang", "gd", "--level", "B1", "--dry-run", "--prune"], "PrefetchGrammarAudio")]
     #[case(&["wisecrow", "gloss", "--sentence", "Меня зовут Иван", "--lang", "ru"], "Gloss")]
     #[case(&["wisecrow", "gl", "--sentence", "casa", "--lang", "es"], "Gloss")]
     #[case(&["wisecrow", "graded-reader", "-n", "en", "-f", "es", "--cefr", "B1"], "GradedReader")]

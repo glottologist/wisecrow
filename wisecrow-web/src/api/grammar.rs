@@ -45,13 +45,24 @@ pub async fn start_grammar_session(
     .await
     .map_err(|error| crate::server::internal_error("grammar session creation", &error))?;
 
-    Ok(session.map(|session| GrammarSessionDto {
+    let Some(session) = session else {
+        return Ok(None);
+    };
+    let rule_ids: Vec<i32> = session.items.iter().map(|item| item.rule_id).collect();
+    let examples = wisecrow::grammar::rules::RuleRepository::correct_examples_for_rules(
+        crate::server::pool()?,
+        &rule_ids,
+    )
+    .await
+    .map_err(|error| crate::server::internal_error("grammar example load", &error))?;
+    let items = session
+        .items
+        .iter()
+        .map(wisecrow::dto_convert::grammar_item)
+        .collect();
+    Ok(Some(GrammarSessionDto {
         session_id: session.id,
-        items: session
-            .items
-            .iter()
-            .map(wisecrow::dto_convert::grammar_item)
-            .collect(),
+        items: wisecrow::dto_convert::with_examples(items, &examples),
     }))
 }
 

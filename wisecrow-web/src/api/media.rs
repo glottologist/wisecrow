@@ -23,6 +23,31 @@ pub async fn get_audio_data(translation_id: i32) -> Result<String, ServerFnError
     ))
 }
 
+/// Returns cached or generated audio for a correct example sentence of a
+/// grammar point.
+///
+/// Takes only the example id: the sentence, its language and whether it is
+/// a correct form are loaded server-side. An incorrect example is refused,
+/// so a learner never hears a wrong form spoken as though it were right.
+///
+/// # Errors
+///
+/// Returns validation, authentication, capability, or sanitized media errors.
+#[post("/api/media/example-audio")]
+pub async fn get_example_audio_data(rule_example_id: i32) -> Result<String, ServerFnError> {
+    crate::server::auth::current_user().await?;
+    validate_media_request(rule_example_id)?;
+    #[cfg(feature = "audio")]
+    {
+        implementation::example_audio(rule_example_id).await
+    }
+    #[cfg(not(feature = "audio"))]
+    Err(crate::server::client_error(
+        axum::http::StatusCode::NOT_IMPLEMENTED,
+        "Audio capability is unavailable",
+    ))
+}
+
 /// Returns a cached or fetched image for a learning word.
 ///
 /// Takes only the translation id — see [`get_audio_data`].
@@ -95,6 +120,51 @@ mod implementation {
             })
             .await
             .map_err(|error| crate::server::internal_error("audio generation", &error))?;
+        let bytes = read_bounded_file(&path, MAX_AUDIO_BYTES, "Audio").await?;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        Ok(["data:audio/mpeg;base64,", encoded.as_str()].concat())
+    }
+
+    #[cfg(feature = "audio")]
+    pub(super) async fn example_audio(rule_example_id: i32) -> Result<String, ServerFnError> {
+        use wisecrow::media::grammar_audio::SentenceSpeaker as _;
+
+        let db = crate::server::pool()?;
+        let example: Option<(String, String, bool)> = sqlx::query_as(
+            "SELECT re.sentence, l.code, re.is_correct
+             FROM rule_examples re
+             JOIN grammar_rules gr ON gr.id = re.rule_id
+             JOIN languages l ON l.id = gr.language_id
+             WHERE re.id = $1",
+        )
+        .bind(rule_example_id)
+        .fetch_optional(db)
+        .await
+        .map_err(|error| crate::server::internal_error("example load", &error))?;
+        // An incorrect example is treated as absent rather than forbidden:
+        // the client is told nothing about why there is no clip.
+        let Some((sentence, language, true)) = example else {
+            return Err(crate::server::client_error(
+                axum::http::StatusCode::NOT_FOUND,
+                "Unknown example",
+            ));
+        };
+        let cache =
+            MediaCache::new(db.clone()) // clone: MediaCache owns an Arc-backed pool handle
+                .map_err(|error| {
+                    crate::server::internal_error("audio cache initialization", &error)
+                })?;
+        let cereproc = wisecrow::media::cereproc::CereprocClient::from_config(&app_config()?);
+        let speaker = wisecrow::media::grammar_audio::TtsSpeaker::new(cereproc);
+        let fingerprint = speaker
+            .fingerprint(&language, &sentence)
+            .map_err(|error| crate::server::internal_error("example fingerprint", &error))?;
+        let path = cache
+            .get_or_fetch_sentence(&fingerprint, MediaType::Audio, &language, &sentence, || {
+                speaker.speak(&language, &sentence)
+            })
+            .await
+            .map_err(|error| crate::server::internal_error("example audio generation", &error))?;
         let bytes = read_bounded_file(&path, MAX_AUDIO_BYTES, "Audio").await?;
         let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
         Ok(["data:audio/mpeg;base64,", encoded.as_str()].concat())

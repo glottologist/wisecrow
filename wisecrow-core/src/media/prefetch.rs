@@ -410,7 +410,7 @@ pub async fn prefetch_media(
     Ok(summary)
 }
 
-fn progress_bar(total: usize) -> Result<ProgressBar, WisecrowError> {
+pub(crate) fn progress_bar(total: usize) -> Result<ProgressBar, WisecrowError> {
     let progress = ProgressBar::new(u64::try_from(total).unwrap_or(u64::MAX));
     progress.set_style(
         ProgressStyle::default_bar()
@@ -589,7 +589,7 @@ async fn prepare_image(
 /// tasks too, so both executing and retained tasks stay bounded. A worker
 /// that cannot be joined, or a cancellation, aborts and drains the rest
 /// before returning an error; per-item failures are the worker's own result.
-async fn run_batch<T, R, F, Fut>(
+pub(crate) async fn run_batch<T, R, F, Fut>(
     items: Vec<T>,
     launch: F,
     mut cancel: watch::Receiver<bool>,

@@ -368,6 +368,7 @@ Run `wisecrow <command> --help` for the full flag list.
 | `sync` (`s`) | Pull corpus/grammar data from a remote Wisecrow instance. |
 | `download-all` (`da`) | Download every supported pair for a native language. |
 | `prefetch-media` (`pm`) | Pre-fetch audio/images for a pair into the media cache. |
+| `prefetch-grammar-audio` (`pga`) | Voice a language's grammar example sentences into the media cache. |
 | `seed-grammar` (`sg`) | LLM-seed CEFR grammar rules for a language and levels. |
 | `import-grammar` (`ig`) | Import grammar rules from a JSON file. |
 | `import-pdf` (`ip`) | Synthesise grammar points from a PDF, or a language directory of them, at the levels SOURCES.md says each covers. |

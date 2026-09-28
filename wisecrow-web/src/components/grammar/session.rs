@@ -4,6 +4,7 @@ use wisecrow_dto::GrammarItemDto;
 
 use super::submission_for;
 use crate::api::grammar::{complete_grammar_session, start_grammar_session, submit_grammar_answer};
+use crate::api::media::get_example_audio_data;
 
 /// What the learner is doing with the item in front of them.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -26,6 +27,8 @@ pub fn GrammarPage(native: String, foreign: String) -> Element {
     let mut empty_bank = use_signal(|| false);
     let mut loading = use_signal(|| false);
     let mut error_msg: Signal<Option<String>> = use_signal(|| None);
+    let mut playing: Signal<Option<(i32, String)>> = use_signal(|| None);
+    let mut audio_failed: Signal<Option<i32>> = use_signal(|| None);
 
     if session_id().is_none() {
         let native_code = native.clone(); // clone: moved into the async start handler
@@ -206,12 +209,14 @@ pub fn GrammarPage(native: String, foreign: String) -> Element {
                         div { class: "text-center space-y-3",
                             p { class: "text-xl text-emerald-400 font-bold", "Correct" }
                             p { class: "text-gray-400", "{item.rule_explanation}" }
+                            Examples { examples: item.examples.clone(), playing, audio_failed } // clone: the component takes owned props
                         }
                     },
                     Answered::Wrong => rsx! {
                         div { class: "text-center space-y-3",
                             p { class: "text-xl text-red-400 font-bold", "Not quite" }
                             p { class: "text-gray-400", "{item.rule_explanation}" }
+                            Examples { examples: item.examples.clone(), playing, audio_failed } // clone: the component takes owned props
                         }
                     },
                 }
@@ -224,6 +229,8 @@ pub fn GrammarPage(native: String, foreign: String) -> Element {
                                 async move {
                                     let next = position.saturating_add(1);
                                     typed.set(String::new());
+                                    playing.set(None);
+                                    audio_failed.set(None);
                                     answered.set(Answered::No);
                                     hint_shown.set(false);
                                     ordinal.set(0);
@@ -244,6 +251,63 @@ pub fn GrammarPage(native: String, foreign: String) -> Element {
 
             if let Some(message) = error_msg() {
                 div { class: "text-red-400 text-center", "{message}" }
+            }
+        }
+    }
+}
+
+/// A point's correct examples, each with a play control.
+///
+/// One clip plays at a time: pressing another example replaces the audio
+/// element rather than layering a second voice over the first.
+#[component]
+fn Examples(
+    examples: Vec<wisecrow_dto::RuleExampleDto>,
+    playing: Signal<Option<(i32, String)>>,
+    audio_failed: Signal<Option<i32>>,
+) -> Element {
+    if examples.is_empty() {
+        return rsx! {};
+    }
+    rsx! {
+        ul { class: "text-left space-y-2 mt-4",
+            for example in examples {
+                li { class: "bg-gray-800 rounded-lg px-4 py-2 flex items-center gap-3",
+                    button {
+                        class: "rounded bg-emerald-600 hover:bg-emerald-500 px-3 py-1 font-bold transition",
+                        aria_label: "Play example",
+                        onclick: {
+                            let id = example.id;
+                            move |_| {
+                                let mut playing = playing;
+                                let mut audio_failed = audio_failed;
+                                async move {
+                                    audio_failed.set(None);
+                                    match get_example_audio_data(id).await {
+                                        Ok(url) => playing.set(Some((id, url))),
+                                        Err(_) => {
+                                            playing.set(None);
+                                            audio_failed.set(Some(id));
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "▶"
+                    }
+                    div { class: "space-y-1",
+                        p { class: "text-gray-300", "{example.sentence}" }
+                        if let Some(ref translation) = example.translation {
+                            p { class: "text-sm text-gray-500", "{translation}" }
+                        }
+                        if let Some(src) = playing().filter(|(id, _)| *id == example.id).map(|(_, src)| src) {
+                            audio { src: "{src}", autoplay: true, controls: true, class: "mt-1" }
+                        }
+                        if audio_failed() == Some(example.id) {
+                            p { class: "text-sm text-red-400", "Audio unavailable" }
+                        }
+                    }
+                }
             }
         }
     }

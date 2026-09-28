@@ -16,10 +16,10 @@ use wisecrow::{
         ExportGrammarArgs, ExtractPhrasesArgs, ExtractWordsArgs, FrequencyArgs,
         GenerateExercisesArgs, GenerateItemsArgs, GlossArgs, GlossDeckArgs, GradedReaderArgs,
         GradedReaderFormat, ImportGrammarArgs, ImportPdfArgs, IngestArgs, LanguageArgs, LearnArgs,
-        NbackArgs, PrefetchMediaArgs, PreviewArgs, PromoteItemsArgs, PromoteMode, PromoteWordsArgs,
-        PruneArgs, QuizArgs, RefreshSyllabusArgs, ScoreSentencesArgs, SeedGrammarArgs,
-        SentenceCardArgs, SyncArgs, SyncClientCmd, TranslatePhrasesArgs, UserCmd,
-        SUPPORTED_LANGUAGE_INFO,
+        NbackArgs, PrefetchGrammarAudioArgs, PrefetchMediaArgs, PreviewArgs, PromoteItemsArgs,
+        PromoteMode, PromoteWordsArgs, PruneArgs, QuizArgs, RefreshSyllabusArgs,
+        ScoreSentencesArgs, SeedGrammarArgs, SentenceCardArgs, SyncArgs, SyncClientCmd,
+        TranslatePhrasesArgs, UserCmd, SUPPORTED_LANGUAGE_INFO,
     },
     config::Config,
     downloader::DownloadConfig,
@@ -1354,6 +1354,85 @@ fn report_prefetch(args: &PrefetchMediaArgs, options: &PrefetchOptions, summary:
     }
 }
 
+#[cfg(not(feature = "tts"))]
+async fn handle_prefetch_grammar_audio(_args: PrefetchGrammarAudioArgs) -> Result<(), Error> {
+    Err(WisecrowError::MediaError(
+        "This build has no speech synthesis; rebuild with the tts feature".into(),
+    )
+    .into())
+}
+
+#[cfg(feature = "tts")]
+async fn handle_prefetch_grammar_audio(args: PrefetchGrammarAudioArgs) -> Result<(), Error> {
+    use std::sync::Arc;
+    use wisecrow::media::cache::MediaCache;
+    use wisecrow::media::grammar_audio::{
+        prefetch_grammar_audio, GrammarAudioOptions, SentenceOutcome, SentenceSpeaker, TtsSpeaker,
+    };
+
+    let mode = if args.dry_run {
+        PrefetchMode::Preview
+    } else {
+        PrefetchMode::Execute
+    };
+    let config = load_config()?;
+    // Preview only reads: connect without migrating so an unprepared
+    // database is reported rather than changed.
+    let pool = match mode {
+        PrefetchMode::Preview => connect_db(&config.database_url()?).await?,
+        PrefetchMode::Execute => assure_db(&config.database_url()?).await?,
+    };
+    let cache = Arc::new(match mode {
+        PrefetchMode::Preview => MediaCache::open_existing(pool.clone()), // clone: PgPool is Arc-based
+        PrefetchMode::Execute => MediaCache::new(pool.clone())?, // clone: PgPool is Arc-based
+    });
+    let speaker: Arc<dyn SentenceSpeaker> = Arc::new(TtsSpeaker::new(
+        wisecrow::media::cereproc::CereprocClient::from_config(&config),
+    ));
+    let options = GrammarAudioOptions {
+        language: args.lang.clone(), // clone: the options own the code
+        level: args.level.clone(),   // clone: the options own the level
+        mode,
+        prune: args.prune,
+    };
+
+    let (stop, cancel) = tokio::sync::watch::channel(false);
+    let mut term_signal = signal(SignalKind::terminate())?;
+    let operation = prefetch_grammar_audio(&pool, cache, speaker, &options, cancel);
+    tokio::pin!(operation);
+    let summary = select! {
+        result = &mut operation => result,
+        () = wait_for_shutdown_signal(&mut term_signal) => {
+            stop.send_replace(true);
+            operation.await
+        }
+    }?;
+
+    info!(
+        "{} {} {} example sentences ({} distinct): cached {}, missing {}, generated {}, failed {}, unsupported {}; {} bytes generated; {} clips pruned",
+        if args.dry_run { "Previewed" } else { "Voiced" },
+        summary.examples,
+        args.lang,
+        summary.selected,
+        summary.count(SentenceOutcome::Cached),
+        summary.count(SentenceOutcome::Missing),
+        summary.count(SentenceOutcome::Generated),
+        summary.count(SentenceOutcome::Failed),
+        summary.count(SentenceOutcome::Unsupported),
+        summary.generated_bytes,
+        summary.pruned
+    );
+    if summary.needs_attention() {
+        return Err(anyhow::anyhow!(
+            "{} sentences could not be voiced; see the warnings above and re-run",
+            summary
+                .count(SentenceOutcome::Failed)
+                .saturating_add(summary.count(SentenceOutcome::Unsupported))
+        ));
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     tracing_subscriber::fmt::init();
@@ -1383,6 +1462,7 @@ async fn main() -> Result<(), Error> {
             }
         }
         Command::PrefetchMedia(args) => handle_prefetch_media(args).await?,
+        Command::PrefetchGrammarAudio(args) => handle_prefetch_grammar_audio(args).await?,
         Command::ExtractPhrases(args) => handle_extract_phrases(args).await?,
         Command::TranslatePhrases(args) => handle_translate_phrases(args).await?,
         Command::ExtractWords(args) => handle_extract_words(args).await?,

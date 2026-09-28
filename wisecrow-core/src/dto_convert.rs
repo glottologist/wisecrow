@@ -4,8 +4,8 @@ use wisecrow_dto::{
     DnbModeDto, DnbSessionResultsDto, DnbTrialDto, GlossaryEntryDto, GradedReaderDto,
     GrammarItemDto, GrammarMasteryStateDto, GrammarOptionDto, LanguageInfo, MasteryBandDto,
     MultipleChoiceQuizDto, OfflineGrammarItemDto, PlacementLevelDto, PlacementResultDto,
-    PlacementStateDto, PlacementStepDto, QuizItemDto, ReviewRatingDto, ScriptDirection, SessionDto,
-    SubmissionDto, TokenStatusDto, UserDto,
+    PlacementStateDto, PlacementStepDto, QuizItemDto, ReviewRatingDto, RuleExampleDto,
+    ScriptDirection, SessionDto, SubmissionDto, TokenStatusDto, UserDto,
 };
 use wisecrow_learning::grading::{Answer, Submission};
 use wisecrow_learning::mastery::{band_from, Band};
@@ -16,6 +16,7 @@ use crate::grammar::graded_reader::{GlossaryEntry, GradedReader};
 use crate::grammar::mastery::MasteryRow;
 use crate::grammar::placement::PlacementState;
 use crate::grammar::quiz::{ClozeQuiz, MultipleChoiceQuiz};
+use crate::grammar::rules::CorrectExample;
 use crate::grammar::selection::PracticeItem;
 use crate::grammar::sync::{BankItem, MasteryState};
 use crate::preview::annotate::{AnnotatedToken, Status};
@@ -292,7 +293,28 @@ pub fn grammar_item(item: &PracticeItem) -> GrammarItemDto {
         prompt: item.prompt.clone(),  // clone: building owned DTO
         hint: item.hint.clone(),      // clone: building owned DTO
         options,
+        examples: Vec::new(),
     }
+}
+
+/// Attaches each served item's correct examples, keyed by rule.
+#[must_use]
+pub fn with_examples(
+    mut items: Vec<GrammarItemDto>,
+    examples: &[CorrectExample],
+) -> Vec<GrammarItemDto> {
+    for item in &mut items {
+        item.examples = examples
+            .iter()
+            .filter(|example| example.rule_id == item.rule_id)
+            .map(|example| RuleExampleDto {
+                id: example.example_id,
+                sentence: example.sentence.clone(), // clone: building owned DTO
+                translation: example.translation.clone(), // clone: building owned DTO
+            })
+            .collect();
+    }
+    items
 }
 
 /// Presents an item as a device holds it offline, answer and all.

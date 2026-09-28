@@ -118,6 +118,7 @@ mod tests {
             prompt: "Yo ___ cansado.".into(),
             hint: Some("A passing state.".into()),
             options: Vec::new(),
+            examples: Vec::new(),
         }
     }
 

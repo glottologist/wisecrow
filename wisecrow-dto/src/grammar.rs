@@ -24,6 +24,10 @@ pub struct GrammarItemDto {
     /// The options of a multiple choice, by stable identifier. Empty for a
     /// cloze, which the learner types.
     pub options: Vec<GrammarOptionDto>,
+    /// The point's correct example sentences, for reading and hearing after
+    /// an answer. Absent from older servers, hence the default.
+    #[serde(default)]
+    pub examples: Vec<RuleExampleDto>,
 }
 
 /// One choice, identified by something that survives being shuffled.
@@ -31,6 +35,17 @@ pub struct GrammarItemDto {
 pub struct GrammarOptionDto {
     pub id: String,
     pub text: String,
+}
+
+/// One correct example of a point, as practice shows it.
+///
+/// The id is a handle for fetching the clip, not an identity: the server
+/// looks the sentence up by it and keys the clip on the sentence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuleExampleDto {
+    pub id: i32,
+    pub sentence: String,
+    pub translation: Option<String>,
 }
 
 /// An open session and the items it served.
@@ -172,6 +187,7 @@ mod tests {
                 id: "o1".into(),
                 text: "estoy".into(),
             }],
+            examples: Vec::new(),
         }
     }
 
@@ -180,6 +196,14 @@ mod tests {
         let json = serde_json::to_string(&item(1)).expect("serialize");
         assert!(!json.contains("\"answer\""));
         assert!(!json.contains("correct_option"));
+    }
+
+    #[test]
+    fn an_item_without_examples_still_deserialises() {
+        let json = r#"{"item_id":1,"revision":1,"rule_id":4,"rule_slug":"s","rule_title":"t",
+                       "rule_explanation":"e","level":"A1","prompt":"p","hint":null,"options":[]}"#;
+        let item: GrammarItemDto = serde_json::from_str(json).expect("older shape");
+        assert!(item.examples.is_empty());
     }
 
     proptest! {

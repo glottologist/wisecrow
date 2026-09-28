@@ -32,6 +32,7 @@ list.
 | [`extract-words`](#extract-words) | — | yes | Count sentence words into word candidates. |
 | [`promote-words`](#promote-words) | — | yes + LLM | Give candidates meanings and link them to learning rows. |
 | [`prefetch-media`](#prefetch-media) | `pm` | yes | Pre-warm the audio/image cache. |
+| [`prefetch-grammar-audio`](#prefetch-grammar-audio) | `pga` | yes | Voice a language's grammar example sentences. |
 | [`sync`](#sync) | `s` | yes | Pull data from a remote Wisecrow. |
 | [`gloss`](#gloss) | `gl` | yes + LLM | Leipzig interlinear gloss for a sentence (cached). |
 | [`graded-reader`](#graded-reader) | `gr` | yes + LLM | Generate a CEFR-graded passage from learned vocab. |
@@ -535,6 +536,42 @@ and the next offset, then exits nonzero when any medium failed, was refused
 by the budget or is unsupported, naming the first affected IDs so the same
 range can be retried before advancing. A preview's missing entries are
 expected and do not fail the run.
+
+---
+
+## `prefetch-grammar-audio`
+
+```sh
+wisecrow prefetch-grammar-audio --lang <CODE> [--level <CEFR>] [--dry-run] [--prune]
+```
+
+Speaks every correct example sentence of a language's grammar points into
+the media cache, so that grammar practice on the web plays them without a
+wait. Incorrect examples are never voiced: a learner should not hear a wrong
+form spoken as though it were right. A sentence two points quote is spoken
+once, because clips are keyed by the sentence's speech fingerprint (text,
+language and voice) rather than by the example row; re-seeding or re-importing
+a point with the same sentences finds its clips already there, and an edited
+sentence is a new clip. The voice is the one `prefetch-media` would use for
+the language: CereProc where configured, Edge otherwise.
+
+```sh
+wisecrow prefetch-grammar-audio --lang es --dry-run            # what is missing
+wisecrow prefetch-grammar-audio --lang es                      # voice it
+wisecrow prefetch-grammar-audio --lang es --level B1 --prune   # one level, then reclaim stale clips
+```
+
+| Flag | Default | Description |
+|------|--------:|-------------|
+| `--level` | every level | One CEFR level's points only. |
+| `--dry-run` | off | Report cached and missing clips; generate nothing, apply no migrations, create no directory. |
+| `--prune` | off | After voicing, delete every stored clip that no current correct example of any language names. Ignored in a dry run. |
+
+The run prints example and distinct-sentence counts, per-outcome counters and
+bytes generated, then exits nonzero when any sentence failed or the language
+has no voice, so the same command can be re-run once the cause is fixed. At
+most four sentences are in flight at once. A clip is a few tens of kilobytes;
+a level's worth is well under a megabyte, so there is no byte budget.
 
 ---
 

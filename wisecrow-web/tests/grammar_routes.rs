@@ -98,6 +98,16 @@ async fn seed_rule(db: &PgPool, slug: &str, status: &str) -> i32 {
     .await
     .expect("item");
 
+    sqlx::query(
+        "INSERT INTO rule_examples (rule_id, sentence, translation, is_correct)
+         VALUES ($1, 'Estoy cansado.', 'I am tired.', TRUE),
+                ($1, 'Soy cansado.', 'I am tired.', FALSE)",
+    )
+    .bind(rule_id)
+    .execute(db)
+    .await
+    .expect("examples");
+
     rule_id
 }
 
@@ -155,6 +165,53 @@ async fn grammar_routes_serve_regrade_and_report() {
         .iter()
         .find(|item| item.rule_id == rule_id)
         .expect("the promoted item is served");
+    assert_eq!(
+        item.examples
+            .iter()
+            .map(|example| example.sentence.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Estoy cansado."],
+        "a served item carries its correct examples and never an incorrect one"
+    );
+    assert_eq!(item.examples[0].translation.as_deref(), Some("I am tired."));
+    assert!(item.examples[0].id > 0);
+    // The route must exist before its refusals mean anything, and only the
+    // registered route validates the id: an unregistered path answers 405.
+    let probe = post(
+        "/api/media/example-audio",
+        json!({"rule_example_id": 0}),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        probe.status(),
+        StatusCode::BAD_REQUEST,
+        "the example-audio route is registered and refuses a non-positive id"
+    );
+    let incorrect_example: i32 =
+        sqlx::query_scalar("SELECT id FROM rule_examples WHERE rule_id = $1 AND NOT is_correct")
+            .bind(rule_id)
+            .fetch_one(db)
+            .await
+            .expect("incorrect example");
+    let refused = post(
+        "/api/media/example-audio",
+        json!({"rule_example_id": incorrect_example}),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        refused.status(),
+        StatusCode::NOT_FOUND,
+        "an incorrect example is never voiced"
+    );
+    let unknown = post(
+        "/api/media/example-audio",
+        json!({"rule_example_id": i32::MAX}),
+        &token,
+    )
+    .await;
+    assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
     assert!(
         !session
             .items

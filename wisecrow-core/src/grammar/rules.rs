@@ -136,6 +136,16 @@ pub struct RuleExample {
     pub is_correct: bool,
 }
 
+/// One correct example sentence with the point and language it belongs to.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct CorrectExample {
+    pub example_id: i32,
+    pub rule_id: i32,
+    pub language: String,
+    pub sentence: String,
+    pub translation: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct NewGrammarRule {
     pub slug: String,
@@ -338,6 +348,59 @@ impl RuleRepository {
         }
 
         Ok(RulePlacement::Placed(rule_id))
+    }
+
+    /// The correct example sentences of a language, optionally of one level,
+    /// in level order, then slug, then example id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the query fails.
+    pub async fn correct_examples(
+        pool: &PgPool,
+        language_code: &str,
+        cefr_level_code: Option<&str>,
+    ) -> Result<Vec<CorrectExample>, WisecrowError> {
+        Ok(sqlx::query_as(
+            "SELECT re.id AS example_id, gr.id AS rule_id, l.code AS language,
+                    re.sentence, re.translation
+             FROM rule_examples re
+             JOIN grammar_rules gr ON gr.id = re.rule_id
+             JOIN cefr_levels cl ON cl.id = gr.cefr_level_id
+             JOIN languages l ON l.id = gr.language_id
+             WHERE re.is_correct AND l.code = $1 AND ($2::text IS NULL OR cl.code = $2)
+             ORDER BY cl.sort_order, gr.slug, re.id",
+        )
+        .bind(language_code)
+        .bind(cefr_level_code)
+        .fetch_all(pool)
+        .await?)
+    }
+
+    /// The correct examples of the named points, by rule then example id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the query fails.
+    pub async fn correct_examples_for_rules(
+        pool: &PgPool,
+        rule_ids: &[i32],
+    ) -> Result<Vec<CorrectExample>, WisecrowError> {
+        if rule_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        Ok(sqlx::query_as(
+            "SELECT re.id AS example_id, gr.id AS rule_id, l.code AS language,
+                    re.sentence, re.translation
+             FROM rule_examples re
+             JOIN grammar_rules gr ON gr.id = re.rule_id
+             JOIN languages l ON l.id = gr.language_id
+             WHERE re.is_correct AND gr.id = ANY($1)
+             ORDER BY gr.id, re.id",
+        )
+        .bind(rule_ids)
+        .fetch_all(pool)
+        .await?)
     }
 
     /// Fetches all grammar rules for a language and CEFR level code.

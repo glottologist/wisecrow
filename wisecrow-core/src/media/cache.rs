@@ -11,6 +11,11 @@ use crate::media::MediaType;
 const LOAD_ROW_SQL: &str = "SELECT file_path, attribution, source_fingerprint FROM media_cache
          WHERE translation_id = $1 AND media_type = $2";
 const NON_UTF8_CACHE_PATH: &str = "Non-UTF8 cache path";
+const LOAD_SENTENCE_SQL: &str =
+    "SELECT file_path FROM sentence_media WHERE fingerprint = $1 AND media_type = $2";
+/// File-name prefix of a sentence clip. No translation id begins with a
+/// letter, so the two families of files never collide in one directory.
+const SENTENCE_FILE_PREFIX: &str = "sentence-";
 
 pub struct MediaCache {
     cache_dir: PathBuf,
@@ -58,7 +63,7 @@ impl MediaCache {
     /// and nothing is cleaned up, so a preview leaves the filesystem as it
     /// found it.
     #[must_use]
-    pub(crate) fn open_existing(pool: PgPool) -> Self {
+    pub fn open_existing(pool: PgPool) -> Self {
         Self::open_existing_at(pool, default_cache_dir())
     }
 
@@ -92,6 +97,128 @@ impl MediaCache {
             .is_some_and(|row| self.matching_live_file(row, fingerprint).is_some());
         tx.commit().await?;
         Ok(hit)
+    }
+
+    /// Whether a live file for a sentence's `fingerprint` is published.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the database query fails.
+    pub async fn probe_sentence(
+        &self,
+        fingerprint: &MediaFingerprint,
+        media_type: MediaType,
+    ) -> Result<bool, WisecrowError> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("SET TRANSACTION READ ONLY")
+            .execute(&mut *tx)
+            .await?;
+        let path = Self::load_sentence_tx(&mut tx, fingerprint, media_type).await?;
+        let hit = path
+            .as_deref()
+            .is_some_and(|path| self.is_contained_cache_file(Path::new(path)));
+        tx.commit().await?;
+        Ok(hit)
+    }
+
+    /// The local file for a sentence's clip, generated through `fetcher`
+    /// when no live file matches `fingerprint`.
+    ///
+    /// The row is keyed by the fingerprint alone: the sentence and language
+    /// are stored so a reader can tell what a clip is, but nothing is looked
+    /// up by them. A sentence edited is a new fingerprint and a new clip.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the fetch or the atomic publish fails.
+    pub async fn get_or_fetch_sentence<F, Fut>(
+        &self,
+        fingerprint: &MediaFingerprint,
+        media_type: MediaType,
+        language_code: &str,
+        sentence: &str,
+        fetcher: F,
+    ) -> Result<PathBuf, WisecrowError>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<Vec<u8>, WisecrowError>>,
+    {
+        if let Some(path) = self.sentence_hit_from_pool(fingerprint, media_type).await? {
+            return Ok(path);
+        }
+
+        let mut tx = self.begin_locked_sentence(fingerprint).await?;
+        if let Some(stored) = Self::load_sentence_tx(&mut tx, fingerprint, media_type).await? {
+            let stored = PathBuf::from(stored);
+            if self.is_contained_cache_file(&stored) {
+                tx.commit().await?;
+                return Ok(stored);
+            }
+        }
+        let data = fetcher().await?;
+        let final_path = self.sentence_path(fingerprint, media_type);
+        Self::write_atomic(&final_path, &data).await?;
+        let path_str = utf8_path(&final_path)?;
+        sqlx::query(
+            "INSERT INTO sentence_media
+                 (fingerprint, media_type, language_code, sentence, file_path)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (fingerprint)
+             DO UPDATE SET media_type = $2, language_code = $3, sentence = $4, file_path = $5",
+        )
+        .bind(fingerprint.as_str())
+        .bind(media_type.as_str())
+        .bind(language_code)
+        .bind(sentence)
+        .bind(path_str)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(final_path)
+    }
+
+    /// Removes every sentence clip, row and file, whose fingerprint is not
+    /// in `keep`, and returns how many went.
+    ///
+    /// Deliberate rather than automatic: a re-import replaces example rows
+    /// before it writes new ones, and a sweep racing it would take clips the
+    /// new rows are about to want.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the database fails or a contained file cannot
+    /// be removed.
+    pub async fn prune_sentences(&self, keep: &[MediaFingerprint]) -> Result<usize, WisecrowError> {
+        let keep: std::collections::HashSet<&str> =
+            keep.iter().map(MediaFingerprint::as_str).collect();
+        let rows: Vec<(String, String)> =
+            sqlx::query_as("SELECT fingerprint, file_path FROM sentence_media")
+                .fetch_all(&self.pool)
+                .await?;
+        let mut pruned = 0usize;
+        for (fingerprint, file_path) in rows {
+            if keep.contains(fingerprint.as_str()) {
+                continue;
+            }
+            sqlx::query("DELETE FROM sentence_media WHERE fingerprint = $1")
+                .bind(&fingerprint)
+                .execute(&self.pool)
+                .await?;
+            if let Some(contained) = self.contained_cache_path(Path::new(&file_path)) {
+                match tokio::fs::remove_file(&contained).await {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(WisecrowError::MediaError(format!(
+                            "failed to remove pruned clip {}: {error}",
+                            contained.display()
+                        )))
+                    }
+                }
+            }
+            pruned = pruned.saturating_add(1);
+        }
+        Ok(pruned)
     }
 
     /// Creates a media cache rooted at `cache_dir`.
@@ -402,6 +529,61 @@ impl MediaCache {
             }
         }
         Ok(())
+    }
+
+    async fn sentence_hit_from_pool(
+        &self,
+        fingerprint: &MediaFingerprint,
+        media_type: MediaType,
+    ) -> Result<Option<PathBuf>, WisecrowError> {
+        let path: Option<String> = sqlx::query_scalar(LOAD_SENTENCE_SQL)
+            .bind(fingerprint.as_str())
+            .bind(media_type.as_str())
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(path
+            .map(PathBuf::from)
+            .filter(|path| self.is_contained_cache_file(path)))
+    }
+
+    async fn load_sentence_tx(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        fingerprint: &MediaFingerprint,
+        media_type: MediaType,
+    ) -> Result<Option<String>, WisecrowError> {
+        Ok(sqlx::query_scalar(LOAD_SENTENCE_SQL)
+            .bind(fingerprint.as_str())
+            .bind(media_type.as_str())
+            .fetch_optional(&mut **tx)
+            .await?)
+    }
+
+    /// Serialises writers of one sentence on the fingerprint's leading
+    /// sixty bits. A collision with a translation's `(id << 8) | medium`
+    /// key merely serialises two unrelated writes.
+    async fn begin_locked_sentence(
+        &self,
+        fingerprint: &MediaFingerprint,
+    ) -> Result<sqlx::Transaction<'_, sqlx::Postgres>, WisecrowError> {
+        let leading = fingerprint.as_str().get(..15).ok_or_else(|| {
+            WisecrowError::MediaError("Fingerprint shorter than its lock key".into())
+        })?;
+        let lock_key = i64::from_str_radix(leading, 16)
+            .map_err(|error| WisecrowError::MediaError(format!("Fingerprint lock key: {error}")))?;
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(lock_key)
+            .execute(&mut *tx)
+            .await?;
+        Ok(tx)
+    }
+
+    fn sentence_path(&self, fingerprint: &MediaFingerprint, media_type: MediaType) -> PathBuf {
+        self.cache_dir.join(media_type.as_str()).join(format!(
+            "{SENTENCE_FILE_PREFIX}{}.{}",
+            fingerprint.as_str(),
+            media_type.extension()
+        ))
     }
 
     fn is_contained_cache_file(&self, path: &Path) -> bool {

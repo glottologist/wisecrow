@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod fingerprint;
+pub mod grammar_audio;
 pub mod prefetch;
 
 #[cfg(feature = "tts")]

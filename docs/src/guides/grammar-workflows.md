@@ -109,6 +109,22 @@ A point that reads badly is edited like any other: export the level with
 `export-grammar`, correct it, and re-import via `import-grammar` -- `manual`
 overrides `pdf` on the next upsert.
 
+## Voice the examples
+
+Grammar practice on the web shows a point's correct examples after an answer,
+each with a play button. The clip is generated on first play if it has to be,
+but a level's worth of sentences is cheap to prepare ahead of time:
+
+```sh
+wisecrow prefetch-grammar-audio --lang es --dry-run   # what is missing
+wisecrow prefetch-grammar-audio --lang es             # voice it
+```
+
+Only correct examples are spoken. Clips are keyed by the sentence rather
+than the example row, so re-seeding or re-importing a point costs nothing
+for sentences that did not change; `--prune` reclaims clips whose sentences
+no longer appear anywhere.
+
 ## Generate quizzes from rules
 
 Once rules exist for a `(language, level)` pair, you can ask the LLM to
