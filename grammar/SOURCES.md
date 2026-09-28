@@ -71,9 +71,9 @@ the two 1910s works stand alone.
 
 ## Personal copies
 
-The shelf also holds the maintainer's own purchased copies of commercial titles,
-thirty of them across five languages. They are not in the table above because
-they belong to a different category: none of them may be redistributed, and none
+The shelf also holds the maintainer's personal copies of commercial titles.
+They are not in the table above because they belong to a different category:
+none of them may be redistributed, and none
 of them is in the repository -- `.gitignore` keeps every PDF out of it, and only
 this file is tracked. They are here because the application is single-user, so a
 rule synthesised from a book one owns goes no further than the machine one owns
@@ -87,11 +87,12 @@ carry a PDF creation date, which for several of them is the date the copy was
 made rather than the date the edition appeared, and a plausible-looking year is
 worse than none.
 
-Two rows say `no` under `Synthesis` although the documents read. *Easy Learning
-Spanish Grammar* and *Complete Irish* are scans with an OCR text layer, and the
-OCR drops the accents of the language being taught -- `bre6` for *breá*, `-i6`
-for *-ió* -- so a point synthesised from them would carry misspelt examples.
-They stay on the shelf for reading, not for the model.
+Three rows say `no` under `Synthesis` although the documents read. *Easy Learning
+Spanish Grammar*, *Complete Irish* and *Everyday Gaelic* are scans with an OCR
+text layer that damages spelling -- `bre6` for *breá*, `-i6` for *-ió*, and
+`bata` for *bàta*. The last was checked against the printed pronunciation guide
+on PDF page 9 of *Everyday Gaelic*. These copies stay on the shelf for reading,
+not for the model.
 
 | File | Work | Pages | Read by | Synthesis | Levels |
 |------|------|------:|---------|-----------|--------|
@@ -119,6 +120,8 @@ They stay on the shelf for reading, not for the model.
 | `ga/06.Colloquial Irish.pdf` | Thomas Ihde, Máire Ní Neachtain, Roslyn Blyn-LaDrew and John Gillen, *Colloquial Irish* | 260 | pdf-extract | yes | A1–A2 |
 | `ga/10.Irish nouns a reference guide.pdf` | Andrew Carnie, *Irish Nouns: A Reference Guide* | 363 | pdf-extract | yes | B2–C2 |
 | `ga/14.Intermediate Irish A Grammar and Workbook.pdf` | Nancy Stenson, *Intermediate Irish: A Grammar and Workbook* | 257 | pdf-extract | yes | B1–B2 |
+| `gd/907699838-Lamb-William-Scottish-Gaelic-a-Comprehensive-Grammar.pdf` | William Lamb, *Scottish Gaelic: A Comprehensive Grammar* | 581 | pdf-extract | yes | A1–C2 |
+| `gd/Everyday_Gaelic_-_Morag_MacNeill.pdf` | Morag MacNeill, *Everyday Gaelic* (2006 edition, OCR layer) | 148 | pdf-extract | no | A1–A2 |
 | `it/Modern Italian Grammar Workbook (Modern Grammar Workbooks) (Italian Edition).pdf` | Anna Proudfoot, *Modern Italian Grammar Workbook* | 221 | poppler | yes | B1–C1 |
 | `it/Practice Makes Perfect Italian Pronouns And Prepositions, Second Edition (Practice Makes Perfect Series) (Jason Ridgway-Taylor's conflicted copy 2025-12-26).pdf` | Daniela Gobetti, *Practice Makes Perfect: Italian Pronouns and Prepositions*, 2nd edn | 341 | poppler | yes | A2–B2 |
 | `it/Practice Makes Perfect Italian Sentence Builder (Practice Makes Perfect Series) (Jason Ridgway-Taylor's conflicted copy 2025-12-26).pdf` | Paola Nanni-Tate, *Practice Makes Perfect: Italian Sentence Builder* | 208 | poppler | yes | B1–B2 |
@@ -126,7 +129,13 @@ They stay on the shelf for reading, not for the model.
 | `it/Practice Makes Perfect_ Complete Italian Grammar (Practice Makes Perfect Series).pdf` | Marcel Danesi, *Practice Makes Perfect: Complete Italian Grammar* | 437 | poppler | yes | A1–B2 |
 | `it/Thinking Italian Translation_ A Course in Translation Method_ Italian to English (Thinking Translation).pdf` | Sándor Hervey, Ian Higgins, Stella Cragie and Patrizia Gambarotta, *Thinking Italian Translation* | 237 | poppler | yes | |
 
-Fifteen of the thirty need poppler, as the `Read by` column records. `pdf-extract`
+Lamb's copy contains the full grammar through the glossary on printed page 550.
+`check-pdf` reads 652 passages at
+1,822 characters per PDF page. Its chapters cover basic through advanced grammar,
+so it is assigned A1–C2, providing a modern source at every level alongside
+Calder's B1–C2 coverage.
+
+Fifteen of these copies need poppler, as the `Read by` column records. `pdf-extract`
 recovers between a sixteenth and a thirtieth of their text, because the
 McGraw-Hill and Routledge ebooks embed fonts with custom encodings, and it panics
 outright on *Les 500 exercices*. This is the reason the fallback described below

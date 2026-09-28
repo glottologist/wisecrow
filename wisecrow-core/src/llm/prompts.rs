@@ -79,7 +79,7 @@ pub fn pdf_rules_prompt(
     language_name: &str,
     cefr_level: &str,
     count: u32,
-    already_covered: &[String],
+    already_covered: &[&str],
     passages: &[PassageExcerpt<'_>],
 ) -> String {
     let quoted = passages
@@ -100,7 +100,7 @@ pub fn pdf_rules_prompt(
             .collect::<Vec<_>>()
             .join("\n");
         format!(
-            "\n\nThis level already covers the points below. Do not return any of \
+            "\n\nThe syllabus already covers the points below. Do not return any of \
              them, and do not return a rephrasing of one.\n{listed}"
         )
     };
@@ -134,7 +134,9 @@ Return a JSON array where each element has this structure:
 Requirements:
 - "page" must be one of the page numbers given above, the page the point was read from
 - Each rule must have at least 2 examples (1 correct, 1 incorrect)
+- Each explanation must contain 2-4 complete sentences and at least 120 characters
 - Explanations must be your own prose, not a quotation of the passage
+- Return distinct grammatical conditions, constructions or exceptions, not rewordings of existing points
 - Examples should be realistic sentences a learner would encounter
 - Return ONLY the JSON array, no surrounding text{avoid}"#
     )

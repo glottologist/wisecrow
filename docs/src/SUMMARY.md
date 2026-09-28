@@ -7,6 +7,7 @@
 - [Installation](./getting-started/installation.md)
 - [Configuration](./getting-started/configuration.md)
 - [Your first ingest](./getting-started/first-ingest.md)
+- [Android: build, install and use](./guides/android.md)
 
 # Guides
 

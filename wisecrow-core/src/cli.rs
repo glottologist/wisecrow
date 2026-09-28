@@ -296,6 +296,10 @@ pub struct ImportPdfArgs {
     /// Ceiling on the points asked for, beneath what the level is short.
     #[arg(long)]
     pub max_rules: Option<u32>,
+    /// Import every prose chunk without a rule ceiling, preserving existing rules
+    /// and resuming database-recorded progress on reruns.
+    #[arg(long, conflicts_with_all = ["dry_run", "max_rules"])]
+    pub incremental: bool,
     /// Read a document its SOURCES.md row does not clear, for a model that is
     /// hosted locally and so receives nothing a third party could.
     #[arg(long)]
@@ -868,6 +872,7 @@ mod tests {
     #[case(&["wisecrow", "ip", "--level", "B1", "--file", "grammar/es", "--max-rules", "5"], "ImportPdf")]
     #[case(&["wisecrow", "ip", "--level", "B2", "--file", "grammar/ga", "--force"], "ImportPdf")]
     #[case(&["wisecrow", "import-pdf", "--file", "grammar/es"], "ImportPdf")]
+    #[case(&["wisecrow", "import-pdf", "--file", "grammar/es", "--incremental"], "ImportPdf")]
     #[case(&["wisecrow", "ip", "-f", "grammar/es/yo-puedo-1-2021.pdf", "--dry-run"], "ImportPdf")]
     #[case(&["wisecrow", "check-pdf", "--file", "g.pdf"], "CheckPdf")]
     #[case(&["wisecrow", "check-pdf", "--file", "grammar"], "CheckPdf")]
@@ -914,6 +919,23 @@ mod tests {
             is_variant(&cli.command, expected_variant),
             "Expected {expected_variant} variant"
         );
+    }
+
+    #[rstest]
+    #[case(&["--dry-run"])]
+    #[case(&["--max-rules", "5"])]
+    fn incremental_import_rejects_incompatible_options(#[case] options: &[&str]) {
+        let args = [
+            "wisecrow",
+            "import-pdf",
+            "--file",
+            "grammar/gd",
+            "--incremental",
+        ];
+        let error = Cli::try_parse_from(args.into_iter().chain(options.iter().copied()))
+            .err()
+            .expect("incompatible options must fail");
+        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     #[rstest]

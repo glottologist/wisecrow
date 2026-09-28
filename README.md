@@ -10,3 +10,6 @@
 <p align="center">
   <strong>Frequency-based flashcard datasets from multilingual subtitle corpora.</strong>
 </p>
+
+[Android build, installation and usage guide](docs/src/guides/android.md) —
+includes workstation setup, APK installation and the native app's current limitations.

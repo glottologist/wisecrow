@@ -1,0 +1,39 @@
+---
+# Run from ansible/: ansible-playbook playbooks/sync-grammar.yml
+- name: Sync the grammar shelf and its run scripts to calypso
+  hosts: calypso
+  gather_facts: false
+  vars_files: [../vars/secrets.yml]
+  tasks:
+    - name: Ensure shelf and script directories exist
+      ansible.builtin.file:
+        path: "{{ deploy_dir }}/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - grammar
+        - scripts
+
+    - name: Sync every grammar file including SOURCES.md
+      ansible.posix.synchronize:
+        src: "{{ playbook_dir }}/../../grammar/"
+        dest: "{{ deploy_dir }}/grammar/"
+        checksum: true
+        delete: false
+        use_ssh_args: true
+        ssh_connection_multiplexing: true
+        rsync_opts:
+          - "--chmod=D755,F644"
+
+    - name: Sync executable grammar scripts
+      ansible.posix.synchronize:
+        src: "{{ playbook_dir }}/../../scripts/"
+        dest: "{{ deploy_dir }}/scripts/"
+        checksum: true
+        delete: false
+        use_ssh_args: true
+        ssh_connection_multiplexing: true
+        rsync_opts:
+          - "--include=/*.sh"
+          - "--exclude=*"
+          - "--chmod=D755,F755"

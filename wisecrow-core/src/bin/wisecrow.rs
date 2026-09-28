@@ -560,10 +560,7 @@ async fn handle_import_grammar(args: ImportGrammarArgs) -> Result<(), Error> {
 
 /// Imports one document, or every document in a directory.
 ///
-/// The language of each document comes from `--lang` when it is given and from
-/// its language directory otherwise, so importing a whole shelf in one run needs
-/// no repetition. The level cannot be inferred and applies to every document in
-/// the run.
+/// Source metadata supplies levels and clearance for both import modes.
 async fn handle_import_pdf(args: ImportPdfArgs) -> Result<(), Error> {
     use std::collections::HashMap;
     use wisecrow::grammar::pdf::GrammarPassage;
@@ -607,6 +604,10 @@ async fn handle_import_pdf(args: ImportPdfArgs) -> Result<(), Error> {
             args.level.as_deref().unwrap_or("any level it states")
         ))
         .into());
+    }
+
+    if args.incremental {
+        return handle_incremental_pdf(&args, &pool, provider.as_ref(), &schedule.calls).await;
     }
 
     // One extraction per document, however many levels it is read at.
@@ -692,6 +693,93 @@ async fn handle_import_pdf(args: ImportPdfArgs) -> Result<(), Error> {
             "Placed {placed} grammar points over {} document-level runs ({skipped} skipped on a bad answer)",
             schedule.calls.len()
         );
+    }
+    Ok(())
+}
+
+async fn handle_incremental_pdf(
+    args: &ImportPdfArgs,
+    pool: &PgPool,
+    provider: &dyn wisecrow::llm::LlmProvider,
+    schedule: &[(&str, &std::path::Path)],
+) -> Result<(), Error> {
+    use std::collections::{hash_map::Entry, HashMap};
+    use wisecrow::grammar::pdf::GrammarPassage;
+    use wisecrow::grammar::pdf_import::ImportTarget;
+    use wisecrow::grammar::pdf_incremental::{
+        fingerprint, import_passages, is_complete, DocumentIdentity,
+    };
+
+    let persister = wisecrow::ingesting::persisting::DatabasePersister::new(pool.clone()); // clone: PgPool is a shared handle
+    let mut hashes = HashMap::new();
+    let mut passages: HashMap<&std::path::Path, Vec<GrammarPassage>> = HashMap::new();
+    let mut placed = 0usize;
+    let mut skipped = 0usize;
+    let mut failed = 0usize;
+    for &(level, path) in schedule {
+        let language = document_language(args, path)?;
+        let language_name = resolve_language_name(language)?;
+        let language_id = persister.ensure_language(language, language_name).await?;
+        let target = ImportTarget {
+            language_id,
+            language_name,
+            cefr_level: level,
+        };
+        let digest = match hashes.entry(path) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(entry) => *entry.insert(fingerprint(path)?),
+        };
+        if is_complete(pool, target, &digest).await? {
+            skipped = skipped.saturating_add(1);
+            info!("Already imported {} at {level}; skipped", path.display());
+            continue;
+        }
+        if let Entry::Vacant(entry) = passages.entry(path) {
+            let extracted = wisecrow::grammar::pdf::extract(path)?;
+            if fingerprint(path)? != digest {
+                return Err(WisecrowError::InvalidInput(
+                    "Document changed during extraction; rerun the import".into(),
+                )
+                .into());
+            }
+            entry.insert(extracted.passages);
+        }
+        let extracted = passages.get(path).ok_or_else(|| {
+            WisecrowError::PdfExtractionError("Extracted document is unavailable".into())
+        })?;
+        let name = path
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            .ok_or_else(|| WisecrowError::InvalidInput("Document filename must be UTF-8".into()))?;
+        let document = DocumentIdentity {
+            name,
+            fingerprint: digest,
+        };
+        match import_passages(pool, provider, target, document, extracted).await {
+            Ok(outcome) => {
+                placed = placed.saturating_add(outcome.placed);
+                skipped = skipped.saturating_add(usize::from(outcome.already_complete));
+                info!(
+                    "Imported {} new {language} {level} rules from {} ({} duplicates, {} refused)",
+                    outcome.placed,
+                    path.display(),
+                    outcome.duplicates,
+                    outcome.refused
+                );
+            }
+            Err(WisecrowError::LlmError(reason)) => {
+                failed = failed.saturating_add(1);
+                warn!("Import pending for {} at {level}: {reason}", path.display());
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    info!("Incremental import: {placed} new rules from completed runs, {skipped} document-level runs already complete, {failed} unfinished; no rule ceiling");
+    if failed > 0 {
+        return Err(WisecrowError::LlmError(format!(
+            "{failed} document-level imports remain unfinished; rerun to resume committed progress"
+        ))
+        .into());
     }
     Ok(())
 }

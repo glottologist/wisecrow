@@ -177,9 +177,8 @@ fn selected_words_cte(carded: &str, phrase: &str, teachable: &str, presentation:
            SELECT lower(btrim(t.to_phrase, '{trim}')) AS norm_to,
                   max(t.corpus_frequency) AS max_frequency
            FROM translations t
-           JOIN languages fl ON fl.id = t.from_language_id
-           JOIN languages tl ON tl.id = t.to_language_id
-           WHERE fl.code = $1 AND tl.code = $2
+           WHERE t.from_language_id = (SELECT id FROM languages WHERE code = $1)
+             AND t.to_language_id = (SELECT id FROM languages WHERE code = $2)
              AND t.corpus_frequency > 1
              AND LENGTH(t.from_phrase) BETWEEN 1 AND 200
              AND LENGTH(t.to_phrase) BETWEEN 1 AND 200
@@ -206,18 +205,15 @@ fn scored_candidates_ctes(carded: &str, phrase: &str, presentation: &str) -> Str
                                  lower(btrim(t.from_phrase, '{trim}'))
                   ) AS agreement
            FROM translations t
-           JOIN languages fl ON fl.id = t.from_language_id
-           JOIN languages tl ON tl.id = t.to_language_id
-           WHERE fl.code = $1 AND tl.code = $2
+           WHERE t.from_language_id = (SELECT id FROM languages WHERE code = $1)
+             AND t.to_language_id = (SELECT id FROM languages WHERE code = $2)
              AND t.corpus_frequency > 1
              AND LENGTH(t.from_phrase) BETWEEN 1 AND 200
              AND LENGTH(t.to_phrase) BETWEEN 1 AND 200
              {carded}
              {phrase}
              {presentation}
-             AND lower(btrim(t.to_phrase, '{trim}')) = ANY (
-               ARRAY(SELECT norm_to FROM selected_words)
-             )
+             AND lower(btrim(t.to_phrase, '{trim}')) IN (SELECT norm_to FROM selected_words)
          ),
          best AS (
            SELECT DISTINCT ON (norm_to)

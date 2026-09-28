@@ -25,6 +25,22 @@ pub fn Layout() -> Element {
                             class: "px-3 py-2 rounded hover:bg-gray-700 transition",
                             "Quiz"
                         }
+                        a {
+                            href: "https://github.com/glottologist/wisecrow",
+                            target: "_blank",
+                            rel: "noopener noreferrer",
+                            aria_label: "GitHub repository (opens in a new tab)",
+                            class: "px-3 py-2 rounded hover:bg-gray-700 transition",
+                            "GitHub"
+                        }
+                        a {
+                            href: "https://glottologist.github.io/wisecrow/",
+                            target: "_blank",
+                            rel: "noopener noreferrer",
+                            aria_label: "Documentation (opens in a new tab)",
+                            class: "px-3 py-2 rounded hover:bg-gray-700 transition",
+                            "Docs"
+                        }
                         ThemeSelector {}
                         button {
                             r#type: "button",

@@ -113,3 +113,6 @@ wisecrow-mobile/android/platform/build/
 # Source grammar PDFs (large third-party scans, not project source)
 grammar/*
 !grammar/SOURCES.md
+
+# Logs and shared lock for the grammar maintenance scripts.
+/logs/

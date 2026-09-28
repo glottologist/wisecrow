@@ -7,6 +7,7 @@ pub mod mastery;
 pub mod pdf;
 pub mod pdf_check;
 pub mod pdf_import;
+pub mod pdf_incremental;
 pub mod pdf_text;
 pub mod placement;
 pub mod quiz;

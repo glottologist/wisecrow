@@ -24,6 +24,65 @@ DNS-01 challenge rather than HTTP-01/`--standalone` (step 1). The `install.yml`
 play also refuses to start if anything other than wisecrow's own container is
 already listening on the web port.
 
+## Sync grammar files and run imports
+
+From the local checkout, sync the entire `grammar/` directory (including
+Git-ignored PDFs and `SOURCES.md`) and the executable run scripts:
+
+```sh
+cd ansible
+ansible-playbook playbooks/sync-grammar.yml
+```
+
+The playbook compares file contents, makes the shelf readable by the container,
+and preserves files already on calypso. It does not rebuild or restart the app.
+The running deployment reads these files through its existing
+`./grammar:/app/grammar:ro` mount. The regular `update.yml` also copies the shelf
+and scripts when deploying code.
+
+On calypso, run the import before preparing audio for the resulting examples:
+
+```sh
+cd /mnt/DATA2/WISECROW
+./scripts/import-grammar.sh
+./scripts/prefetch-grammar-audio.sh
+```
+
+Both scripts default to `gd fr it ga cy es`; pass language codes to resume a
+subset, for example `./scripts/import-grammar.sh fr it`. Audio can be previewed
+without synthesis with `./scripts/prefetch-grammar-audio.sh --preview`.
+
+Import reads each eligible document at the A1–C2 levels named by its
+`SOURCES.md` row, lowest level first. The script uses `import-pdf --incremental`:
+it visits every extracted prose chunk with no total rule ceiling, rejects exact
+duplicates and asks the model to compare proposed meanings against the existing
+language syllabus. Existing rules, examples and audio references are preserved.
+Semantic matching is model judgment, so review duplicate and refusal logs.
+
+PostgreSQL records each completed chunk by PDF SHA-256, language, level and
+importer version. Reruns skip completed documents, including renamed copies,
+and resume unfinished rounds. New file contents or newly enabled levels are
+eligible. The first run checks older imports once because their stored citations
+cannot prove that the whole document was processed. Rules and progress commit
+together, so failures leave the current round retryable.
+
+Deploy the updated binary before using this script; syncing the shelf alone
+does not install `--incremental` or migration `036_grammar_import_progress.sql`.
+The CLI applies migrations when it connects. Unlevelled, uncleared or unrecorded
+files remain skipped. The final table reports all 36 language/level combinations,
+including zero coverage, without a fixed target. An exit status of zero means
+eligible documents were processed, not that every possible rule was found.
+Generating and reviewing exercise items remains the separate
+`generate-items` / `promote-items` workflow.
+
+Audio generation reuses cached clips, then previews each language and fails if
+any clip remains missing, failed or unsupported. Neither script prunes media.
+They stop on command errors and can be rerun; both use a shared lock to prevent
+overlapping script runs. Full output is saved in timestamped files under
+`/mnt/DATA2/WISECROW/logs/`; import displays application logs while keeping PDF
+extractor noise in the full log. Run long jobs in a persistent terminal such as
+`tmux` if the SSH connection may close.
+
 ## Prerequisites
 
 - Docker and the Compose plugin on calypso.

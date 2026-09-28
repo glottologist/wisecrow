@@ -37,7 +37,7 @@ const MAX_LLM_TOKENS: u32 = 8192;
 /// sensible single request, and a level wants fifteen points out of it. The
 /// budget is spent across the whole document rather than on its opening pages,
 /// because the opening pages of a grammar are its front matter.
-const PASSAGE_BUDGET_CHARS: usize = 60_000;
+pub(super) const PASSAGE_BUDGET_CHARS: usize = 60_000;
 const MAX_TITLE_CHARS: usize = 100;
 /// Shortest explanation accepted.
 ///
@@ -57,7 +57,7 @@ pub const DOCUMENT_RULES_PER_LEVEL: u32 = 30;
 ///
 /// Thirty in one answer would meet [`MAX_LLM_TOKENS`], so the target is
 /// reached in rounds, each naming the titles the earlier ones produced.
-const SYNTHESIS_BATCH: u32 = 15;
+pub(super) const SYNTHESIS_BATCH: u32 = 15;
 /// Appended to the prompt when the first answer was not JSON.
 ///
 /// Asked for one point and told that fewer is correct, a model sometimes
@@ -321,7 +321,29 @@ pub async fn synthesise(
         })
         .collect();
 
-    let prompt = pdf_rules_prompt(language_name, cefr_level, wanted, covered, &excerpts);
+    let covered: Vec<&str> = covered.iter().map(String::as_str).collect();
+    synthesise_excerpts(
+        provider,
+        document,
+        language_name,
+        cefr_level,
+        wanted,
+        &covered,
+        &excerpts,
+    )
+    .await
+}
+
+pub(super) async fn synthesise_excerpts(
+    provider: &dyn LlmProvider,
+    document: &str,
+    language_name: &str,
+    cefr_level: &str,
+    wanted: u32,
+    covered: &[&str],
+    excerpts: &[PassageExcerpt<'_>],
+) -> Result<Synthesis, WisecrowError> {
+    let prompt = pdf_rules_prompt(language_name, cefr_level, wanted, covered, excerpts);
     let response = provider.generate(&prompt, MAX_LLM_TOKENS).await?;
     let proposed: Vec<LlmPdfRule> =
         match crate::llm::parse_fenced_json(&response, "PDF grammar points as JSON") {
@@ -338,7 +360,7 @@ pub async fn synthesise(
             Err(error) => return Err(error),
         };
 
-    let pages: Vec<usize> = selected.iter().map(|passage| passage.page).collect();
+    let pages: Vec<usize> = excerpts.iter().map(|passage| passage.page).collect();
     Ok(gate(proposed, document, &pages, wanted))
 }
 

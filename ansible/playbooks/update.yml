@@ -16,6 +16,7 @@
         # hardware key. The key refuses intermittently, so the deploy failed
         # here at rsync while every other task on the same host succeeded.
         use_ssh_args: true
+        ssh_connection_multiplexing: true
         rsync_opts:
           - "--exclude=target"
           # The container test runner writes here (CARGO_TARGET_DIR=target-docker,
@@ -35,6 +36,7 @@
           - "--exclude=claude/"
           - "--exclude=codex/"
           - "--exclude=agents/"
+          - "--exclude=/logs/"
           - "--exclude=docs/book"
           - "--exclude=.direnv"
           - "--exclude=.devenv"

@@ -1,9 +1,12 @@
 # wisecrow-mobile
 
-`wisecrow-mobile` is the Dioxus shell for Android and the desktop. Unlike
-`wisecrow-web` it is offline first: every page reads the device's own SQLite
-database, and a sync engine reconciles that database with the server when a
-connection happens to be there. Nothing the learner does waits on the network.
+`wisecrow-mobile` contains a Dioxus shell for Android and the desktop, SQLite
+storage, and an offline sync engine. The production launch path does not yet
+connect the storage and server API to the shell. Home, Learn and N-back are
+placeholders; the grammar pages require an injected local store.
+
+See [Android: build, install and use](../guides/android.md) for the build
+procedure, verified packaging gaps and the current limits of an installed app.
 
 ## Crate structure
 
@@ -128,8 +131,10 @@ pub struct GrammarCursors { pub bank: i64, pub mastery: i64 }
 
 ## Server adapter
 
-`MobileApi` is the port and `transport::HttpMobileApi` the adapter. Protocol 2
-is asked for separately:
+`MobileApi` is the port. `transport::HttpMobileApi` currently stores only a
+normalized server origin; it does not implement the protocol methods yet.
+The sync engine is exercised with test implementations of the port. Protocol 2
+is requested through these methods:
 
 ```rust,ignore
 async fn capabilities_v2(&self) -> Result<Option<MobileCapabilitiesDto>, MobileError>;

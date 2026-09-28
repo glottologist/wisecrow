@@ -329,7 +329,7 @@ Example file shape:
 
 ```sh
 wisecrow import-pdf [--lang <CODE>] [--level <CEFR>] --file <PDF or DIRECTORY>
-                    [--dry-run] [--max-rules <N>] [--force]
+                    [--incremental | --dry-run] [--max-rules <N>] [--force]
 ```
 
 Reads a grammar document and asks the configured model for the points one CEFR
@@ -342,7 +342,25 @@ example, and a page the prompt actually held; anything short of that is refused
 and counted in the log. Stored points have `source = 'pdf'` and a `source_ref`
 naming the document and page, e.g. `yo-puedo-1-2021.pdf p.148`.
 
-Two targets govern a level. The seeder fills it to fifteen points of any
+With `--incremental`, the importer visits all extracted prose in bounded chunks
+with **no total rule ceiling**. Full productive batches continue; a short model
+answer or a batch adding no new rules finishes the chunk. Exact slug matches
+are skipped and a separate model pass compares proposed meanings with all
+existing rules in the language, including other levels and sources. Related
+topics may remain when their conditions or uses differ. Semantic review is model
+judgment, not a guarantee that every near-duplicate is found.
+
+New rules, examples and progress commit together. Existing rules, examples and
+source references are never rewritten by this mode. PostgreSQL tracks PDF
+SHA-256, language, level and importer version; reruns skip completed files even
+if renamed, resume unfinished chunks and process changed contents or newly
+enabled levels. Earlier imports receive one catch-up scan because citations do
+not prove full-document coverage. Model failures leave a run pending and cause
+a nonzero exit status. Quality refusals are logged; a wholly refused response
+leaves its chunk pending. `--incremental` conflicts with `--dry-run` and
+`--max-rules`.
+
+Without `--incremental`, two targets govern a level. The seeder fills it to fifteen points of any
 source; the importer adds up to thirty document-backed points on top, counted
 only over points with `source = 'pdf'`, so a level the seeder has already
 filled still takes what the books have to add. The model is asked in rounds
@@ -370,12 +388,13 @@ document is extracted once however many levels it is read at.
 
 ```sh
 wisecrow import-pdf --file grammar/es/yo-puedo-1-2021.pdf --level A1 --max-rules 5 --dry-run   # judge one book at one level
-wisecrow import-pdf --file grammar/es              # the whole shelf, each book at its own levels
-wisecrow import-pdf --file grammar/es --level B1   # only the books that cover B1
+wisecrow import-pdf --incremental --file grammar/es              # every eligible book and level
+wisecrow import-pdf --incremental --file grammar/es --level B1   # only the books that cover B1
 ```
 
 | Flag | Effect |
 |------|--------|
+| `--incremental` | No total rule quota; traverse all prose, preserve existing rules, compare meanings and resume database-recorded progress. |
 | `--level <CEFR>` | Read only at this level, and only the documents whose `Levels` cell names it (or names nothing). Absent, every document is read at every level its row names. |
 | `--dry-run` | Ask the model and print each point as it would be stored, with its refusals; write nothing. The call is still made. |
 | `--max-rules <N>` | Ask for at most `N` points, beneath what the level is short. |

@@ -61,6 +61,11 @@ override an AI-seeded rule simply by reusing its title.
 
 ## Import from PDF
 
+For the six-language calypso shelf, use the
+[sync and batch-run instructions](../../../DEPLOYMENT.md#sync-grammar-files-and-run-imports).
+`scripts/import-grammar.sh` imports the eligible documents and reports A1–C2
+coverage; `scripts/prefetch-grammar-audio.sh` prepares and verifies their audio.
+
 Before importing anything, screen the document. A PDF built from page scans holds
 no text at all, and an import from one produces nothing; `check-pdf` reports the
 characters per page and the passages the extractor keeps, and fails the run when a
@@ -72,25 +77,28 @@ wisecrow check-pdf --file ./grammar/es | tail -20
 
 `import-pdf` reads the file with `pdf-extract`, falling back to poppler's
 `pdftotext` when that returns too little to be prose, splits the text into
-passages, and asks the model for the points the requested level is short of,
-naming the points it already holds. What comes back is gated -- two sentences of
-explanation, a correct and an incorrect example, a page the prompt carried -- and
-placed the way `seed-grammar` places points, so an import can fill a level but
-never moves a point already placed at another. Documents live one directory per
+passages, and asks the model for rules at the requested levels. With
+`--incremental`, every prose chunk is visited without a total rule ceiling.
+Proposals need at least 120 characters and two sentences of explanation, a
+correct and an incorrect example, and a page the prompt carried. Exact matches
+are skipped, and a second model pass screens for rewordings against the entire
+language syllabus. Existing rules and example IDs are preserved.
+Documents live one directory per
 language, so the language comes from the path and a whole language imports in
 one command:
 
 ```sh
 wisecrow import-pdf --file ./grammar/es/yo-puedo-1-2021.pdf --level A1 --max-rules 5 --dry-run
-wisecrow import-pdf --file ./grammar/es              # the whole shelf, each book at its own levels
-wisecrow import-pdf --file ./grammar/es --level B1   # only the books that cover B1
+wisecrow import-pdf --incremental --file ./grammar/es              # every eligible book and level
+wisecrow import-pdf --incremental --file ./grammar/es --level B1   # only the books that cover B1
 ```
 
 Three things to know:
 
 1. Run with `--dry-run` first. It costs the model call but writes nothing, and
    prints every point as it would be stored, so a document that yields poor
-   points is found before it touches the syllabus.
+   points is found before it touches the syllabus. This is a bounded sample;
+   `--incremental` cannot be combined with `--dry-run` or `--max-rules`.
 2. `grammar/SOURCES.md` decides what may be sent and where it is read. A
    document is read to the model only when its row's `Synthesis` cell says
    `yes` -- the two standards documents say `no`, because their terms do not
@@ -98,12 +106,14 @@ Three things to know:
    model only -- and only at the levels its `Levels` cell names. Without
    `--level` the whole shelf is walked lowest level first; with it, only the
    rows naming that level.
-3. Every stored point cites its source: `source_ref` holds the document and
-   page, and `source = 'pdf'`. A level holds up to thirty document-backed
-   points beside its fifteen seeded ones, asked for fifteen at a time; a run
-   over a level already at that target asks the model for nothing, and a
-   proposal that matches a seeded point's slug at the same level is held, not
-   written over it.
+3. Every stored point cites its document and page. Incremental imports record
+   progress in PostgreSQL by file contents, language and level. Reruns skip
+   completed files even if renamed, resume failures and process changed files
+   or new levels. Old imports without progress records receive one catch-up
+   scan. Productive full batches continue; a short answer or a round with no
+   new rules ends that chunk. Semantic deduplication is model judgment and
+   should be reviewed. Without `--incremental`, the legacy thirty-PDF-rule
+   target still applies.
 
 A point that reads badly is edited like any other: export the level with
 `export-grammar`, correct it, and re-import via `import-grammar` -- `manual`
