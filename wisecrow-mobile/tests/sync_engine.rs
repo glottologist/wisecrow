@@ -527,6 +527,13 @@ impl MobileApi for ScriptedApi {
         Err(MobileError::Unsupported)
     }
 
+    async fn fetch_media(
+        &self,
+        _request: &wisecrow_dto::MobileMediaRequestDto,
+    ) -> Result<wisecrow_dto::MobileMediaDto, MobileError> {
+        Err(MobileError::Unsupported)
+    }
+
     async fn upload_grammar_attempts(
         &self,
         _request: &GrammarAttemptBatchRequestDto,

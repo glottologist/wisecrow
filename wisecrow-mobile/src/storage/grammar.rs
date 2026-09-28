@@ -1,10 +1,12 @@
+use std::collections::{BTreeMap, HashSet};
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{FromRow, Sqlite, Transaction};
 use uuid::Uuid;
 use wisecrow_dto::{
     GrammarAttemptBatchResponseDto, GrammarBankChangePageDto, GrammarChangeOperationDto,
-    GrammarMasteryChangePageDto, GrammarOptionDto, OfflineAttemptStatusDto,
+    GrammarMasteryChangePageDto, GrammarOptionDto, OfflineAttemptStatusDto, OfflineRuleExampleDto,
 };
 
 use super::{
@@ -16,7 +18,7 @@ use wisecrow_learning::mastery::fold_accuracy;
 
 use crate::application::{
     GrammarCursors, GrammarRepository, LocalGrammarItem, LocalGrammarMastery, LocalGrammarRule,
-    MobileError, QueuedAttempt,
+    LocalRuleExample, MissingExampleAudio, MobileError, QueuedAttempt,
 };
 
 /// Most answers one drain will hand over.
@@ -34,6 +36,7 @@ struct ItemRow {
     answer: Option<String>,
     accepted: String,
     correct_option: Option<String>,
+    examples: String,
 }
 
 #[derive(FromRow)]
@@ -121,17 +124,19 @@ impl GrammarRepository for SqliteStore {
 
                     let options = serde_json::to_string(&item.options)?;
                     let accepted = serde_json::to_string(&item.accepted)?;
+                    let examples = serde_json::to_string(&item.examples)?;
                     sqlx::query(
                         "INSERT INTO grammar_items (
                              profile_id, user_id, item_id, rule_id, revision, language, prompt,
-                             hint, options, answer, accepted, correct_option
-                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                             hint, options, answer, accepted, correct_option, examples_json
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
                          ON CONFLICT (profile_id, user_id, item_id) DO UPDATE SET
                              rule_id = excluded.rule_id, revision = excluded.revision,
                              language = excluded.language, prompt = excluded.prompt,
                              hint = excluded.hint, options = excluded.options,
                              answer = excluded.answer, accepted = excluded.accepted,
-                             correct_option = excluded.correct_option",
+                             correct_option = excluded.correct_option,
+                             examples_json = excluded.examples_json",
                     )
                     .bind(scope.profile_id)
                     .bind(scope.user_id)
@@ -145,6 +150,7 @@ impl GrammarRepository for SqliteStore {
                     .bind(&item.answer)
                     .bind(accepted)
                     .bind(&item.correct_option)
+                    .bind(examples)
                     .execute(&mut *transaction)
                     .await?;
                 }
@@ -254,7 +260,7 @@ impl GrammarRepository for SqliteStore {
         let scope = super::sqlite::active_scope_from_pool(&self.pool).await?;
         let rows: Vec<ItemRow> = sqlx::query_as(
             "SELECT item_id, rule_id, revision, language, prompt, hint, options, answer,
-                    accepted, correct_option
+                    accepted, correct_option, examples_json AS examples
              FROM grammar_items
              WHERE profile_id = ?1 AND user_id = ?2 AND language = ?3
              ORDER BY item_id",
@@ -439,6 +445,103 @@ impl GrammarRepository for SqliteStore {
         transaction.commit().await?;
         Ok(())
     }
+
+    async fn missing_example_audio(
+        &self,
+        limit: u16,
+    ) -> Result<Vec<MissingExampleAudio>, MobileError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let scope = super::sqlite::active_scope_from_pool(&self.pool).await?;
+        let stored: Vec<(String, String)> = sqlx::query_as(
+            "SELECT language, examples_json FROM grammar_items
+             WHERE profile_id = ?1 AND user_id = ?2 AND examples_json <> '[]'",
+        )
+        .bind(scope.profile_id)
+        .bind(scope.user_id)
+        .fetch_all(&self.pool)
+        .await?;
+        let held: HashSet<String> = sqlx::query_scalar(
+            "SELECT owner_key FROM media_cache
+             WHERE profile_id = ?1 AND user_id = ?2
+               AND owner_kind = 'sentence' AND media_type = 'audio'",
+        )
+        .bind(scope.profile_id)
+        .bind(scope.user_id)
+        .fetch_all(&self.pool)
+        .await?
+        .into_iter()
+        .collect();
+
+        let mut wanted: BTreeMap<String, MissingExampleAudio> = BTreeMap::new();
+        for (language, json) in stored {
+            let examples: Vec<OfflineRuleExampleDto> = serde_json::from_str(&json)?;
+            for example in examples {
+                let Some(fingerprint) = example.audio_fingerprint else {
+                    continue;
+                };
+                if held.contains(&fingerprint) || wanted.contains_key(&fingerprint) {
+                    continue;
+                }
+                wanted.insert(
+                    fingerprint.clone(), // clone: the map key and the record both name the clip
+                    MissingExampleAudio {
+                        fingerprint,
+                        language: language.clone(), // clone: each clip records its language
+                        sentence: example.sentence,
+                    },
+                );
+            }
+        }
+        Ok(wanted.into_values().take(usize::from(limit)).collect())
+    }
+
+    async fn begin_example_backfill(&self, language: &str) -> Result<bool, MobileError> {
+        let mut transaction = self.pool.begin().await?;
+        let scope = active_scope(&mut transaction).await?;
+        let backfilled: Option<i64> = sqlx::query_scalar(
+            "SELECT examples_backfilled FROM grammar_sync_state
+             WHERE profile_id = ?1 AND user_id = ?2 AND language = ?3",
+        )
+        .bind(scope.profile_id)
+        .bind(scope.user_id)
+        .bind(language)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        let reset = match backfilled {
+            // Never synced: nothing to re-pull, and the first pull will carry
+            // examples; marked so the question is not asked again.
+            None => {
+                sqlx::query(
+                    "INSERT INTO grammar_sync_state
+                         (profile_id, user_id, language, examples_backfilled)
+                     VALUES (?1, ?2, ?3, 1)",
+                )
+                .bind(scope.profile_id)
+                .bind(scope.user_id)
+                .bind(language)
+                .execute(&mut *transaction)
+                .await?;
+                false
+            }
+            Some(1) => false,
+            Some(_) => {
+                sqlx::query(
+                    "UPDATE grammar_sync_state SET bank_cursor = 0, examples_backfilled = 1
+                     WHERE profile_id = ?1 AND user_id = ?2 AND language = ?3",
+                )
+                .bind(scope.profile_id)
+                .bind(scope.user_id)
+                .bind(language)
+                .execute(&mut *transaction)
+                .await?;
+                true
+            }
+        };
+        transaction.commit().await?;
+        Ok(reset)
+    }
 }
 
 /// Colours the brainmap from an answer the server has not heard yet.
@@ -457,7 +560,7 @@ async fn project_local_mastery(
 ) -> Result<(), MobileError> {
     let row: Option<ItemRow> = sqlx::query_as(
         "SELECT item_id, rule_id, revision, language, prompt, hint, options, answer,
-                accepted, correct_option
+                accepted, correct_option, examples_json AS examples
          FROM grammar_items
          WHERE profile_id = ?1 AND user_id = ?2 AND item_id = ?3",
     )
@@ -518,6 +621,10 @@ fn local_item(row: ItemRow) -> Result<LocalGrammarItem, MobileError> {
         answer: row.answer,
         accepted: serde_json::from_str::<Vec<String>>(&row.accepted)?,
         correct_option: row.correct_option,
+        examples: serde_json::from_str::<Vec<OfflineRuleExampleDto>>(&row.examples)?
+            .iter()
+            .map(LocalRuleExample::from)
+            .collect(),
     })
 }
 

@@ -10,6 +10,7 @@
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use base64::Engine as _;
 use chrono::Utc;
 use tempfile::tempdir;
 use tokio_util::sync::CancellationToken;
@@ -20,15 +21,17 @@ use wisecrow_dto::{
     GrammarAttemptBatchRequestDto, GrammarAttemptBatchResponseDto, GrammarBankChangeDto,
     GrammarBankChangePageDto, GrammarBankChangeRequestDto, GrammarChangeOperationDto,
     GrammarMasteryChangeDto, GrammarMasteryChangePageDto, GrammarMasteryChangeRequestDto,
-    GrammarMasteryStateDto, LanguageInfo, LanguagePairDto, MobileCapabilitiesDto, MobileFeatureDto,
-    MobileSessionDto, NbackBatchRequestDto, NbackBatchResponseDto, OfflineAttemptStatusDto,
-    OfflineGrammarItemDto, RegisteredDeviceDto, ReviewBatchRequestDto, ReviewBatchResponseDto,
+    GrammarMasteryStateDto, LanguageInfo, LanguagePairDto, MediaOwnerDto, MobileCapabilitiesDto,
+    MobileFeatureDto, MobileMediaDto, MobileMediaRequestDto, MobileSessionDto,
+    NbackBatchRequestDto, NbackBatchResponseDto, OfflineAttemptStatusDto, OfflineGrammarItemDto,
+    OfflineRuleExampleDto, RegisteredDeviceDto, ReviewBatchRequestDto, ReviewBatchResponseDto,
     ScriptDirection, UserDto, VerdictDto, MOBILE_PROTOCOL_VERSION, MOBILE_PROTOCOL_VERSION_V2,
 };
 use wisecrow_mobile::application::{
-    CorpusRepository, GrammarRepository, MobileApi, MobileError, ProfileRepository, QueuedAttempt,
+    ContentRepository, CorpusRepository, GrammarRepository, MobileApi, MobileError,
+    ProfileRepository, QueuedAttempt,
 };
-use wisecrow_mobile::storage::models::{Profile, ProfileIdentity};
+use wisecrow_mobile::storage::models::{MediaOwner, MediaType, Profile, ProfileIdentity};
 use wisecrow_mobile::storage::SqliteStore;
 use wisecrow_mobile::sync::{SyncEngine, SyncOutcome, SyncReason};
 
@@ -39,19 +42,35 @@ enum UploadBehaviour {
     Fail,
 }
 
+/// Whether the fake server advertises media, and what a fetch gets.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MediaBehaviour {
+    NotAdvertised,
+    Serves,
+    Fails,
+}
+
 struct ScriptedV2 {
     speaks_v2: bool,
     upload: UploadBehaviour,
+    media: MediaBehaviour,
     calls: Mutex<Vec<&'static str>>,
+    bank_cursors: Mutex<Vec<i64>>,
 }
 
 impl ScriptedV2 {
-    fn new(speaks_v2: bool, upload: UploadBehaviour) -> Self {
+    fn new(speaks_v2: bool, upload: UploadBehaviour, media: MediaBehaviour) -> Self {
         Self {
             speaks_v2,
             upload,
+            media,
             calls: Mutex::new(Vec::new()),
+            bank_cursors: Mutex::new(Vec::new()),
         }
+    }
+
+    fn bank_cursors(&self) -> Vec<i64> {
+        self.bank_cursors.lock().expect("bank cursors").clone()
     }
 
     fn record(&self, call: &'static str) {
@@ -79,9 +98,9 @@ fn v1_capabilities() -> MobileCapabilitiesDto {
     }
 }
 
-fn item() -> OfflineGrammarItemDto {
+fn item(item_id: i32) -> OfflineGrammarItemDto {
     OfflineGrammarItemDto {
-        item_id: 1,
+        item_id,
         revision: 1,
         rule_id: 10,
         rule_slug: String::from("ser-vs-estar"),
@@ -95,6 +114,11 @@ fn item() -> OfflineGrammarItemDto {
         answer: Some(String::from("estoy")),
         accepted: Vec::new(),
         correct_option: None,
+        examples: vec![OfflineRuleExampleDto {
+            sentence: String::from("Estoy cansado."),
+            translation: Some(String::from("I am tired.")),
+            audio_fingerprint: Some("ab".repeat(32)),
+        }],
     }
 }
 
@@ -109,14 +133,18 @@ impl MobileApi for ScriptedV2 {
         if !self.speaks_v2 {
             return Ok(None);
         }
+        let mut supported_features = vec![
+            MobileFeatureDto::CorpusSync,
+            MobileFeatureDto::GrammarBankSync,
+            MobileFeatureDto::GrammarMasterySync,
+            MobileFeatureDto::GrammarAttemptUpload,
+        ];
+        if self.media != MediaBehaviour::NotAdvertised {
+            supported_features.push(MobileFeatureDto::MediaFetch);
+        }
         Ok(Some(MobileCapabilitiesDto {
             protocol_version: MOBILE_PROTOCOL_VERSION_V2,
-            supported_features: vec![
-                MobileFeatureDto::CorpusSync,
-                MobileFeatureDto::GrammarBankSync,
-                MobileFeatureDto::GrammarMasterySync,
-                MobileFeatureDto::GrammarAttemptUpload,
-            ],
+            supported_features,
             ..v1_capabilities()
         }))
     }
@@ -197,18 +225,38 @@ impl MobileApi for ScriptedV2 {
         request: &GrammarBankChangeRequestDto,
     ) -> Result<GrammarBankChangePageDto, MobileError> {
         self.record("grammar_bank_changes");
+        self.bank_cursors
+            .lock()
+            .expect("bank cursors")
+            .push(request.cursor);
         assert_eq!(request.protocol_version, MOBILE_PROTOCOL_VERSION_V2);
         assert_eq!(request.language, "es");
+        // Yesterday's server knew nothing of examples.
+        let served = |item_id| {
+            let mut item = item(item_id);
+            if self.media == MediaBehaviour::NotAdvertised {
+                item.examples = Vec::new();
+            }
+            item
+        };
         Ok(GrammarBankChangePageDto {
             protocol_version: MOBILE_PROTOCOL_VERSION_V2,
             language: String::from("es"),
             changes: if request.cursor == 0 {
-                vec![GrammarBankChangeDto {
-                    sequence: 5,
-                    item_id: 1,
-                    operation: GrammarChangeOperationDto::Upsert,
-                    item: Some(item()),
-                }]
+                vec![
+                    GrammarBankChangeDto {
+                        sequence: 4,
+                        item_id: 1,
+                        operation: GrammarChangeOperationDto::Upsert,
+                        item: Some(served(1)),
+                    },
+                    GrammarBankChangeDto {
+                        sequence: 5,
+                        item_id: 2,
+                        operation: GrammarChangeOperationDto::Upsert,
+                        item: Some(served(2)),
+                    },
+                ]
             } else {
                 Vec::new()
             },
@@ -275,6 +323,27 @@ impl MobileApi for ScriptedV2 {
                 })
                 .collect(),
         })
+    }
+
+    async fn fetch_media(
+        &self,
+        request: &MobileMediaRequestDto,
+    ) -> Result<MobileMediaDto, MobileError> {
+        self.record("fetch_media");
+        match self.media {
+            MediaBehaviour::Fails | MediaBehaviour::NotAdvertised => Err(MobileError::Retryable),
+            MediaBehaviour::Serves => Ok(MobileMediaDto {
+                protocol_version: MOBILE_PROTOCOL_VERSION_V2,
+                owner: request.owner.clone(), // clone: the reply names what was asked for
+                media_type: request.media_type,
+                bytes_base64: base64::engine::general_purpose::STANDARD.encode(b"clip"),
+                fingerprint: match &request.owner {
+                    MediaOwnerDto::Sentence { fingerprint } => Some(fingerprint.clone()), // clone: echoed back
+                    MediaOwnerDto::Translation { .. } => None,
+                },
+                attribution: None,
+            }),
+        }
     }
 
     async fn login(&self, _email: &str, _password: &str) -> Result<MobileSessionDto, MobileError> {
@@ -365,16 +434,23 @@ async fn seeded_store(root: &std::path::Path) -> Arc<SqliteStore> {
     store
 }
 
-async fn run(store: Arc<SqliteStore>, api: Arc<ScriptedV2>) -> SyncOutcome {
+async fn run(
+    store: Arc<SqliteStore>,
+    api: Arc<ScriptedV2>,
+    media_root: Option<&std::path::Path>,
+) -> SyncOutcome {
     let store_resource: Arc<dyn wisecrow_mobile::application::LocalStore> = store;
     let api_resource: Arc<dyn MobileApi> = api;
-    SyncEngine::new(
+    let engine = SyncEngine::new(
         store_resource,
         api_resource,
         Arc::new(CancellationToken::new()),
-    )
-    .run(SyncReason::Launch)
-    .await
+    );
+    let engine = match media_root {
+        Some(root) => engine.with_media_root(root.to_path_buf()),
+        None => engine,
+    };
+    engine.run(SyncReason::Launch).await
 }
 
 #[tokio::test]
@@ -383,8 +459,12 @@ async fn the_outbox_is_handed_over_before_the_mastery_it_changes_is_pulled() {
     let store = seeded_store(directory.path()).await;
     store.queue_attempt(&queued()).await.expect("queue");
 
-    let api = Arc::new(ScriptedV2::new(true, UploadBehaviour::Accept));
-    let outcome = run(Arc::clone(&store), Arc::clone(&api)).await;
+    let api = Arc::new(ScriptedV2::new(
+        true,
+        UploadBehaviour::Accept,
+        MediaBehaviour::NotAdvertised,
+    ));
+    let outcome = run(Arc::clone(&store), Arc::clone(&api), None).await;
     assert!(
         matches!(outcome, SyncOutcome::Complete { .. }),
         "{outcome:?}"
@@ -412,7 +492,7 @@ async fn the_outbox_is_handed_over_before_the_mastery_it_changes_is_pulled() {
             .is_empty(),
         "an acknowledged answer leaves the outbox"
     );
-    assert_eq!(store.grammar_items("es").await.expect("items").len(), 1);
+    assert_eq!(store.grammar_items("es").await.expect("items").len(), 2);
     assert_eq!(store.grammar_mastery("es").await.expect("mastery").len(), 1);
     let cursors = store.grammar_cursors("es").await.expect("cursors");
     assert_eq!(cursors.bank, 5);
@@ -427,8 +507,12 @@ async fn a_failed_upload_leaves_the_outbox_intact() {
     let attempt = queued();
     store.queue_attempt(&attempt).await.expect("queue");
 
-    let api = Arc::new(ScriptedV2::new(true, UploadBehaviour::Fail));
-    let outcome = run(Arc::clone(&store), api).await;
+    let api = Arc::new(ScriptedV2::new(
+        true,
+        UploadBehaviour::Fail,
+        MediaBehaviour::NotAdvertised,
+    ));
+    let outcome = run(Arc::clone(&store), api, None).await;
     assert!(matches!(outcome, SyncOutcome::Retryable), "{outcome:?}");
 
     let pending = store.pending_attempts(10).await.expect("pending");
@@ -444,8 +528,12 @@ async fn a_version_one_server_leaves_vocabulary_working() {
     let store = seeded_store(directory.path()).await;
     store.queue_attempt(&queued()).await.expect("queue");
 
-    let api = Arc::new(ScriptedV2::new(false, UploadBehaviour::Accept));
-    let outcome = run(Arc::clone(&store), Arc::clone(&api)).await;
+    let api = Arc::new(ScriptedV2::new(
+        false,
+        UploadBehaviour::Accept,
+        MediaBehaviour::NotAdvertised,
+    ));
+    let outcome = run(Arc::clone(&store), Arc::clone(&api), None).await;
     assert!(
         matches!(outcome, SyncOutcome::Complete { .. }),
         "{outcome:?}"
@@ -460,5 +548,137 @@ async fn a_version_one_server_leaves_vocabulary_working() {
         store.pending_attempts(10).await.expect("pending").len(),
         1,
         "the answers wait for a server that can take them"
+    );
+}
+
+/// Two items quoting one sentence name one clip, so one fetch serves both.
+#[tokio::test]
+async fn two_items_sharing_a_sentence_cost_one_fetch_and_the_clip_is_stored() {
+    let directory = tempdir().expect("temporary directory");
+    let media_root = directory.path().join("media");
+    std::fs::create_dir(&media_root).expect("media root");
+    let store = seeded_store(directory.path()).await;
+    let api = Arc::new(ScriptedV2::new(
+        true,
+        UploadBehaviour::Accept,
+        MediaBehaviour::Serves,
+    ));
+
+    let outcome = run(Arc::clone(&store), Arc::clone(&api), Some(&media_root)).await;
+
+    assert!(matches!(outcome, SyncOutcome::Complete { .. }));
+    assert_eq!(
+        api.calls()
+            .iter()
+            .filter(|call| **call == "fetch_media")
+            .count(),
+        1
+    );
+    let entry = store
+        .media(
+            &media_root,
+            &MediaOwner::Sentence("ab".repeat(32)),
+            MediaType::Audio,
+            Utc::now(),
+        )
+        .await
+        .expect("media query")
+        .expect("the clip is registered");
+    assert_eq!(std::fs::read(&entry.path).expect("clip file"), b"clip");
+    assert_eq!(entry.fingerprint.as_deref(), Some("ab".repeat(32).as_str()));
+    assert!(store
+        .missing_example_audio(10)
+        .await
+        .expect("missing")
+        .is_empty());
+}
+
+/// Media is never fatal, and what was not fetched is asked for again.
+#[tokio::test]
+async fn a_failed_fetch_never_fails_the_sync_and_is_retried_next_time() {
+    let directory = tempdir().expect("temporary directory");
+    let media_root = directory.path().join("media");
+    std::fs::create_dir(&media_root).expect("media root");
+    let store = seeded_store(directory.path()).await;
+
+    let failing = Arc::new(ScriptedV2::new(
+        true,
+        UploadBehaviour::Accept,
+        MediaBehaviour::Fails,
+    ));
+    let outcome = run(Arc::clone(&store), Arc::clone(&failing), Some(&media_root)).await;
+    assert!(
+        matches!(outcome, SyncOutcome::Complete { .. }),
+        "media is never fatal"
+    );
+    assert_eq!(
+        failing
+            .calls()
+            .iter()
+            .filter(|call| **call == "fetch_media")
+            .count(),
+        1
+    );
+    assert_eq!(
+        store
+            .missing_example_audio(10)
+            .await
+            .expect("missing")
+            .len(),
+        1
+    );
+
+    // The next sync has no bank changes, and still asks for the clip.
+    let serving = Arc::new(ScriptedV2::new(
+        true,
+        UploadBehaviour::Accept,
+        MediaBehaviour::Serves,
+    ));
+    run(Arc::clone(&store), Arc::clone(&serving), Some(&media_root)).await;
+    assert_eq!(
+        serving
+            .calls()
+            .iter()
+            .filter(|call| **call == "fetch_media")
+            .count(),
+        1
+    );
+    assert!(store
+        .missing_example_audio(10)
+        .await
+        .expect("missing")
+        .is_empty());
+}
+
+/// A cursor past the items that arrived without examples would never show
+/// them again, so the first sync against a media-aware server re-pulls once.
+#[tokio::test]
+async fn a_device_that_synced_before_examples_existed_re_pulls_its_bank_once() {
+    let directory = tempdir().expect("temporary directory");
+    let store = seeded_store(directory.path()).await;
+    let older = Arc::new(ScriptedV2::new(
+        true,
+        UploadBehaviour::Accept,
+        MediaBehaviour::NotAdvertised,
+    ));
+    run(Arc::clone(&store), Arc::clone(&older), None).await;
+    assert_eq!(store.grammar_cursors("es").await.expect("cursors").bank, 5);
+
+    let newer = Arc::new(ScriptedV2::new(
+        true,
+        UploadBehaviour::Accept,
+        MediaBehaviour::Serves,
+    ));
+    run(Arc::clone(&store), Arc::clone(&newer), None).await;
+    assert_eq!(
+        newer.bank_cursors(),
+        vec![0],
+        "the bank is pulled again from the start, once"
+    );
+    run(Arc::clone(&store), Arc::clone(&newer), None).await;
+    assert_eq!(
+        newer.bank_cursors(),
+        vec![0, 5],
+        "and thereafter from where it left off"
     );
 }

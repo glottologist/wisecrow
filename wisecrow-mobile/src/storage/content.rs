@@ -10,7 +10,7 @@ use wisecrow_dto::{
 };
 
 use super::{
-    models::{MediaEntry, MediaRegistration, MediaType},
+    models::{MediaEntry, MediaOwner, MediaRegistration, MediaType},
     sqlite::{active_scope, active_scope_from_pool, StoreScope},
     SqliteStore,
 };
@@ -21,11 +21,13 @@ const MAX_ATTRIBUTION_BYTES: usize = 4_096;
 
 #[derive(FromRow)]
 struct MediaRow {
-    translation_id: i32,
+    owner_kind: String,
+    owner_key: String,
     media_type: String,
     file_name: String,
     byte_length: i64,
     attribution: Option<String>,
+    fingerprint: Option<String>,
     last_accessed_at: DateTime<Utc>,
 }
 
@@ -144,26 +146,28 @@ impl ContentRepository for SqliteStore {
             ));
         }
         let scope = active_scope_from_pool(&self.pool).await?;
-        require_translation(&self.pool, scope, registration.translation_id).await?;
+        if let MediaOwner::Translation(id) = registration.owner {
+            require_translation(&self.pool, scope, id).await?;
+        }
         upsert_media(&self.pool, scope, registration).await
     }
 
     async fn media(
         &self,
         media_root: &Path,
-        translation_id: i32,
+        owner: &MediaOwner,
         media_type: MediaType,
         accessed_at: DateTime<Utc>,
     ) -> Result<Option<MediaEntry>, MobileError> {
-        validate_translation_id(translation_id)?;
+        validate_owner(owner)?;
         let root = canonical_root(media_root)?;
         let scope = active_scope_from_pool(&self.pool).await?;
-        let row = media_row(&self.pool, scope, translation_id, media_type).await?;
+        let row = media_row(&self.pool, scope, owner, media_type).await?;
         let Some(row) = row else {
             return Ok(None);
         };
         let entry = media_entry(&root, row)?;
-        update_media_access(&self.pool, scope, translation_id, media_type, accessed_at).await?;
+        update_media_access(&self.pool, scope, owner, media_type, accessed_at).await?;
         Ok(Some(MediaEntry {
             last_accessed_at: accessed_at,
             ..entry
@@ -202,18 +206,20 @@ impl ContentRepository for SqliteStore {
 
     async fn confirm_media_deleted(
         &self,
-        translation_id: i32,
+        owner: &MediaOwner,
         media_type: MediaType,
     ) -> Result<(), MobileError> {
-        validate_translation_id(translation_id)?;
+        validate_owner(owner)?;
         let scope = active_scope_from_pool(&self.pool).await?;
         sqlx::query(
             "DELETE FROM media_cache
-             WHERE profile_id = ? AND user_id = ? AND translation_id = ? AND media_type = ?",
+             WHERE profile_id = ? AND user_id = ? AND owner_kind = ? AND owner_key = ?
+               AND media_type = ?",
         )
         .bind(scope.profile_id)
         .bind(scope.user_id)
-        .bind(translation_id)
+        .bind(owner.kind())
+        .bind(owner.key())
         .bind(media_type_value(media_type))
         .execute(&self.pool)
         .await?;
@@ -301,20 +307,23 @@ async fn upsert_media(
         .map_err(|_| invalid_input("media byte length is invalid"))?;
     sqlx::query(
         "INSERT INTO media_cache
-             (profile_id, user_id, translation_id, media_type, file_name,
-              byte_length, attribution, last_accessed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(profile_id, user_id, translation_id, media_type) DO UPDATE SET
+             (profile_id, user_id, owner_kind, owner_key, media_type, file_name,
+              byte_length, attribution, fingerprint, last_accessed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(profile_id, user_id, owner_kind, owner_key, media_type) DO UPDATE SET
              file_name = excluded.file_name, byte_length = excluded.byte_length,
-             attribution = excluded.attribution, last_accessed_at = excluded.last_accessed_at",
+             attribution = excluded.attribution, fingerprint = excluded.fingerprint,
+             last_accessed_at = excluded.last_accessed_at",
     )
     .bind(scope.profile_id)
     .bind(scope.user_id)
-    .bind(registration.translation_id)
+    .bind(registration.owner.kind())
+    .bind(registration.owner.key())
     .bind(media_type_value(registration.media_type))
     .bind(&registration.file_name)
     .bind(byte_length)
     .bind(&registration.attribution)
+    .bind(&registration.fingerprint)
     .bind(registration.last_accessed_at)
     .execute(pool)
     .await?;
@@ -324,17 +333,19 @@ async fn upsert_media(
 async fn media_row(
     pool: &sqlx::SqlitePool,
     scope: super::sqlite::StoreScope,
-    translation_id: i32,
+    owner: &MediaOwner,
     media_type: MediaType,
 ) -> Result<Option<MediaRow>, MobileError> {
     Ok(sqlx::query_as::<_, MediaRow>(
-        "SELECT translation_id, media_type, file_name, byte_length, attribution,
-                last_accessed_at FROM media_cache
-         WHERE profile_id = ? AND user_id = ? AND translation_id = ? AND media_type = ?",
+        "SELECT owner_kind, owner_key, media_type, file_name, byte_length, attribution,
+                fingerprint, last_accessed_at FROM media_cache
+         WHERE profile_id = ? AND user_id = ? AND owner_kind = ? AND owner_key = ?
+           AND media_type = ?",
     )
     .bind(scope.profile_id)
     .bind(scope.user_id)
-    .bind(translation_id)
+    .bind(owner.kind())
+    .bind(owner.key())
     .bind(media_type_value(media_type))
     .fetch_optional(pool)
     .await?)
@@ -345,10 +356,10 @@ async fn all_media_rows(
     scope: super::sqlite::StoreScope,
 ) -> Result<Vec<MediaRow>, MobileError> {
     Ok(sqlx::query_as::<_, MediaRow>(
-        "SELECT translation_id, media_type, file_name, byte_length, attribution,
-                last_accessed_at FROM media_cache
+        "SELECT owner_kind, owner_key, media_type, file_name, byte_length, attribution,
+                fingerprint, last_accessed_at FROM media_cache
          WHERE profile_id = ? AND user_id = ?
-         ORDER BY last_accessed_at, translation_id, media_type",
+         ORDER BY last_accessed_at, owner_kind, owner_key, media_type",
     )
     .bind(scope.profile_id)
     .bind(scope.user_id)
@@ -359,18 +370,20 @@ async fn all_media_rows(
 async fn update_media_access(
     pool: &sqlx::SqlitePool,
     scope: super::sqlite::StoreScope,
-    translation_id: i32,
+    owner: &MediaOwner,
     media_type: MediaType,
     accessed_at: DateTime<Utc>,
 ) -> Result<(), MobileError> {
     sqlx::query(
         "UPDATE media_cache SET last_accessed_at = ?
-         WHERE profile_id = ? AND user_id = ? AND translation_id = ? AND media_type = ?",
+         WHERE profile_id = ? AND user_id = ? AND owner_kind = ? AND owner_key = ?
+           AND media_type = ?",
     )
     .bind(accessed_at)
     .bind(scope.profile_id)
     .bind(scope.user_id)
-    .bind(translation_id)
+    .bind(owner.kind())
+    .bind(owner.key())
     .bind(media_type_value(media_type))
     .execute(pool)
     .await?;
@@ -379,13 +392,25 @@ async fn update_media_access(
 
 fn media_entry(root: &Path, row: MediaRow) -> Result<MediaEntry, MobileError> {
     Ok(MediaEntry {
-        translation_id: row.translation_id,
+        owner: owner_from_row(&row.owner_kind, &row.owner_key)?,
         media_type: media_type_from_str(&row.media_type)?,
         path: canonical_media_path(root, &row.file_name)?,
         byte_length: u64::try_from(row.byte_length).map_err(|_| invalid_state())?,
         attribution: row.attribution,
+        fingerprint: row.fingerprint,
         last_accessed_at: row.last_accessed_at,
     })
+}
+
+fn owner_from_row(kind: &str, key: &str) -> Result<MediaOwner, MobileError> {
+    match kind {
+        "translation" => key
+            .parse()
+            .map(MediaOwner::Translation)
+            .map_err(|_| invalid_state()),
+        "sentence" => Ok(MediaOwner::Sentence(key.to_owned())),
+        _ => Err(invalid_state()),
+    }
 }
 
 fn canonical_root(media_root: &Path) -> Result<PathBuf, MobileError> {
@@ -408,7 +433,7 @@ fn canonical_media_path(root: &Path, file_name: &str) -> Result<PathBuf, MobileE
 }
 
 fn validate_media_registration(registration: &MediaRegistration) -> Result<(), MobileError> {
-    validate_translation_id(registration.translation_id)?;
+    validate_owner(&registration.owner)?;
     validate_file_name(&registration.file_name)?;
     if registration.byte_length == 0 {
         return Err(invalid_input("media byte length is invalid"));
@@ -496,6 +521,19 @@ fn validate_translation_id(translation_id: i32) -> Result<(), MobileError> {
         Ok(())
     } else {
         Err(invalid_input("translation identifier is invalid"))
+    }
+}
+
+fn validate_owner(owner: &MediaOwner) -> Result<(), MobileError> {
+    match owner {
+        MediaOwner::Translation(id) => validate_translation_id(*id),
+        MediaOwner::Sentence(fingerprint) => {
+            if fingerprint.len() == 64 && fingerprint.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                Ok(())
+            } else {
+                Err(invalid_input("sentence fingerprint is invalid"))
+            }
+        }
     }
 }
 

@@ -8,7 +8,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use wisecrow_dto::{GrammarOptionDto, OfflineAttemptDto};
+use wisecrow_dto::{GrammarOptionDto, OfflineAttemptDto, OfflineRuleExampleDto};
 use wisecrow_learning::grading::{Answer, GradableItem, Submission};
 
 /// One grammar point as the device knows it.
@@ -35,6 +35,34 @@ pub struct LocalGrammarItem {
     pub answer: Option<String>,
     pub accepted: Vec<String>,
     pub correct_option: Option<String>,
+    /// The point's correct examples; empty from a server older than the field.
+    pub examples: Vec<LocalRuleExample>,
+}
+
+/// One correct example as the device shows and, when it can, plays it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocalRuleExample {
+    pub sentence: String,
+    pub translation: Option<String>,
+    pub audio_fingerprint: Option<String>,
+}
+
+impl From<&OfflineRuleExampleDto> for LocalRuleExample {
+    fn from(example: &OfflineRuleExampleDto) -> Self {
+        Self {
+            sentence: example.sentence.clone(), // clone: the device owns its copy
+            translation: example.translation.clone(), // clone: the device owns its copy
+            audio_fingerprint: example.audio_fingerprint.clone(), // clone: the device owns its copy
+        }
+    }
+}
+
+/// A clip stored items name and the media store lacks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MissingExampleAudio {
+    pub fingerprint: String,
+    pub language: String,
+    pub sentence: String,
 }
 
 /// The device's copy of one mastery row.

@@ -39,4 +39,11 @@ fn mobile_protocol_contracts_are_available() {
     let _ = std::any::TypeId::of::<mobile::NbackBatchRequestDto>();
     let _ = std::any::TypeId::of::<mobile::NbackBatchResponseDto>();
     let _ = std::any::TypeId::of::<mobile::CachedQuizDto>();
+    let _ = std::any::TypeId::of::<mobile::MobileMediaRequestDto>();
+    let _ = std::any::TypeId::of::<mobile::MobileMediaDto>();
+    let _ = std::any::TypeId::of::<mobile::MediaOwnerDto>();
+    assert_eq!(
+        serde_json::from_str::<mobile::MobileFeatureDto>("\"MediaFetch\"").expect("feature"),
+        mobile::MobileFeatureDto::MediaFetch
+    );
 }

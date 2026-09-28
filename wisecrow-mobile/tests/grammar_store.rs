@@ -13,12 +13,14 @@ use wisecrow_dto::{
     GrammarAttemptBatchResponseDto, GrammarBankChangeDto, GrammarBankChangePageDto,
     GrammarChangeOperationDto, GrammarMasteryChangeDto, GrammarMasteryChangePageDto,
     GrammarMasteryStateDto, GrammarOptionDto, OfflineAttemptStatusDto, OfflineGrammarItemDto,
-    UserDto, VerdictDto, MOBILE_PROTOCOL_VERSION_V2,
+    OfflineRuleExampleDto, UserDto, VerdictDto, MOBILE_PROTOCOL_VERSION_V2,
 };
 use wisecrow_mobile::application::{
-    GrammarRepository, MobileError, ProfileRepository, QueuedAttempt,
+    ContentRepository, GrammarRepository, MobileError, ProfileRepository, QueuedAttempt,
 };
-use wisecrow_mobile::storage::models::{Profile, ProfileIdentity};
+use wisecrow_mobile::storage::models::{
+    MediaOwner, MediaRegistration, MediaType, Profile, ProfileIdentity,
+};
 use wisecrow_mobile::storage::SqliteStore;
 
 type TestResult = Result<(), MobileError>;
@@ -61,6 +63,7 @@ fn item(item_id: i32, rule_id: i32) -> OfflineGrammarItemDto {
         answer: Some(String::from("estoy")),
         accepted: vec![String::from("estoy mal")],
         correct_option: Some(String::from("o1")),
+        examples: Vec::new(),
     }
 }
 
@@ -92,6 +95,124 @@ fn queued(ordinal: u32, seconds: i64, session: Uuid) -> QueuedAttempt {
 
 async fn store(path: &std::path::Path) -> SqliteStore {
     SqliteStore::open(path).await.expect("store")
+}
+
+fn example(sentence: &str, fingerprint: &str) -> OfflineRuleExampleDto {
+    OfflineRuleExampleDto {
+        sentence: String::from(sentence),
+        translation: None,
+        audio_fingerprint: Some(fingerprint.repeat(32)),
+    }
+}
+
+fn upsert(sequence: i64, item: OfflineGrammarItemDto) -> GrammarBankChangeDto {
+    GrammarBankChangeDto {
+        sequence,
+        item_id: item.item_id,
+        operation: GrammarChangeOperationDto::Upsert,
+        item: Some(item),
+    }
+}
+
+#[tokio::test]
+async fn examples_travel_with_the_item_and_missing_clips_are_derived_from_what_is_stored(
+) -> TestResult {
+    let dir = tempdir()?;
+    let store = store(&dir.path().join("examples.sqlite3")).await;
+    store.save_profile_identity(&identity()).await?;
+    let mut first = item(1, 10);
+    first.examples = vec![example("Estoy cansado.", "ab"), example("El agua.", "cd")];
+    let mut second = item(2, 10);
+    second.examples = vec![example("Estoy cansado.", "ab")];
+    store
+        .apply_bank_page(&bank_page(vec![upsert(1, first), upsert(2, second)], 2))
+        .await?;
+
+    let items = store.grammar_items("es").await?;
+    assert_eq!(items[0].examples.len(), 2);
+    assert_eq!(items[0].examples[0].sentence, "Estoy cansado.");
+    assert_eq!(
+        items[0].examples[0].audio_fingerprint.as_deref(),
+        Some("ab".repeat(32).as_str())
+    );
+
+    let missing = store.missing_example_audio(10).await?;
+    assert_eq!(
+        missing
+            .iter()
+            .map(|clip| clip.fingerprint.as_str())
+            .collect::<Vec<_>>(),
+        vec!["ab".repeat(32), "cd".repeat(32)],
+        "one entry per distinct fingerprint, in fingerprint order"
+    );
+    assert_eq!(missing[0].language, "es");
+
+    let root = dir.path().join("media");
+    std::fs::create_dir(&root)?;
+    std::fs::write(root.join("sentence-ab.mp3"), b"clip")?;
+    store
+        .register_media(
+            &root,
+            &MediaRegistration {
+                owner: MediaOwner::Sentence("ab".repeat(32)),
+                media_type: MediaType::Audio,
+                file_name: String::from("sentence-ab.mp3"),
+                byte_length: 4,
+                attribution: None,
+                fingerprint: Some("ab".repeat(32)),
+                last_accessed_at: Utc::now(),
+            },
+        )
+        .await?;
+    let still_missing = store.missing_example_audio(10).await?;
+    assert_eq!(still_missing.len(), 1);
+    assert_eq!(still_missing[0].fingerprint, "cd".repeat(32));
+    assert!(
+        store.missing_example_audio(0).await?.is_empty(),
+        "a zero limit asks for nothing"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_example_backfill_resets_the_bank_cursor_exactly_once() -> TestResult {
+    let dir = tempdir()?;
+    let store = store(&dir.path().join("backfill.sqlite3")).await;
+    store.save_profile_identity(&identity()).await?;
+    store.apply_bank_page(&bank_page(Vec::new(), 40)).await?;
+    assert_eq!(store.grammar_cursors("es").await?.bank, 40);
+
+    assert!(
+        store.begin_example_backfill("es").await?,
+        "the first call resets"
+    );
+    assert_eq!(store.grammar_cursors("es").await?.bank, 0);
+    store.apply_bank_page(&bank_page(Vec::new(), 40)).await?;
+    assert!(
+        !store.begin_example_backfill("es").await?,
+        "the second call does not"
+    );
+    assert_eq!(store.grammar_cursors("es").await?.bank, 40);
+
+    assert!(
+        !store.begin_example_backfill("fr").await?,
+        "a language never synced has nothing to re-pull"
+    );
+    assert_eq!(store.grammar_cursors("fr").await?.bank, 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_item_without_examples_from_an_older_server_is_stored_with_none() -> TestResult {
+    let dir = tempdir()?;
+    let store = store(&dir.path().join("older.sqlite3")).await;
+    store.save_profile_identity(&identity()).await?;
+    store
+        .apply_bank_page(&bank_page(vec![upsert(1, item(1, 10))], 1))
+        .await?;
+    assert!(store.grammar_items("es").await?[0].examples.is_empty());
+    assert!(store.missing_example_audio(10).await?.is_empty());
+    Ok(())
 }
 
 /// An item must arrive complete: a device that cannot mark an answer offline

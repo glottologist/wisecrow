@@ -83,6 +83,51 @@ fn validate_media_request(translation_id: i32) -> Result<(), ServerFnError> {
     Ok(())
 }
 
+/// The deployment's media configuration, read from the environment.
+#[cfg(all(feature = "server", any(feature = "audio", feature = "images")))]
+pub(crate) fn app_config() -> Result<wisecrow::config::Config, ServerFnError> {
+    let settings = config::Config::builder()
+        .add_source(config::Environment::with_prefix("WISECROW").separator("__"))
+        .build()
+        .map_err(|error| crate::server::internal_error("media configuration", &error))?;
+    settings
+        .try_deserialize()
+        .map_err(|error| crate::server::internal_error("media configuration", &error))
+}
+
+/// The configured image providers; unavailable when none is configured.
+#[cfg(all(feature = "server", feature = "images"))]
+pub(crate) fn image_fetcher() -> Result<wisecrow::media::images::ImageFetcher, ServerFnError> {
+    let cfg = app_config()?;
+    wisecrow::media::images::ImageFetcher::from_config(&cfg).ok_or_else(|| {
+        crate::server::client_error(
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "Image capability is not configured",
+        )
+    })
+}
+
+/// Reads a cached media file, refusing one larger than `maximum_bytes`.
+#[cfg(all(feature = "server", any(feature = "audio", feature = "images")))]
+pub(crate) async fn read_bounded_file(
+    path: &std::path::Path,
+    maximum_bytes: u64,
+    media_name: &str,
+) -> Result<Vec<u8>, ServerFnError> {
+    let metadata = tokio::fs::metadata(path)
+        .await
+        .map_err(|error| crate::server::internal_error("media metadata read", &error))?;
+    if metadata.len() > maximum_bytes {
+        return Err(crate::server::client_error(
+            axum::http::StatusCode::PAYLOAD_TOO_LARGE,
+            &format!("{media_name} exceeds maximum size"),
+        ));
+    }
+    tokio::fs::read(path)
+        .await
+        .map_err(|error| crate::server::internal_error("media file read", &error))
+}
+
 #[cfg(all(feature = "server", any(feature = "audio", feature = "images")))]
 mod implementation {
     use base64::Engine as _;
@@ -107,7 +152,8 @@ mod implementation {
                 })?;
         // Absent an account this is `None` and Edge handles the language, so a
         // deployment without CereProc credentials keeps its existing speech.
-        let cereproc = wisecrow::media::cereproc::CereprocClient::from_config(&app_config()?);
+        let cereproc =
+            wisecrow::media::cereproc::CereprocClient::from_config(&super::app_config()?);
         let fingerprint = wisecrow::media::audio_cache_key(&subject, cereproc.as_ref())
             .map_err(|error| crate::server::internal_error("audio fingerprint", &error))?;
         let path = cache
@@ -120,7 +166,7 @@ mod implementation {
             })
             .await
             .map_err(|error| crate::server::internal_error("audio generation", &error))?;
-        let bytes = read_bounded_file(&path, MAX_AUDIO_BYTES, "Audio").await?;
+        let bytes = super::read_bounded_file(&path, MAX_AUDIO_BYTES, "Audio").await?;
         let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
         Ok(["data:audio/mpeg;base64,", encoded.as_str()].concat())
     }
@@ -154,7 +200,8 @@ mod implementation {
                 .map_err(|error| {
                     crate::server::internal_error("audio cache initialization", &error)
                 })?;
-        let cereproc = wisecrow::media::cereproc::CereprocClient::from_config(&app_config()?);
+        let cereproc =
+            wisecrow::media::cereproc::CereprocClient::from_config(&super::app_config()?);
         let speaker = wisecrow::media::grammar_audio::TtsSpeaker::new(cereproc);
         let fingerprint = speaker
             .fingerprint(&language, &sentence)
@@ -165,7 +212,7 @@ mod implementation {
             })
             .await
             .map_err(|error| crate::server::internal_error("example audio generation", &error))?;
-        let bytes = read_bounded_file(&path, MAX_AUDIO_BYTES, "Audio").await?;
+        let bytes = super::read_bounded_file(&path, MAX_AUDIO_BYTES, "Audio").await?;
         let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
         Ok(["data:audio/mpeg;base64,", encoded.as_str()].concat())
     }
@@ -179,7 +226,7 @@ mod implementation {
         let Some(query) = subject.applicable_image_query() else {
             return Ok(None);
         };
-        let fetcher = image_fetcher()?;
+        let fetcher = super::image_fetcher()?;
         let Some(fingerprint) = wisecrow::media::image_cache_key(&subject, &fetcher) else {
             return Ok(None);
         };
@@ -198,7 +245,7 @@ mod implementation {
             })
             .await
             .map_err(|error| crate::server::internal_error("image fetch", &error))?;
-        let bytes = read_bounded_file(&path, MAX_IMAGE_BYTES, "Image").await?;
+        let bytes = super::read_bounded_file(&path, MAX_IMAGE_BYTES, "Image").await?;
         let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
         Ok(Some(wisecrow_dto::CardImageDto {
             data_url: ["data:image/jpeg;base64,", encoded.as_str()].concat(),
@@ -219,45 +266,5 @@ mod implementation {
                     "Unknown translation",
                 )
             })
-    }
-
-    fn app_config() -> Result<wisecrow::config::Config, ServerFnError> {
-        let settings = config::Config::builder()
-            .add_source(config::Environment::with_prefix("WISECROW").separator("__"))
-            .build()
-            .map_err(|error| crate::server::internal_error("media configuration", &error))?;
-        settings
-            .try_deserialize()
-            .map_err(|error| crate::server::internal_error("media configuration", &error))
-    }
-
-    #[cfg(feature = "images")]
-    fn image_fetcher() -> Result<wisecrow::media::images::ImageFetcher, ServerFnError> {
-        let cfg = app_config()?;
-        wisecrow::media::images::ImageFetcher::from_config(&cfg).ok_or_else(|| {
-            crate::server::client_error(
-                axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                "Image capability is not configured",
-            )
-        })
-    }
-
-    async fn read_bounded_file(
-        path: &std::path::Path,
-        maximum_bytes: u64,
-        media_name: &str,
-    ) -> Result<Vec<u8>, ServerFnError> {
-        let metadata = tokio::fs::metadata(path)
-            .await
-            .map_err(|error| crate::server::internal_error("media metadata read", &error))?;
-        if metadata.len() > maximum_bytes {
-            return Err(crate::server::client_error(
-                axum::http::StatusCode::PAYLOAD_TOO_LARGE,
-                &format!("{media_name} exceeds maximum size"),
-            ));
-        }
-        tokio::fs::read(path)
-            .await
-            .map_err(|error| crate::server::internal_error("media file read", &error))
     }
 }

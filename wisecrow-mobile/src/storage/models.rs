@@ -122,23 +122,54 @@ pub enum MediaType {
     Image,
 }
 
+/// What a piece of media belongs to on this device.
+///
+/// Mirrors the wire's `MediaOwnerDto`; a sentence owner carries the
+/// server's clip fingerprint, which is the only name a sentence has here.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum MediaOwner {
+    Translation(i32),
+    Sentence(String),
+}
+
+impl MediaOwner {
+    #[must_use]
+    pub const fn kind(&self) -> &'static str {
+        match self {
+            Self::Translation(_) => "translation",
+            Self::Sentence(_) => "sentence",
+        }
+    }
+
+    #[must_use]
+    pub fn key(&self) -> String {
+        match self {
+            Self::Translation(id) => id.to_string(),
+            Self::Sentence(fingerprint) => fingerprint.clone(), // clone: the key is an owned column value
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MediaRegistration {
-    pub translation_id: i32,
+    pub owner: MediaOwner,
     pub media_type: MediaType,
     pub file_name: String,
     pub byte_length: u64,
     pub attribution: Option<String>,
+    /// The server's identity for the bytes, when it gave one.
+    pub fingerprint: Option<String>,
     pub last_accessed_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MediaEntry {
-    pub translation_id: i32,
+    pub owner: MediaOwner,
     pub media_type: MediaType,
     pub path: PathBuf,
     pub byte_length: u64,
     pub attribution: Option<String>,
+    pub fingerprint: Option<String>,
     pub last_accessed_at: DateTime<Utc>,
 }
 

@@ -3,9 +3,9 @@ use wisecrow_dto::{
     AnnotatedTokenDto, BrainmapCellDto, CardDto, CardStatusDto, ClozeQuizDto, DnbAdaptationDto,
     DnbModeDto, DnbSessionResultsDto, DnbTrialDto, GlossaryEntryDto, GradedReaderDto,
     GrammarItemDto, GrammarMasteryStateDto, GrammarOptionDto, LanguageInfo, MasteryBandDto,
-    MultipleChoiceQuizDto, OfflineGrammarItemDto, PlacementLevelDto, PlacementResultDto,
-    PlacementStateDto, PlacementStepDto, QuizItemDto, ReviewRatingDto, RuleExampleDto,
-    ScriptDirection, SessionDto, SubmissionDto, TokenStatusDto, UserDto,
+    MultipleChoiceQuizDto, OfflineGrammarItemDto, OfflineRuleExampleDto, PlacementLevelDto,
+    PlacementResultDto, PlacementStateDto, PlacementStepDto, QuizItemDto, ReviewRatingDto,
+    RuleExampleDto, ScriptDirection, SessionDto, SubmissionDto, TokenStatusDto, UserDto,
 };
 use wisecrow_learning::grading::{Answer, Submission};
 use wisecrow_learning::mastery::{band_from, Band};
@@ -350,7 +350,31 @@ pub fn offline_grammar_item(item: &BankItem) -> OfflineGrammarItemDto {
         answer: item.answer.clone(), // clone: building owned DTO
         accepted,
         correct_option: item.correct_option.clone(), // clone: building owned DTO
+        examples: Vec::new(),
     }
+}
+
+/// Attaches each bank item's correct examples, keyed by rule, naming the
+/// clip each one would have under `fingerprint` (`None` where the server
+/// cannot voice the language).
+#[must_use]
+pub fn offline_with_examples(
+    mut items: Vec<OfflineGrammarItemDto>,
+    examples: &[CorrectExample],
+    fingerprint: &dyn Fn(&str, &str) -> Option<String>,
+) -> Vec<OfflineGrammarItemDto> {
+    for item in &mut items {
+        item.examples = examples
+            .iter()
+            .filter(|example| example.rule_id == item.rule_id)
+            .map(|example| OfflineRuleExampleDto {
+                sentence: example.sentence.clone(), // clone: building owned DTO
+                translation: example.translation.clone(), // clone: building owned DTO
+                audio_fingerprint: fingerprint(&example.language, &example.sentence),
+            })
+            .collect();
+    }
+    items
 }
 
 /// Mirrors one mastery row onto a device.

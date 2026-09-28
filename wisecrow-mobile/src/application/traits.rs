@@ -10,18 +10,20 @@ use wisecrow_dto::{
     DeviceRegistrationRequestDto, GrammarAttemptBatchRequestDto, GrammarAttemptBatchResponseDto,
     GrammarBankChangePageDto, GrammarBankChangeRequestDto, GrammarMasteryChangePageDto,
     GrammarMasteryChangeRequestDto, LanguageInfo, LanguagePairDto, MobileCapabilitiesDto,
-    MobileSessionDto, NbackBatchRequestDto, NbackBatchResponseDto, NbackSessionUploadDto,
-    RegisteredDeviceDto, ReviewBatchRequestDto, ReviewBatchResponseDto, ReviewEventDto, UserDto,
+    MobileMediaDto, MobileMediaRequestDto, MobileSessionDto, NbackBatchRequestDto,
+    NbackBatchResponseDto, NbackSessionUploadDto, RegisteredDeviceDto, ReviewBatchRequestDto,
+    ReviewBatchResponseDto, ReviewEventDto, UserDto,
 };
 
 use super::error::MobileError;
 use super::grammar::{
-    GrammarCursors, LocalGrammarItem, LocalGrammarMastery, LocalGrammarRule, QueuedAttempt,
+    GrammarCursors, LocalGrammarItem, LocalGrammarMastery, LocalGrammarRule, MissingExampleAudio,
+    QueuedAttempt,
 };
 use crate::storage::models::{
-    CorpusEstimate, LocalAnswer, LocalSession, LocalSessionRequest, MediaEntry, MediaRegistration,
-    MediaType, PairStatus, PairSyncState, PickedFile, Profile, ProfileIdentity, SyncErrorKind,
-    SyncPhase,
+    CorpusEstimate, LocalAnswer, LocalSession, LocalSessionRequest, MediaEntry, MediaOwner,
+    MediaRegistration, MediaType, PairStatus, PairSyncState, PickedFile, Profile, ProfileIdentity,
+    SyncErrorKind, SyncPhase,
 };
 
 #[async_trait]
@@ -110,7 +112,7 @@ pub trait ContentRepository: Send + Sync {
     async fn media(
         &self,
         media_root: &Path,
-        translation_id: i32,
+        owner: &MediaOwner,
         media_type: MediaType,
         accessed_at: DateTime<Utc>,
     ) -> Result<Option<MediaEntry>, MobileError>;
@@ -122,7 +124,7 @@ pub trait ContentRepository: Send + Sync {
     ) -> Result<Vec<MediaEntry>, MobileError>;
     async fn confirm_media_deleted(
         &self,
-        translation_id: i32,
+        owner: &MediaOwner,
         media_type: MediaType,
     ) -> Result<(), MobileError>;
 }
@@ -153,6 +155,17 @@ pub trait GrammarRepository: Send + Sync {
         &self,
         response: &GrammarAttemptBatchResponseDto,
     ) -> Result<(), MobileError>;
+    /// Clips that stored items name and the media store lacks, at most
+    /// `limit`, one per distinct fingerprint in fingerprint order. Derived
+    /// from what is stored, so a fetch that failed is asked for again.
+    async fn missing_example_audio(
+        &self,
+        limit: u16,
+    ) -> Result<Vec<MissingExampleAudio>, MobileError>;
+    /// Resets the language's bank cursor the first time it is called for
+    /// that language, so a device that synced items before they carried
+    /// examples pulls them again; returns whether it reset anything.
+    async fn begin_example_backfill(&self, language: &str) -> Result<bool, MobileError>;
 }
 
 pub trait LocalStore:
@@ -216,6 +229,11 @@ pub trait MobileApi: Send + Sync {
         &self,
         request: &GrammarAttemptBatchRequestDto,
     ) -> Result<GrammarAttemptBatchResponseDto, MobileError>;
+    /// One clip or picture, for the authenticated learner.
+    async fn fetch_media(
+        &self,
+        request: &MobileMediaRequestDto,
+    ) -> Result<MobileMediaDto, MobileError>;
 }
 
 pub trait ApiFactory: Send + Sync {

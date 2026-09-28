@@ -65,5 +65,22 @@ async fn sqlite_migrations_are_idempotent_and_enforce_connection_pragmas() {
 
     let second = SqliteStore::open(&path).await.expect("second migration");
     assert_eq!(table_names(second.pool()).await, TABLES);
+    let columns: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM pragma_table_info('media_cache')")
+            .fetch_all(second.pool())
+            .await
+            .expect("media columns");
+    for column in ["owner_kind", "owner_key", "fingerprint"] {
+        assert!(
+            columns.iter().any(|name| name == column),
+            "media_cache lacks {column}"
+        );
+    }
+    let item_columns: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM pragma_table_info('grammar_items')")
+            .fetch_all(second.pool())
+            .await
+            .expect("item columns");
+    assert!(item_columns.iter().any(|name| name == "examples_json"));
     assert_pragmas_and_index(second.pool()).await;
 }

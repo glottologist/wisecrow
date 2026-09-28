@@ -54,6 +54,7 @@ pub async fn mobile_capabilities_v2() -> Result<MobileCapabilitiesDto, ServerFnE
             MobileFeatureDto::GrammarBankSync,
             MobileFeatureDto::GrammarMasterySync,
             MobileFeatureDto::GrammarAttemptUpload,
+            MobileFeatureDto::MediaFetch,
         ],
         max_snapshot_page: 500,
         max_review_batch: 500,

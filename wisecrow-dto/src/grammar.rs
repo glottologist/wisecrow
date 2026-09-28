@@ -288,6 +288,25 @@ mod tests {
             }));
         }
     }
+
+    #[test]
+    fn an_offline_item_without_examples_still_deserialises() {
+        let json = r#"{"item_id":1,"revision":1,"rule_id":4,"rule_slug":"s","rule_title":"t",
+                       "rule_explanation":"e","level":"A1","language":"es","prompt":"p","hint":null,
+                       "options":[],"answer":"estoy","accepted":[],"correct_option":null}"#;
+        let item: OfflineGrammarItemDto = serde_json::from_str(json).expect("older page");
+        assert!(item.examples.is_empty());
+    }
+
+    #[test]
+    fn offline_examples_roundtrip_with_their_fingerprint() {
+        let example = OfflineRuleExampleDto {
+            sentence: "Estoy cansado.".into(),
+            translation: Some("I am tired.".into()),
+            audio_fingerprint: Some("ab".repeat(32)),
+        };
+        assert_json_roundtrip(&example);
+    }
 }
 
 /// Whether a feed row wrote something or removed it.
@@ -322,6 +341,23 @@ pub struct OfflineGrammarItemDto {
     pub accepted: Vec<String>,
     /// Which option identifier is correct; `None` for a cloze.
     pub correct_option: Option<String>,
+    /// The point's correct examples, with the clip each one names. Absent
+    /// from older servers, hence the default.
+    #[serde(default)]
+    pub examples: Vec<OfflineRuleExampleDto>,
+}
+
+/// One correct example as a device holds it.
+///
+/// The fingerprint is the server's clip identity for the sentence under the
+/// deployment's voice, so the device asks for exactly the clip the server
+/// holds and can tell a stale local clip from a current one. It is absent
+/// when the server build has no speech synthesis.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OfflineRuleExampleDto {
+    pub sentence: String,
+    pub translation: Option<String>,
+    pub audio_fingerprint: Option<String>,
 }
 
 /// One item entering, changing in, or leaving the bank.

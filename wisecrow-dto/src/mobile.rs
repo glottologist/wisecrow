@@ -31,6 +31,7 @@ pub enum MobileFeatureDto {
     GrammarBankSync,
     GrammarMasterySync,
     GrammarAttemptUpload,
+    MediaFetch,
     #[serde(other)]
     Unknown,
 }
@@ -44,6 +45,44 @@ pub struct MobileCapabilitiesDto {
     pub max_review_batch: u16,
     pub max_nback_batch: u16,
     pub server_version: String,
+}
+
+/// What a piece of media belongs to.
+///
+/// A translation's media is keyed by its id, as the web does. A sentence's
+/// is keyed by the audio fingerprint the bank page carried for it; the
+/// server voices only sentences it holds as correct examples.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum MediaOwnerDto {
+    Translation { id: i32 },
+    Sentence { fingerprint: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MobileMediaTypeDto {
+    Audio,
+    Image,
+}
+
+/// Asks for one clip or picture.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MobileMediaRequestDto {
+    pub protocol_version: u16,
+    pub owner: MediaOwnerDto,
+    pub media_type: MobileMediaTypeDto,
+}
+
+/// One clip or picture, base64 in JSON as every mobile payload is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MobileMediaDto {
+    pub protocol_version: u16,
+    pub owner: MediaOwnerDto,
+    pub media_type: MobileMediaTypeDto,
+    pub bytes_base64: String,
+    /// The identity of what was served, so the device can store it and
+    /// compare it with what a later bank page names.
+    pub fingerprint: Option<String>,
+    pub attribution: Option<String>,
 }
 
 /// Stable category for a protocol-level failure.

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use tokio_util::sync::CancellationToken;
 
@@ -14,6 +14,8 @@ pub struct AppServices {
     pub api: Arc<dyn MobileApi>,
     pub credentials: Arc<dyn CredentialStore>,
     pub background: Arc<dyn BackgroundScheduler>,
+    /// Where fetched media is written; without it nothing is prefetched.
+    pub media_root: Option<PathBuf>,
 }
 
 impl AppServices {
@@ -29,7 +31,15 @@ impl AppServices {
             api: api.into(),
             credentials: credentials.into(),
             background: background.into(),
+            media_root: None,
         }
+    }
+
+    /// Lets each sync write fetched media under `root`.
+    #[must_use]
+    pub fn with_media_root(mut self, root: PathBuf) -> Self {
+        self.media_root = Some(root);
+        self
     }
 
     /// Runs one authenticated synchronization cycle and expires invalid sessions.
@@ -54,6 +64,10 @@ impl AppServices {
             Arc::clone(&self.api),   // clone: one sync engine shares the authenticated API resource
             cancellation,
         );
+        let engine = match &self.media_root {
+            Some(root) => engine.with_media_root(root.clone()), // clone: the engine owns its root for the run
+            None => engine,
+        };
         let outcome = engine.run(reason).await;
         if outcome == SyncOutcome::AuthenticationExpired {
             *auth_state = AuthState::Anonymous;

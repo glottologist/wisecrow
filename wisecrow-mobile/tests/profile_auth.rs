@@ -20,12 +20,13 @@ use wisecrow_dto::{
 use wisecrow_mobile::application::{
     ApiFactory, ContentRepository, CorpusRepository, CredentialStore, GrammarCursors,
     GrammarRepository, LearningRepository, LocalGrammarItem, LocalGrammarMastery, LocalGrammarRule,
-    LocalStore, MobileApi, MobileError, ProfileRepository, ProfileService, QueuedAttempt,
+    LocalStore, MissingExampleAudio, MobileApi, MobileError, ProfileRepository, ProfileService,
+    QueuedAttempt,
 };
 use wisecrow_mobile::auth::AuthState;
 use wisecrow_mobile::storage::models::{
-    LocalAnswer, LocalSession, LocalSessionRequest, MediaEntry, MediaRegistration, MediaType,
-    PairStatus, PairSyncState, Profile, ProfileIdentity, SyncErrorKind, SyncPhase,
+    LocalAnswer, LocalSession, LocalSessionRequest, MediaEntry, MediaOwner, MediaRegistration,
+    MediaType, PairStatus, PairSyncState, Profile, ProfileIdentity, SyncErrorKind, SyncPhase,
 };
 use wisecrow_mobile::storage::SqliteStore;
 use wisecrow_mobile::transport::ServerOrigin;
@@ -206,6 +207,13 @@ impl MobileApi for FakeApi {
     ) -> Result<GrammarMasteryChangePageDto, MobileError> {
         Err(MobileError::Unsupported)
     }
+    async fn fetch_media(
+        &self,
+        _request: &wisecrow_dto::MobileMediaRequestDto,
+    ) -> Result<wisecrow_dto::MobileMediaDto, MobileError> {
+        Err(MobileError::Unsupported)
+    }
+
     async fn upload_grammar_attempts(
         &self,
         _request: &GrammarAttemptBatchRequestDto,
@@ -466,7 +474,7 @@ impl ContentRepository for FakeStore {
     async fn media(
         &self,
         _media_root: &Path,
-        _translation_id: i32,
+        _owner: &MediaOwner,
         _media_type: MediaType,
         _accessed_at: DateTime<Utc>,
     ) -> Result<Option<MediaEntry>, MobileError> {
@@ -487,7 +495,7 @@ impl ContentRepository for FakeStore {
 
     async fn confirm_media_deleted(
         &self,
-        _translation_id: i32,
+        _owner: &MediaOwner,
         _media_type: MediaType,
     ) -> Result<(), MobileError> {
         Err(MobileError::Unsupported)
@@ -790,6 +798,17 @@ impl GrammarRepository for FakeStore {
         &self,
         _response: &GrammarAttemptBatchResponseDto,
     ) -> Result<(), MobileError> {
+        Err(MobileError::Unsupported)
+    }
+
+    async fn missing_example_audio(
+        &self,
+        _limit: u16,
+    ) -> Result<Vec<MissingExampleAudio>, MobileError> {
+        Err(MobileError::Unsupported)
+    }
+
+    async fn begin_example_backfill(&self, _language: &str) -> Result<bool, MobileError> {
         Err(MobileError::Unsupported)
     }
 }

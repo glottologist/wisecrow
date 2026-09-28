@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    path::PathBuf,
     sync::{Arc, Mutex, OnceLock, Weak},
 };
 
@@ -10,11 +11,12 @@ use uuid::Uuid;
 use wisecrow_dto::{
     CardChangeRequestDto, CorpusChangeRequestDto, CorpusSnapshotRequestDto,
     GrammarAttemptBatchRequestDto, GrammarBankChangeRequestDto, GrammarMasteryChangeRequestDto,
-    MobileCapabilitiesDto, MobileFeatureDto, NbackBatchRequestDto, NbackBatchResponseDto,
-    ReviewBatchRequestDto, ReviewBatchResponseDto, MOBILE_PROTOCOL_VERSION,
-    MOBILE_PROTOCOL_VERSION_V2,
+    MediaOwnerDto, MobileCapabilitiesDto, MobileFeatureDto, MobileMediaRequestDto,
+    MobileMediaTypeDto, NbackBatchRequestDto, NbackBatchResponseDto, ReviewBatchRequestDto,
+    ReviewBatchResponseDto, MOBILE_PROTOCOL_VERSION, MOBILE_PROTOCOL_VERSION_V2,
 };
 
+use super::media::publish_media;
 use crate::{
     application::{LocalStore, MobileApi, MobileError, QueuedAttempt},
     storage::models::{PairStatus, ProfileIdentity, SyncErrorKind, SyncPhase},
@@ -54,11 +56,19 @@ pub enum SyncOutcome {
     PermanentFailure,
 }
 
+/// What a version-2 server has agreed to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Negotiated {
+    grammar: bool,
+    media: bool,
+}
+
 /// Restart-safe coordinator for outbox uploads and authoritative downloads.
 pub struct SyncEngine {
     store: Arc<dyn LocalStore>,
     api: Arc<dyn MobileApi>,
     cancellation: Arc<CancellationToken>,
+    media_root: Option<PathBuf>,
 }
 
 impl SyncEngine {
@@ -72,7 +82,16 @@ impl SyncEngine {
             store: store.into(),
             api: api.into(),
             cancellation: cancellation.into(),
+            media_root: None,
         }
+    }
+
+    /// Where fetched clips are written. Without it, media is never
+    /// prefetched, which is what a build without a platform root gets.
+    #[must_use]
+    pub fn with_media_root(mut self, media_root: PathBuf) -> Self {
+        self.media_root = Some(media_root);
+        self
     }
 
     pub async fn run(&self, reason: SyncReason) -> SyncOutcome {
@@ -108,18 +127,21 @@ impl SyncEngine {
                 .await?;
             phase = SyncPhase::Reviews;
         }
-        let grammar = self.negotiate_grammar().await?;
+        let negotiated = self.negotiate().await?;
         phase = self
-            .run_upload_phases(phase, identity, &capabilities, grammar)
+            .run_upload_phases(phase, identity, &capabilities, negotiated.grammar)
             .await?;
         phase = self
-            .run_download_phases(phase, &capabilities, grammar)
+            .run_download_phases(phase, &capabilities, negotiated)
             .await?;
         if phase != SyncPhase::Finishing {
             return Err(invalid_state());
         }
         self.check_cancellation()?;
         self.store.record_sync_success(Utc::now()).await?;
+        if negotiated.media {
+            self.prefetch_example_audio(prefetch_limit(reason)).await;
+        }
         Ok(SyncOutcome::Complete {
             media_prefetch_limit: prefetch_limit(reason),
         })
@@ -131,18 +153,30 @@ impl SyncEngine {
     /// neither is one that answers without the grammar capabilities: the
     /// device then syncs vocabulary exactly as it always has and leaves
     /// grammar alone. Only a server that both answers and advertises all three
-    /// is taken at its word.
-    async fn negotiate_grammar(&self) -> Result<bool, MobileError> {
+    /// is taken at its word. Media rides on grammar: its clips belong to the
+    /// items the grammar feed delivers.
+    async fn negotiate(&self) -> Result<Negotiated, MobileError> {
+        const NEITHER: Negotiated = Negotiated {
+            grammar: false,
+            media: false,
+        };
         self.check_cancellation()?;
         let Some(capabilities) = self.api.capabilities_v2().await? else {
-            return Ok(false);
+            return Ok(NEITHER);
         };
         if capabilities.protocol_version != MOBILE_PROTOCOL_VERSION_V2 {
-            return Ok(false);
+            return Ok(NEITHER);
         }
-        Ok(GRAMMAR_FEATURES
+        let grammar = GRAMMAR_FEATURES
             .iter()
-            .all(|feature| capabilities.supported_features.contains(feature)))
+            .all(|feature| capabilities.supported_features.contains(feature));
+        Ok(Negotiated {
+            grammar,
+            media: grammar
+                && capabilities
+                    .supported_features
+                    .contains(&MobileFeatureDto::MediaFetch),
+        })
     }
 
     async fn run_upload_phases(
@@ -182,7 +216,7 @@ impl SyncEngine {
         &self,
         mut phase: SyncPhase,
         capabilities: &MobileCapabilitiesDto,
-        grammar: bool,
+        negotiated: Negotiated,
     ) -> Result<SyncPhase, MobileError> {
         if phase == SyncPhase::Cards {
             self.pull_cards(capabilities.max_snapshot_page).await?;
@@ -203,8 +237,8 @@ impl SyncEngine {
             phase = SyncPhase::GrammarBank;
         }
         if phase == SyncPhase::GrammarBank {
-            if grammar {
-                self.pull_grammar_bank(capabilities.max_snapshot_page)
+            if negotiated.grammar {
+                self.pull_grammar_bank(capabilities.max_snapshot_page, negotiated.media)
                     .await?;
             }
             self.advance_phase(SyncPhase::GrammarBank, SyncPhase::GrammarMastery)
@@ -212,7 +246,7 @@ impl SyncEngine {
             phase = SyncPhase::GrammarMastery;
         }
         if phase == SyncPhase::GrammarMastery {
-            if grammar {
+            if negotiated.grammar {
                 self.pull_grammar_mastery(capabilities.max_snapshot_page)
                     .await?;
             }
@@ -328,9 +362,12 @@ impl SyncEngine {
         }
     }
 
-    async fn pull_grammar_bank(&self, server_limit: u16) -> Result<(), MobileError> {
+    async fn pull_grammar_bank(&self, server_limit: u16, media: bool) -> Result<(), MobileError> {
         let limit = bounded_limit(server_limit)?;
         for language in self.grammar_languages().await? {
+            if media && self.store.begin_example_backfill(&language).await? {
+                tracing::info!(language, "re-pulling the grammar bank to pick up examples");
+            }
             loop {
                 self.check_cancellation()?;
                 let cursors = self.store.grammar_cursors(&language).await?;
@@ -350,6 +387,49 @@ impl SyncEngine {
             }
         }
         Ok(())
+    }
+
+    /// Fetches the clips stored items name and the store lacks, up to
+    /// `limit`. Nothing here can fail the sync: a clip not fetched is asked
+    /// for again next time, because the want-list is derived from what is
+    /// stored rather than from the pages just applied.
+    async fn prefetch_example_audio(&self, limit: u16) {
+        let Some(media_root) = self.media_root.as_deref() else {
+            return;
+        };
+        let missing = match self.store.missing_example_audio(limit).await {
+            Ok(missing) => missing,
+            Err(error) => {
+                tracing::warn!(%error, "could not list missing example audio");
+                return;
+            }
+        };
+        for clip in missing {
+            // Cancellation ends the prefetch quietly: the sync itself has
+            // already succeeded, and the clips wait for the next one.
+            if self.cancellation.is_cancelled() {
+                return;
+            }
+            let request = MobileMediaRequestDto {
+                protocol_version: MOBILE_PROTOCOL_VERSION_V2,
+                owner: MediaOwnerDto::Sentence {
+                    fingerprint: clip.fingerprint.clone(), // clone: the request owns its name
+                },
+                media_type: MobileMediaTypeDto::Audio,
+            };
+            let served = match self.api.fetch_media(&request).await {
+                Ok(served) => served,
+                Err(error) => {
+                    tracing::warn!(%error, fingerprint = %clip.fingerprint, "example audio fetch failed");
+                    continue;
+                }
+            };
+            if let Err(error) =
+                publish_media(self.store.as_ref(), media_root, &served, Utc::now()).await
+            {
+                tracing::warn!(%error, fingerprint = %clip.fingerprint, "example audio could not be stored");
+            }
+        }
     }
 
     async fn pull_grammar_mastery(&self, server_limit: u16) -> Result<(), MobileError> {

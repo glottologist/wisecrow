@@ -98,6 +98,18 @@ async fn seed_item(db: &PgPool, slug: &str, status: &str) -> (i32, i32) {
     .await
     .expect("rule");
 
+    // Before the item exists, so the example trigger of migration 035 has
+    // no active item to report and the feed still holds exactly two events.
+    sqlx::query(
+        "INSERT INTO rule_examples (rule_id, sentence, translation, is_correct)
+         VALUES ($1, 'Estoy cansado.', 'I am tired.', TRUE),
+                ($1, 'Soy cansado.', 'I am tired.', FALSE)",
+    )
+    .bind(rule_id)
+    .execute(db)
+    .await
+    .expect("examples");
+
     let item_id: i32 = sqlx::query_scalar(
         "INSERT INTO quiz_items (rule_id, kind, prompt, answer, accepted, status, content_sha256)
          VALUES ($1, 'cloze', 'Yo ___ cansado.', $2, '[\"estoy mal\"]'::jsonb, $3, $4)
@@ -172,6 +184,19 @@ async fn version_two_feeds_paginate_and_uploads_apply_once() {
     assert_eq!(item.answer.as_deref(), Some(ANSWER));
     assert_eq!(item.accepted, vec![String::from("estoy mal")]);
     assert_eq!(item.language, "es");
+    assert_eq!(
+        item.examples
+            .iter()
+            .map(|example| example.sentence.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Estoy cansado."],
+        "a bank item carries its correct examples and never an incorrect one"
+    );
+    let fingerprint = item.examples[0]
+        .audio_fingerprint
+        .clone()
+        .expect("a server built with audio names the clip");
+    assert_eq!(fingerprint.len(), 64);
 
     let rest: GrammarBankChangePageDto = response_json(
         post(
@@ -190,6 +215,89 @@ async fn version_two_feeds_paginate_and_uploads_apply_once() {
         rest.changes[0].item.is_none(),
         "an unpromoted item is reported but never handed over"
     );
+
+    // An edited example is a bank change for every active item of its rule.
+    sqlx::query(
+        "UPDATE rule_examples SET sentence = 'Estoy cansada.'
+         WHERE rule_id = (SELECT rule_id FROM quiz_items WHERE id = $1) AND is_correct",
+    )
+    .bind(active_item)
+    .execute(db)
+    .await
+    .expect("edit example");
+    let edited: GrammarBankChangePageDto = response_json(
+        post(
+            "/api/mobile/v2/grammar/bank/changes",
+            json!({"request": {"protocol_version": MOBILE_PROTOCOL_VERSION_V2, "language": "es",
+                   "cursor": rest.next_cursor, "limit": 100}}),
+            &token,
+        )
+        .await,
+        "page after an example edit",
+    )
+    .await;
+    assert_eq!(
+        edited.changes.len(),
+        1,
+        "one event per active item, not per example"
+    );
+    assert_eq!(edited.changes[0].item_id, active_item);
+    let refreshed = edited.changes[0]
+        .item
+        .as_ref()
+        .expect("the item travels again");
+    assert_eq!(refreshed.examples[0].sentence, "Estoy cansada.");
+    assert_ne!(
+        refreshed.examples[0].audio_fingerprint,
+        Some(fingerprint),
+        "a changed sentence names a different clip"
+    );
+
+    // Media: a fingerprint the server does not hold is unknown, whatever the
+    // client says about it; a wrong protocol is a conflict; a sentence has
+    // no picture.
+    let unknown = post(
+        "/api/mobile/v2/media/fetch",
+        json!({"request": {"protocol_version": MOBILE_PROTOCOL_VERSION_V2,
+               "owner": {"Sentence": {"fingerprint": "0".repeat(64)}}, "media_type": "Audio"}}),
+        &token,
+    )
+    .await;
+    assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
+    let conflict = post(
+        "/api/mobile/v2/media/fetch",
+        json!({"request": {"protocol_version": 1,
+               "owner": {"Translation": {"id": 1}}, "media_type": "Audio"}}),
+        &token,
+    )
+    .await;
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+    let no_picture = post(
+        "/api/mobile/v2/media/fetch",
+        json!({"request": {"protocol_version": MOBILE_PROTOCOL_VERSION_V2,
+               "owner": {"Sentence": {"fingerprint": "0".repeat(64)}}, "media_type": "Image"}}),
+        &token,
+    )
+    .await;
+    assert_eq!(no_picture.status(), StatusCode::BAD_REQUEST);
+    let unknown_translation = post(
+        "/api/mobile/v2/media/fetch",
+        json!({"request": {"protocol_version": MOBILE_PROTOCOL_VERSION_V2,
+               "owner": {"Translation": {"id": i32::MAX}}, "media_type": "Audio"}}),
+        &token,
+    )
+    .await;
+    assert_eq!(unknown_translation.status(), StatusCode::NOT_FOUND);
+    let anonymous = Request::post("/api/mobile/v2/media/fetch")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({"request": {"protocol_version": MOBILE_PROTOCOL_VERSION_V2,
+                   "owner": {"Translation": {"id": 1}}, "media_type": "Audio"}})
+            .to_string(),
+        ))
+        .expect("request");
+    let anonymous = build_router().oneshot(anonymous).await.expect("response");
+    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
 
     // A batch of one answer, uploaded twice.
     let session_id = Uuid::new_v4();

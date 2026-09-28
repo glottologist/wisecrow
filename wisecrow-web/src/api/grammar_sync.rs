@@ -74,7 +74,8 @@ mod implementation {
         GrammarAttemptBatchRequestDto, GrammarAttemptBatchResponseDto, GrammarBankChangeDto,
         GrammarBankChangePageDto, GrammarBankChangeRequestDto, GrammarChangeOperationDto,
         GrammarMasteryChangeDto, GrammarMasteryChangePageDto, GrammarMasteryChangeRequestDto,
-        OfflineAttemptDto, OfflineAttemptStatusDto, VerdictDto, MOBILE_PROTOCOL_VERSION_V2,
+        OfflineAttemptDto, OfflineAttemptStatusDto, OfflineGrammarItemDto, VerdictDto,
+        MOBILE_PROTOCOL_VERSION_V2,
     };
     use wisecrow_learning::grading::{Answer, Submission};
 
@@ -106,8 +107,25 @@ mod implementation {
         let items = bank_items(db, &wanted)
             .await
             .map_err(|error| crate::server::internal_error("grammar bank hydration", &error))?;
-        let mut held: HashMap<i32, _> =
-            items.into_iter().map(|item| (item.item_id, item)).collect();
+        let rule_ids: Vec<i32> = items.iter().map(|item| item.rule_id).collect();
+        let examples =
+            wisecrow::grammar::rules::RuleRepository::correct_examples_for_rules(db, &rule_ids)
+                .await
+                .map_err(|error| {
+                    crate::server::internal_error("grammar example hydration", &error)
+                })?;
+        let fingerprint = example_fingerprint()?;
+        let (ids, dtos): (Vec<i32>, Vec<OfflineGrammarItemDto>) = items
+            .iter()
+            .map(|item| {
+                (
+                    item.item_id,
+                    wisecrow::dto_convert::offline_grammar_item(item),
+                )
+            })
+            .unzip();
+        let dtos = wisecrow::dto_convert::offline_with_examples(dtos, &examples, &*fingerprint);
+        let mut held: HashMap<i32, OfflineGrammarItemDto> = ids.into_iter().zip(dtos).collect();
 
         let changes = page
             .changes
@@ -116,9 +134,7 @@ mod implementation {
                 sequence: change.sequence,
                 item_id: change.item_id,
                 operation: operation(change.operation),
-                item: held
-                    .remove(&change.item_id)
-                    .map(|item| wisecrow::dto_convert::offline_grammar_item(&item)),
+                item: held.remove(&change.item_id),
             })
             .collect();
 
@@ -326,6 +342,31 @@ mod implementation {
 
     fn bad_request(message: &str) -> ServerFnError {
         crate::server::client_error(StatusCode::BAD_REQUEST, message)
+    }
+
+    /// Names the clip a sentence in a language would have.
+    type Fingerprinter = Box<dyn Fn(&str, &str) -> Option<String>>;
+
+    /// The clip each sentence would have under this server's voice, or
+    /// `None` where the build cannot voice anything.
+    fn example_fingerprint() -> Result<Fingerprinter, ServerFnError> {
+        #[cfg(feature = "audio")]
+        {
+            use wisecrow::media::grammar_audio::SentenceSpeaker as _;
+            let speaker = wisecrow::media::grammar_audio::TtsSpeaker::new(
+                wisecrow::media::cereproc::CereprocClient::from_config(
+                    &crate::api::media::app_config()?,
+                ),
+            );
+            Ok(Box::new(move |language, sentence| {
+                speaker
+                    .fingerprint(language, sentence)
+                    .ok()
+                    .map(|fingerprint| fingerprint.as_str().to_owned())
+            }))
+        }
+        #[cfg(not(feature = "audio"))]
+        Ok(Box::new(|_, _| None))
     }
 
     fn validate_protocol(protocol_version: u16) -> Result<(), ServerFnError> {

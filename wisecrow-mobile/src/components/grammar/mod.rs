@@ -117,6 +117,7 @@ mod tests {
             answer: Some(String::from("estoy")),
             accepted: Vec::new(),
             correct_option: None,
+            examples: Vec::new(),
         }
     }
 

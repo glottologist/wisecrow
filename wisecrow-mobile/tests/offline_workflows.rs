@@ -11,7 +11,8 @@ use wisecrow_mobile::application::{
     ContentRepository, CorpusRepository, LearningRepository, ProfileRepository,
 };
 use wisecrow_mobile::storage::models::{
-    LocalAnswer, LocalSessionRequest, MediaRegistration, MediaType, Profile, ProfileIdentity,
+    LocalAnswer, LocalSessionRequest, MediaOwner, MediaRegistration, MediaType, Profile,
+    ProfileIdentity,
 };
 use wisecrow_mobile::storage::SqliteStore;
 
@@ -153,7 +154,13 @@ async fn assert_media_lru(
     store
         .register_media(
             &media_root,
-            &media(1, MediaType::Audio, "one.mp3", 3, started_at),
+            &media(
+                MediaOwner::Translation(1),
+                MediaType::Audio,
+                "one.mp3",
+                3,
+                started_at,
+            ),
         )
         .await
         .expect("register first media");
@@ -161,7 +168,7 @@ async fn assert_media_lru(
         .register_media(
             &media_root,
             &media(
-                2,
+                MediaOwner::Translation(2),
                 MediaType::Image,
                 "two.jpg",
                 7,
@@ -174,14 +181,14 @@ async fn assert_media_lru(
     assert_eq!(
         entries
             .iter()
-            .map(|entry| entry.translation_id)
+            .map(|entry| entry.owner.clone()) // clone: comparing owned owners
             .collect::<Vec<_>>(),
-        vec![1, 2]
+        vec![MediaOwner::Translation(1), MediaOwner::Translation(2)]
     );
     store
         .media(
             &media_root,
-            1,
+            &MediaOwner::Translation(1),
             MediaType::Audio,
             started_at + Duration::seconds(2),
         )
@@ -194,16 +201,16 @@ async fn assert_media_lru(
             .await
             .expect("updated LRU")
             .first()
-            .map(|entry| entry.translation_id),
-        Some(2)
+            .map(|entry| entry.owner.clone()), // clone: comparing an owned owner
+        Some(MediaOwner::Translation(2))
     );
     let candidates = store
         .eviction_candidates(&media_root, 1)
         .await
         .expect("eviction candidates");
     assert_eq!(
-        candidates.first().map(|entry| entry.translation_id),
-        Some(2)
+        candidates.first().map(|entry| &entry.owner),
+        Some(&MediaOwner::Translation(2))
     );
     let retained: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM media_cache")
         .fetch_one(store.pool())
@@ -213,7 +220,7 @@ async fn assert_media_lru(
     let candidate = candidates.first().expect("candidate");
     std::fs::remove_file(&candidate.path).expect("platform deletion");
     store
-        .confirm_media_deleted(candidate.translation_id, candidate.media_type)
+        .confirm_media_deleted(&candidate.owner, candidate.media_type)
         .await
         .expect("confirm deletion");
     let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM media_cache")
@@ -224,18 +231,19 @@ async fn assert_media_lru(
 }
 
 fn media(
-    translation_id: i32,
+    owner: MediaOwner,
     media_type: MediaType,
     file_name: &str,
     byte_length: u64,
     last_accessed_at: chrono::DateTime<Utc>,
 ) -> MediaRegistration {
     MediaRegistration {
-        translation_id,
+        owner,
         media_type,
         file_name: String::from(file_name),
         byte_length,
         attribution: None,
+        fingerprint: None,
         last_accessed_at,
     }
 }
@@ -513,6 +521,7 @@ mod grammar_round_trip {
             answer: Some(String::from("estoy")),
             accepted: Vec::new(),
             correct_option: None,
+            examples: Vec::new(),
         }
     }
 
@@ -680,6 +689,13 @@ mod grammar_round_trip {
                 next_cursor,
                 has_more: false,
             })
+        }
+
+        async fn fetch_media(
+            &self,
+            _request: &wisecrow_dto::MobileMediaRequestDto,
+        ) -> Result<wisecrow_dto::MobileMediaDto, MobileError> {
+            Err(MobileError::Unsupported)
         }
 
         async fn upload_grammar_attempts(

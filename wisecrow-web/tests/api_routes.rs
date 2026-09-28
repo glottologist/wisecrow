@@ -182,6 +182,7 @@ async fn version_one_discovery_is_unchanged_by_version_two() {
         MobileFeatureDto::GrammarBankSync,
         MobileFeatureDto::GrammarMasterySync,
         MobileFeatureDto::GrammarAttemptUpload,
+        MobileFeatureDto::MediaFetch,
     ] {
         assert!(
             v2.supported_features.contains(&feature),
