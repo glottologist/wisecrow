@@ -136,7 +136,8 @@
     "DATABASE_URL": "postgresql://localhost/wisecrow_dev",
     "WISECROW__DB_URL": "postgresql://localhost/wisecrow_dev",
     "OPENSSL_DIR": "$PWD/.devbox/nix/profile/default",
-    "PKG_CONFIG_PATH": "$PWD/.devbox/nix/profile/default/lib/pkgconfig"
+    "PKG_CONFIG_PATH": "$PWD/.devbox/nix/profile/default/lib/pkgconfig",
+    "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER": "clang"
   },
   "nixpkgs": {
     "commit": "af9e00071d0971eb292fd5abef334e66eda3cb69"

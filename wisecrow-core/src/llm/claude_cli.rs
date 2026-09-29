@@ -94,6 +94,31 @@ struct CliResult {
     result: Option<String>,
 }
 
+/// The ceiling the CLI is given for one answer.
+///
+/// On the Messages API a budget the answer overruns comes back as a truncated
+/// body with `stop_reason: "max_tokens"`, which the caller can still inspect.
+/// Claude Code turns the same overrun into a hard failure -- `API Error:
+/// Claude's response exceeded the 2048 output token maximum` -- and the whole
+/// call is lost; the first production import on 2026-09-29 lost chunks of two
+/// Gaelic grammars that way. The caller's budget is therefore an expectation
+/// rather than a wall: the CLI is given four times it, floored at 8 192 and
+/// capped at 32 000, and an answer that overruns even that is still reported
+/// against the caller's own figure.
+fn output_ceiling(max_tokens: u32) -> u32 {
+    max_tokens.saturating_mul(4).clamp(8_192, 32_000)
+}
+
+/// The one error every caller must be able to tell apart, since a cut answer
+/// reaches the parser as a syntax error naming a line and column in text
+/// nobody kept.
+fn truncated(max_tokens: u32) -> WisecrowError {
+    WisecrowError::LlmError(format!(
+        "Claude Code CLI stopped at the max_tokens ceiling of {max_tokens}: the answer is \
+         truncated, not malformed. Ask for less in one call or raise the budget."
+    ))
+}
+
 /// Turns a finished run into the model's answer.
 ///
 /// `code` is the child's exit status, `None` when a signal killed it.
@@ -130,6 +155,12 @@ fn read_answer(
 
     let answer = parsed.result.unwrap_or_default();
     if parsed.is_error {
+        // The CLI reports an overrun of CLAUDE_CODE_MAX_OUTPUT_TOKENS as an
+        // API error rather than as a stop reason, so both routes to a cut
+        // answer have to be recognised here.
+        if answer.contains("output token maximum") {
+            return Err(truncated(max_tokens));
+        }
         return Err(WisecrowError::LlmError(format!(
             "Claude Code CLI run failed: {}",
             if answer.trim().is_empty() {
@@ -140,10 +171,7 @@ fn read_answer(
         )));
     }
     if parsed.stop_reason.as_deref() == Some("max_tokens") {
-        return Err(WisecrowError::LlmError(format!(
-            "Claude Code CLI stopped at the max_tokens ceiling of {max_tokens}: the answer is \
-             truncated, not malformed. Ask for less in one call or raise the budget."
-        )));
+        return Err(truncated(max_tokens));
     }
     if answer.trim().is_empty() {
         return Err(WisecrowError::LlmError(
@@ -196,7 +224,17 @@ impl LlmProvider for ClaudeCliProvider {
             // The deployment's service user has no home directory, and the CLI
             // writes its own state beside the credentials it is not storing.
             .env("HOME", &self.config_dir)
-            .env("CLAUDE_CODE_MAX_OUTPUT_TOKENS", max_tokens.to_string())
+            .env(
+                "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+                output_ceiling(max_tokens).to_string(),
+            )
+            // Parity with the Anthropic provider, which disables thinking for
+            // the same reason: every prompt here asks for a fixed JSON shape,
+            // thinking draws on the same output budget as the answer, and it
+            // lengthens a call that already runs for minutes on a document
+            // chunk. Measured 2026-09-29 on one grammar prompt: 18 thinking
+            // tokens by default against 0 with this set.
+            .env("MAX_THINKING_TOKENS", "0")
             .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
             // Both outrank the OAuth token in the CLI's credential order, so
             // leaving either in place would silently bill Console credits --
@@ -283,6 +321,28 @@ mod tests {
             error.to_string().contains("max_tokens ceiling of 512"),
             "truncation should name the budget: {error}"
         );
+    }
+
+    #[test]
+    fn an_overrun_reported_as_an_api_error_reads_as_truncation() {
+        let stdout = result_json(
+            "\"is_error\":true,\"result\":\"API Error: Claude's response exceeded the 8192 output \
+             token maximum. To configure this behavior, set the CLAUDE_CODE_MAX_OUTPUT_TOKENS \
+             environment variable.\"",
+        );
+        let error = read_answer(&stdout, b"", Some(0), 2048).expect_err("an overrun must not pass");
+        assert!(
+            error.to_string().contains("max_tokens ceiling of 2048"),
+            "an overrun should read as truncation against the caller's budget: {error}"
+        );
+    }
+
+    #[test]
+    fn the_cli_budget_leaves_room_above_the_caller_s() {
+        assert_eq!(output_ceiling(2048), 8_192);
+        assert_eq!(output_ceiling(4096), 16_384);
+        assert_eq!(output_ceiling(16_384), 32_000);
+        assert_eq!(output_ceiling(u32::MAX), 32_000);
     }
 
     #[test]
