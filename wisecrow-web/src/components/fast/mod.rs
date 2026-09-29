@@ -2,7 +2,7 @@ mod playback;
 
 use dioxus::prelude::*;
 
-use wisecrow_dto::{FastDeckDto, SpeedController};
+use wisecrow_dto::{FastDeckDto, SpeedController, MAX_DECK_SIZE};
 
 use crate::api::learn::create_fast_deck;
 use crate::api::media::{get_audio_data, get_image_data};
@@ -11,6 +11,7 @@ use crate::components::learn::preload::{self, CardChannels, ImageReady};
 use self::playback::{Command, Event as PlaybackEvent, PlayStatus, RunMode};
 
 const FAST_DECK_SIZE: u32 = 100;
+const FAST_SIZE_PRESETS: [u32; 4] = [25, 50, 100, 250];
 const FAST_SPEED_MS: u32 = 2000;
 const TICK_INTERVAL_MS: u64 = 100;
 const PRELOAD_WINDOW: usize = 10;
@@ -28,6 +29,17 @@ async fn async_sleep(ms: u64) {
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "server")))]
 async fn async_sleep(ms: u64) {
     std::thread::sleep(std::time::Duration::from_millis(ms));
+}
+
+fn requested_size(custom: &str, preset: u32) -> Result<u32, String> {
+    let typed = custom.trim();
+    if typed.is_empty() {
+        return Ok(preset);
+    }
+    match typed.parse::<u32>() {
+        Ok(size) if (1..=MAX_DECK_SIZE).contains(&size) => Ok(size),
+        _ => Err(format!("Choose a number between 1 and {MAX_DECK_SIZE}")),
+    }
 }
 
 fn apply_playback(mut playback: Signal<playback::Playback>, event: PlaybackEvent) {
@@ -62,31 +74,42 @@ pub fn FastPage(native: String, foreign: String) -> Element {
     let mut deck: Signal<Option<FastDeckDto>> = use_signal(|| None);
     let mut current_index = use_signal(|| 0usize);
     let mut speed = use_signal(|| SpeedController::new(FAST_SPEED_MS));
-    let mut loading = use_signal(|| true);
+    let mut loading = use_signal(|| false);
     let mut error_msg: Signal<Option<String>> = use_signal(|| None);
     let mut media: Signal<std::collections::HashMap<usize, CardChannels>> =
         use_signal(std::collections::HashMap::new);
+    let mut media_generation = use_signal(|| 0u64);
     let mut playback_state = use_signal(playback::initial);
 
-    let native_clone = native.clone(); // clone: need owned copies for async closure
-    let foreign_clone = foreign.clone(); // clone: need owned copies for async closure
+    let mut preset_size = use_signal(|| FAST_DECK_SIZE);
+    let mut custom_size = use_signal(String::new);
+    // Signals rather than the props themselves so the start handler stays
+    // `Copy` and can serve both buttons.
+    let native = use_signal(|| native);
+    let foreign = use_signal(|| foreign);
 
-    use_future(move || {
-        let native = native_clone.clone(); // clone: moving into async block
-        let foreign = foreign_clone.clone(); // clone: moving into async block
-        async move {
-            match create_fast_deck(native, foreign, FAST_DECK_SIZE).await {
-                Ok(d) => deck.set(Some(d)),
+    let start_run = move |event: PlaybackEvent| {
+        let Ok(size) = requested_size(&custom_size.read(), preset_size()) else {
+            return;
+        };
+        loading.set(true);
+        spawn(async move {
+            match create_fast_deck(native(), foreign(), size).await {
+                Ok(d) => {
+                    deck.set(Some(d));
+                    apply_playback(playback_state, event);
+                }
                 Err(e) => error_msg.set(Some(format!("Failed to load deck: {e}"))),
             }
             loading.set(false);
-        }
-    });
+        });
+    };
 
     use_effect(move || {
         let d = deck();
         let idx = current_index();
         let Some(ref d) = d else { return };
+        let generation = *media_generation.peek();
         let tracked: std::collections::HashSet<usize> = media.read().keys().copied().collect();
         for stale in preload::indices_to_evict(&tracked, idx, PRELOAD_WINDOW) {
             media.write().remove(&stale);
@@ -102,6 +125,9 @@ pub fn FastPage(native: String, foreign: String) -> Element {
                 .insert(fetch_index, CardChannels::begin(fetch_image));
             spawn(async move {
                 let audio = get_audio_data(tid).await.map_err(|_| ());
+                if generation != *media_generation.peek() {
+                    return;
+                }
                 if fetch_index == current_index() {
                     let event = match &audio {
                         Ok(url) => PlaybackEvent::AudioReady(url.clone()), // clone: reducer owns the URL
@@ -121,6 +147,9 @@ pub fn FastPage(native: String, foreign: String) -> Element {
                         Ok(None) => Ok(None),
                         Err(_) => Err(()),
                     };
+                    if generation != *media_generation.peek() {
+                        return;
+                    }
                     preload::publish_image(&mut media.write(), fetch_index, image);
                 });
             }
@@ -166,8 +195,69 @@ pub fn FastPage(native: String, foreign: String) -> Element {
     }
 
     let Some(d) = deck() else {
+        let choice = requested_size(&custom_size.read(), preset_size());
+        let size_ok = choice.is_ok();
+        let size_error = choice.err();
+        let typed_custom = !custom_size.read().trim().is_empty();
         return rsx! {
-            div { class: "text-center text-gray-400 text-xl py-20", "No cards available." }
+            div { class: "max-w-2xl mx-auto",
+                div { class: "bg-gray-800 rounded-xl p-8 space-y-6",
+                    h2 { class: "text-2xl font-bold text-cyan-400", "Fast download" }
+                    p { class: "text-sm text-gray-400",
+                        "Choose how many common words and phrases to include."
+                    }
+                    div { class: "flex flex-wrap justify-center gap-3",
+                        for preset in FAST_SIZE_PRESETS {
+                            button {
+                                key: "{preset}",
+                                aria_pressed: preset == preset_size() && !typed_custom,
+                                class: if preset == preset_size() && !typed_custom { "bg-cyan-700 rounded px-5 py-2 font-semibold" } else { "bg-gray-700 hover:bg-gray-600 rounded px-5 py-2 transition" },
+                                onclick: move |_| {
+                                    preset_size.set(preset);
+                                    custom_size.set(String::new());
+                                },
+                                "{preset}"
+                            }
+                        }
+                    }
+                    div { class: "flex items-center justify-center gap-2",
+                        label { r#for: "fast-size", class: "text-sm text-gray-400", "or choose" }
+                        input {
+                            id: "fast-size",
+                            r#type: "number",
+                            min: "1",
+                            max: "{MAX_DECK_SIZE}",
+                            placeholder: "1–{MAX_DECK_SIZE}",
+                            class: "bg-gray-700 rounded px-3 py-2 w-24 text-center",
+                            value: "{custom_size}",
+                            oninput: move |event| custom_size.set(event.value()),
+                        }
+                    }
+                    if let Some(problem) = size_error {
+                        p { class: "text-center text-sm text-red-400", "{problem}" }
+                    }
+                    div { class: "flex flex-col items-center gap-3",
+                        button {
+                            class: "bg-cyan-700 hover:bg-cyan-600 rounded px-6 py-3 font-semibold",
+                            disabled: !size_ok,
+                            onclick: move |_| {
+                                let mut run = start_run;
+                                run(PlaybackEvent::StartWithSound);
+                            },
+                            "Start with sound"
+                        }
+                        button {
+                            class: "bg-gray-700 hover:bg-gray-600 rounded px-6 py-3 font-semibold",
+                            disabled: !size_ok,
+                            onclick: move |_| {
+                                let mut run = start_run;
+                                run(PlaybackEvent::StartWithoutSound);
+                            },
+                            "Start without sound"
+                        }
+                    }
+                }
+            }
         };
     };
 
@@ -188,6 +278,9 @@ pub fn FastPage(native: String, foreign: String) -> Element {
                 button {
                     class: "bg-cyan-700 hover:bg-cyan-600 rounded px-6 py-3 font-semibold transition",
                     onclick: move |_| {
+                        media_generation.set(media_generation().wrapping_add(1));
+                        media.write().clear();
+                        deck.set(None);
                         current_index.set(0);
                         speed.write().reset();
                         playback_state.set(playback::initial());
@@ -302,8 +395,39 @@ pub fn FastPage(native: String, foreign: String) -> Element {
 #[cfg(test)]
 mod tests {
     use dioxus::dioxus_core::ReactiveContext;
+    use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case("", 25, 25)]
+    #[case(" \t\n", 250, 250)]
+    #[case("1", 100, 1)]
+    #[case("50", 100, 50)]
+    #[case("500", 100, MAX_DECK_SIZE)]
+    #[case(" 42 ", 100, 42)]
+    fn requested_size_uses_preset_or_valid_custom(
+        #[case] custom: &str,
+        #[case] preset: u32,
+        #[case] expected: u32,
+    ) {
+        assert_eq!(requested_size(custom, preset), Ok(expected));
+    }
+
+    #[rstest]
+    #[case("0")]
+    #[case("501")]
+    #[case("abc")]
+    #[case("-1")]
+    #[case("1.5")]
+    #[case("4294967296")]
+    #[case("五十")]
+    fn requested_size_rejects_invalid_custom(#[case] custom: &str) {
+        assert_eq!(
+            requested_size(custom, FAST_DECK_SIZE),
+            Err(format!("Choose a number between 1 and {MAX_DECK_SIZE}"))
+        );
+    }
 
     #[test]
     fn source_change_does_not_reschedule_its_dispatching_effect() {

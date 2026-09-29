@@ -155,7 +155,7 @@ async fn prune_removes_only_what_no_kept_fingerprint_names() -> TestResult {
         })
         .await?;
 
-    let pruned = cache.prune_sentences(&[kept.clone()]).await?;
+    let pruned = cache.prune_sentences(std::slice::from_ref(&kept)).await?;
 
     assert_eq!(pruned, 1);
     assert!(kept_path.is_file());

@@ -10,7 +10,7 @@ wisecrow-learning = { path = "../wisecrow-learning" }
 async-trait = "0.1"
 base64 = "0.22"
 chrono = { version = ">=0.4,<0.4.44", features = ["serde"] }
-dioxus = { version = "=0.7.9", features = ["router", "fullstack"] }
+dioxus = { version = "=0.7.9", features = ["router"] }
 manganis = "=0.7.9"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"

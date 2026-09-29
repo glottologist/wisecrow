@@ -142,8 +142,11 @@ internal class CertificateStore(root: File) : CertificateRepository {
     }
 
     private fun readBounded(target: File): ByteArray? = try {
-        if (Files.size(target.toPath()) > MAX_CERTIFICATE_BYTES.toLong()) return null
-        Files.readAllBytes(target.toPath()).takeIf { it.size <= MAX_CERTIFICATE_BYTES }
+        if (Files.size(target.toPath()) > MAX_CERTIFICATE_BYTES.toLong()) {
+            null
+        } else {
+            Files.readAllBytes(target.toPath()).takeIf { it.size <= MAX_CERTIFICATE_BYTES }
+        }
     } catch (_: IOException) {
         null
     } catch (_: SecurityException) {

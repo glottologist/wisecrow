@@ -1,0 +1,14 @@
+beforeProject { project ->
+    project.buildscript.configurations.configureEach {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "org.jetbrains.kotlin" && requested.name == "kotlin-gradle-plugin") {
+                useVersion("2.2.21")
+                because("OkHttp 5.3 requires Kotlin 2.2 metadata support")
+            }
+            if (requested.group == "com.android.tools.build" && requested.name == "gradle") {
+                useVersion("8.10.1")
+                because("Match the platform module's Android plugin and Kotlin 2.2 toolchain")
+            }
+        }
+    }
+}

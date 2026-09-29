@@ -22,6 +22,9 @@ pub fn channel_ratio(correct: u32, total: u32) -> f32 {
     correct / total
 }
 
+/// Largest deck a learning or fast run may request.
+pub const MAX_DECK_SIZE: u32 = 500;
+
 /// One item in a passive fast-mode deck.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FastCardDto {

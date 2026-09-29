@@ -174,23 +174,25 @@ internal class SecureHttpClient(
         spec: HttpRequestSpec,
         url: HttpUrl,
         tlsAttempt: TlsAttempt,
-    ): Request? = try {
-        val builder = Request.Builder().url(url).tag(TlsAttempt::class.java, tlsAttempt)
-        spec.headers.forEach { (name, value) ->
-            if (forbiddenRequestHeader(name)) return null
-            builder.addHeader(name, value)
-        }
-        when (spec.method) {
-            "GET" -> {
-                if (spec.body.isNotEmpty()) return null
-                builder.get()
+    ): Request? {
+        return try {
+            val builder = Request.Builder().url(url).tag(TlsAttempt::class.java, tlsAttempt)
+            spec.headers.forEach { (name, value) ->
+                if (forbiddenRequestHeader(name)) return null
+                builder.addHeader(name, value)
             }
-            "POST" -> builder.post(spec.body.toRequestBody())
-            else -> return null
+            when (spec.method) {
+                "GET" -> {
+                    if (spec.body.isNotEmpty()) return null
+                    builder.get()
+                }
+                "POST" -> builder.post(spec.body.toRequestBody())
+                else -> return null
+            }
+            builder.build()
+        } catch (_: IllegalArgumentException) {
+            null
         }
-        builder.build()
-    } catch (_: IllegalArgumentException) {
-        null
     }
 
     private fun clientFor(

@@ -9,7 +9,7 @@ use crate::srs::scheduler::{CardManager, CardState, ReviewRating};
 use crate::vocabulary::VocabularyQuery;
 
 /// Largest deck accepted by normal and passive learning sessions.
-pub const MAX_DECK_SIZE: u32 = 500;
+pub use wisecrow_dto::MAX_DECK_SIZE;
 /// Stable validation message shared by core and HTTP boundaries.
 pub const DECK_SIZE_ERROR: &str = "Deck size must be between 1 and 500";
 
