@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-b3a40e7b.js";
+            window.path_to_searchindex_js = "../searchindex-2f7f9212.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-a32f9be8.js"></script>
@@ -187,16 +187,16 @@ described below before it can sign in, download lessons or work offline.</p>
 on the workstation where the repository lives; calypso continues to run the
 server. The Android build does not require a local PostgreSQL database.</p>
 <h2 id="current-readiness"><a class="header" href="#current-readiness">Current readiness</a></h2>
-<p><strong>Checked on 28 September 2026: no working APK installation has been verified.</strong>
-These are application gaps, so installing more SDK packages will not resolve
-them:</p>
+<p><strong>Checked on 29 September 2026: the signed ARM64 development APK builds and
+passes package inspection. Installation and launch on a phone remain unverified.</strong>
+The native application still has these gaps:</p>
 <div class="table-wrapper">
 <table>
 <thead>
 <tr><th>Area</th><th>Current state</th></tr>
 </thead>
 <tbody>
-<tr><td>Launchable package</td><td><code>wisecrow-mobile/Dioxus.toml</code> selects <code>android/AndroidManifest.xml</code> as the complete application manifest. It has permissions and an <code>&lt;application&gt;</code> element, but no activity or launcher intent. Dioxus CLI 0.7.10 copies this file instead of its generated launcher manifest. This needs correction before the APK can be opened normally.</td></tr>
+<tr><td>Launchable package</td><td>The verified APK contains <code>org.wisecrow.mobile</code>, Dioxus’s <code>dev.dioxus.main.MainActivity</code>, native library metadata and the launcher intent. It supports ARM64, declares minimum API 26 and targets API 35. Its launcher label is <code>WisecrowMobile</code>.</td></tr>
 <tr><td>Server connection and local data</td><td><code>src/transport/api.rs</code> holds a server origin but does not implement <code>MobileApi</code>. The Android entry point in <code>src/main.rs</code> launches <code>app</code>, without the store/API/media contexts supplied by <code>app_with_media</code> in <code>src/lib.rs</code>.</td></tr>
 <tr><td>User interface</td><td><code>src/components/home.rs</code> displays a fixed “Local storage is ready.” message. That message does not check the database. Learn and N-back are placeholders; the navigation has only Home. There is no login, server-settings or download screen. Grammar components exist but need the missing store context and downloaded data.</td></tr>
 </tbody>
@@ -206,11 +206,33 @@ them:</p>
 storage, sync and grammar code has automated tests, but that is not evidence of
 a working installed app. Fast mode is not a route in the mobile shell.</p>
 <p><strong>The following commands are the development build/install procedure. They do
-not complete these missing features.</strong> Fix the launcher manifest first; finish
-the application connections before expecting a usable offline learning app.</p>
+not complete these missing features.</strong> Finish the application connections
+before expecting a usable offline learning app.</p>
 <h2 id="prepare-the-workstation"><a class="header" href="#prepare-the-workstation">Prepare the workstation</a></h2>
 <p>Allow approximately <strong>30–60 minutes</strong> for a first-time SDK/toolchain setup,
 depending on downloads. The examples use Bash.</p>
+<h3 id="nixos"><a class="header" href="#nixos">NixOS</a></h3>
+<p>The repository now provides an Android shell. From the repository root:</p>
+<pre><code class="language-bash">cd wisecrow-mobile
+nix-shell android/shell.nix
+rustup target add --toolchain 1.97.0 aarch64-linux-android
+dx doctor --offline
+</code></pre>
+<p>The shell provisions the SDK, Build Tools 34/35, NDK 27.2.12479018, Java and
+Gradle, selects Rustup’s Rust 1.97.0, and sets the Android environment variables.
+The Nix expression accepts the Android SDK licence. It selects Nix’s patched
+<code>aapt2</code> and sets separate host C/C++ compilers so Linux build dependencies do
+not accidentally use the Android compiler.</p>
+<p>Gradle configuration and caches live in <code>target/android-gradle/</code>. The shell
+installs <code>android/gradle.init.gradle</code> there to select Kotlin 2.2.21 and Android
+Gradle Plugin 8.10.1 for Dioxus’s generated project. Dioxus CLI 0.7.10 otherwise
+selects Kotlin 2.0.20, which cannot compile against OkHttp 5.3.0’s Kotlin 2.2
+metadata. The platform module declares the same plugin versions. See the
+<a href="https://docs.gradle.org/current/userguide/init_scripts.html">Gradle init-script documentation</a>
+and <a href="https://developer.android.com/build/kotlin-support">Android Kotlin compatibility reference</a>.
+The Dioxus CLI must already be on <code>PATH</code>; its installation is described below.
+Stay in this shell for the build commands.</p>
+<h3 id="other-linux-setups"><a class="header" href="#other-linux-setups">Other Linux setups</a></h3>
 <ol>
 <li>
 <p>Open the mobile crate from your existing checkout:</p>
@@ -246,7 +268,7 @@ SDK of 26; minimum-device compatibility still needs an actual APK test.</p>
 </thead>
 <tbody>
 <tr><td>SDK Platforms</td><td>Android 15 / API 35</td></tr>
-<tr><td>SDK Tools</td><td>Android SDK Platform-Tools, Command-line Tools, Build-Tools 35.0.0</td></tr>
+<tr><td>SDK Tools</td><td>Android SDK Platform-Tools, Command-line Tools, Build-Tools 34.0.0 and 35.0.0</td></tr>
 <tr><td>SDK Tools</td><td>NDK (Side by side), CMake</td></tr>
 </tbody>
 </table>
@@ -271,9 +293,18 @@ dx doctor --offline
 <p>Adjust <code>ANDROID_HOME</code> if SDK Manager shows a different directory. Read and
 accept the SDK licences when prompted. <code>dx doctor</code> should now identify the
 Android SDK, NDK, Java and adb. Its unrelated iOS/macOS warnings do not block
-an Android build. On NixOS, use Android tools supplied by your Nix environment
-if downloaded tools cannot execute; this repository does not provide a
-complete Android Nix shell.</p>
+an Android build. On NixOS, use the repository’s Android shell above so
+downloaded tools can execute with the correct host libraries.</p>
+</li>
+<li>
+<p>Apply the repository’s Gradle compatibility settings. From
+<code>wisecrow-mobile/</code>, keep these variables set for the APK build:</p>
+<pre><code class="language-bash">export GRADLE_USER_HOME="$PWD/../target/android-gradle"
+mkdir -p "$GRADLE_USER_HOME/init.d"
+ln -sfn "$PWD/android/gradle.init.gradle" "$GRADLE_USER_HOME/init.d/wisecrow.init.gradle"
+</code></pre>
+<p>The Nix shell already performs this setup. This keeps the override separate
+from your normal Gradle home; use it for this project’s Android builds.</p>
 </li>
 </ol>
 <p>The upstream <a href="https://dioxuslabs.com/learn/0.7/guides/platforms/mobile/">Dioxus Android setup guide</a>
@@ -291,7 +322,9 @@ commands target a 64-bit ARM phone. Keep the terminal open for installation.</p>
 <p><code>--package-types apk</code> matters: CLI 0.7.10 otherwise defaults to an Android App
 Bundle (<code>.aab</code>), which is not directly installed with <code>adb install</code>. This is
 a development build. The CLI’s generated Gradle project uses debug signing
-when release signing has not been configured.</p>
+when release signing has not been configured. The mobile crate does not
+enable Dioxus’s unused <code>fullstack</code> feature, which would also trigger a host
+server build. The deployed server continues to run independently.</p>
 </li>
 <li>
 <p>Check that the command succeeded and locate the output:</p>
@@ -299,6 +332,8 @@ when release signing has not been configured.</p>
 </code></pre>
 <p>Use the APK path printed by this command. Do not assume an APK left by a
 previous failed build contains your latest changes.</p>
+<p>The verified development build is <code>dist/android-arm64/app-debug.apk</code>
+(approximately 99 MiB).</p>
 </li>
 <li>
 <p>Inspect its signature and packaged manifest, substituting that path:</p>
@@ -307,8 +342,8 @@ previous failed build contains your latest changes.</p>
 "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$WISECROW_APK"
 </code></pre>
 <p>Check for package <code>org.wisecrow.mobile</code>, the intended SDK requirements and a
-<code>launchable-activity</code> entry. <strong>Stop here if the launcher entry is absent</strong>;
-the current custom manifest needs fixing. Signature verification is
+<code>launchable-activity</code> entry. <strong>Stop here if the launcher entry is absent</strong>.
+Signature verification is
 described in the official <a href="https://developer.android.com/tools/apksigner">apksigner reference</a>.</p>
 </li>
 </ol>
@@ -343,13 +378,23 @@ retaining its data; see the <a href="https://developer.android.com/tools/adb#mov
 Matching package signatures are required for an update.</p>
 </li>
 <li>
-<p>Open Wise Crow from the phone’s app launcher. Alternatively, resolve its
+<p>Open <strong>WisecrowMobile</strong> from the phone’s app launcher. Alternatively, resolve its
 launch activity for diagnosis:</p>
 <pre><code class="language-bash">adb -s "$WISECROW_DEVICE" shell cmd package resolve-activity --brief org.wisecrow.mobile
 </code></pre>
 <p>An installed package with no launch activity is a packaging problem, not a
 server connection problem.</p>
 </li>
+</ol>
+<h3 id="install-by-transferring-the-apk"><a class="header" href="#install-by-transferring-the-apk">Install by transferring the APK</a></h3>
+<ol>
+<li>Copy <code>wisecrow-mobile/dist/android-arm64/app-debug.apk</code> from the workstation
+to the phone’s Downloads folder using USB file transfer or your usual file
+transfer tool.</li>
+<li>Open the APK in the phone’s Files app. If Android requests it, allow that
+app to install this package, then select <strong>Install</strong>.</li>
+<li>Open <strong>WisecrowMobile</strong>. This development build provides the native shell;
+use the website for sign-in and lessons.</li>
 </ol>
 <h2 id="use-on-android"><a class="header" href="#use-on-android">Use on Android</a></h2>
 <p>For the current usable interface:</p>
@@ -360,7 +405,7 @@ server connection problem.</p>
 </ol>
 <p>The website needs network access. Installing the native shell does not add
 offline support to the website.</p>
-<p>For the <strong>native APK</strong>, after the launcher is fixed, the current code aims to
+<p>For the <strong>native APK</strong>, the current code aims to
 show Home and its fixed storage message. There are no working sign-in or
 download instructions to follow yet. Rebuilding the server or copying grammar
 PDFs to the phone will not fill those missing application connections.</p>
@@ -403,9 +448,10 @@ own maintained signing configuration; <code>--release</code> alone does not esta
 <tr><td><code>dx doctor</code> cannot find SDK/NDK/Java</td><td>Set the paths in the build terminal and run it again. An <code>adb</code> executable alone is not the SDK/NDK.</td></tr>
 <tr><td>NDK linker missing or cannot execute on NixOS</td><td>Check <code>ANDROID_NDK_HOME</code> and the executable’s host compatibility. Use the Nix-provided Android toolchain/environment.</td></tr>
 <tr><td>Gradle reports a dependency needs a newer <code>compileSdk</code></td><td>Follow the concrete build error and update the app and Kotlin module settings together; installed API 35 alone cannot satisfy a dependency requiring a newer API.</td></tr>
+<tr><td>Kotlin reports metadata <code>2.2.0</code>, expected <code>2.0.0</code></td><td>Enter the Nix shell or apply <code>android/gradle.init.gradle</code> using the project Gradle home above. Editing the generated Gradle project is not persistent.</td></tr>
 <tr><td><code>INSTALL_FAILED_NO_MATCHING_ABIS</code></td><td>Compare <code>adb -s "$WISECROW_DEVICE" shell getprop ro.product.cpu.abilist</code> with the Rust build target.</td></tr>
 <tr><td><code>INSTALL_FAILED_UPDATE_INCOMPATIBLE</code></td><td>Rebuild with the signing key used for the installed app.</td></tr>
-<tr><td>Install succeeds but no app icon appears</td><td>Inspect the packaged manifest’s launcher activity; the current override omits it.</td></tr>
+<tr><td>Install succeeds but no app icon appears</td><td>Inspect the packaged manifest’s launcher activity; rebuild with the corrected manifest override.</td></tr>
 <tr><td>Only Home appears, with no login or download controls</td><td>This matches the current shell. The missing application UI and wiring need implementation.</td></tr>
 </tbody>
 </table>
@@ -416,13 +462,22 @@ own maintained signing configuration; <code>--release</code> alone does not esta
 <p>Build diagnostics can be collected by repeating the build with <code>--verbose</code>.
 Review logs for credentials or private content before sharing them.</p>
 <h2 id="what-was-checked-for-this-guide"><a class="header" href="#what-was-checked-for-this-guide">What was checked for this guide</a></h2>
-<p>The commands were checked against the installed <code>dx</code> 0.7.10 help and Android
-packaging source, the repository configuration and entry point, and official
-Android/Dioxus documentation. <code>dx doctor --offline</code> found the Rust Android
-targets here, but no configured SDK, NDK or Java home. No APK build, installation,
-release signing or phone playback was verified.</p>
-<p>Start with <code>dx doctor --offline</code> from <code>wisecrow-mobile/</code> to see the workstation’s
-remaining setup requirements.</p>
+<p>The documented <code>dx bundle</code> command completed with Dioxus CLI 0.7.10 and
+Rustup 1.97.0. The Nix shell supplied the SDK, NDK and Java; Gradle 9.1.0 used
+the repository’s Kotlin 2.2.21 / Android Gradle Plugin 8.10.1 overrides.</p>
+<p><code>apksigner verify --verbose --print-certs</code> verified the APK’s v2 signature
+using the Android Debug certificate. <code>aapt dump badging</code> confirmed package
+<code>org.wisecrow.mobile</code>, version <code>0.1.0</code>, ARM64, minimum API 26, target API 35
+and launcher <code>dev.dioxus.main.MainActivity</code>. The packaged manifest references
+<code>wisecrow_network_security_config</code>; its XML forbids cleartext and retains the
+intended system/user certificate trust anchors. The policy lives in the
+platform module because Dioxus generates its own <code>network_security_config.xml</code>.</p>
+<p>Workspace checks, Clippy and formatting passed. All 682 enabled workspace
+tests passed (185 skipped), as did all 47 mobile tests run independently and
+all 8 Kotlin unit tests. Documentation tests passed with no cases discovered.</p>
+<p>No device was connected. Installation, launch, instrumented Android tests and
+phone playback remain unverified. This APK uses development signing; it is
+not a verified production release.</p>
 
                     </main>
 
