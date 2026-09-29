@@ -1,4 +1,5 @@
 pub mod anthropic;
+pub mod claude_cli;
 pub mod openai;
 pub mod prompts;
 
@@ -152,6 +153,11 @@ fn escape_raw_control_characters(json: &str) -> Option<String> {
 
 /// Creates an LLM provider based on configuration.
 ///
+/// `llm_api_key` carries whichever credential the chosen provider bills
+/// against: an API key for `anthropic` and `openai`, and for `claude-cli` the
+/// `claude setup-token` OAuth token that puts the calls on a subscription
+/// instead of Console credits.
+///
 /// # Errors
 ///
 /// Returns an error if the provider is not configured or unsupported.
@@ -176,6 +182,13 @@ pub fn create_provider(config: &Config) -> Result<Box<dyn LlmProvider>, Wisecrow
         "anthropic" => {
             let model = config.llm_model_or(anthropic::DEFAULT_MODEL).to_owned();
             Ok(Box::new(anthropic::AnthropicProvider::new(
+                api_key.expose(),
+                model,
+            )))
+        }
+        "claude-cli" => {
+            let model = config.llm_model_or(claude_cli::DEFAULT_MODEL).to_owned();
+            Ok(Box::new(claude_cli::ClaudeCliProvider::new(
                 api_key.expose(),
                 model,
             )))

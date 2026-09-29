@@ -397,8 +397,8 @@ Log in at `https://<host>:8443/login`.
 | `WISECROW__DB_*` | Database connection (set by compose from the secrets). |
 | `WISECROW__TLS_CERT_PATH` / `WISECROW__TLS_KEY_PATH` | PEM cert/key paths inside the container (`/certs/*`). |
 | `IP` / `PORT` | Bind address (default `0.0.0.0:8443`). |
-| `WISECROW__LLM_PROVIDER` / `WISECROW__LLM_API_KEY` | LLM provider for gloss / graded-reader / quizzes. |
-| `WISECROW__LLM_MODEL` | Optional model id (default: `claude-sonnet-5` or `gpt-4o` by provider). |
+| `WISECROW__LLM_PROVIDER` / `WISECROW__LLM_API_KEY` | LLM provider for gloss / graded-reader / quizzes: `anthropic`, `openai`, or `claude-cli` (see [Billing model calls to a subscription](#billing-model-calls-to-a-subscription)). |
+| `WISECROW__LLM_MODEL` | Optional model id (default: `claude-sonnet-5` for `anthropic` and `claude-cli`, `gpt-4o` for `openai`). |
 | `WISECROW__LLM_RATELIMIT_PER_MIN` | Per-user LLM request cap (default 20). |
 | `WISECROW__IMAGE_PROVIDER` | Optional: `auto` (default), `unsplash`, `pexels`, or `pixabay`. |
 | `WISECROW__UNSPLASH_API_KEY` | Optional Unsplash key; omit with no other keys to disable images. |
@@ -406,6 +406,47 @@ Log in at `https://<host>:8443/login`.
 | `WISECROW__PIXABAY_API_KEY` | Optional Pixabay key (fallback / sole provider). |
 | `WISECROW__SYNC_API_KEY` | Legacy single sync key (per-client keys preferred). |
 | `RUST_LOG` / `RUST_BACKTRACE` | Logging (backtrace off by default in the image). |
+
+## Billing model calls to a subscription
+
+The grammar importer and the exercise generators are the heaviest consumers of
+model time in this deployment, and by default every one of their calls is
+billed as Console credit through the `anthropic` provider. The `claude-cli`
+provider offers the alternative: it runs the Claude Code binary that the image
+carries, in print mode, authenticated by a long-lived OAuth token, so the same
+prompts draw on a Claude Pro, Max, Team, or Enterprise subscription instead.
+
+The token has to be minted where a browser is available, which means your own
+machine rather than calypso:
+
+```sh
+claude setup-token          # approve in the browser; the token is printed once
+```
+
+The command prints an `sk-ant-oat01-…` token valid for one year and saves it
+nowhere, so copy it straight into the secrets file, where it takes the place
+of the API key:
+
+```sh
+$EDITOR ansible/vars/secrets.yml              # llm_api_key: sk-ant-oat01-…
+```
+
+Reach for `ansible-vault edit` in place of `$EDITOR` only where that file is
+actually encrypted; the command refuses a plaintext one with `Input is not
+vault encrypted data`, and the file is gitignored either way.
+
+Then set `llm_provider: "claude-cli"` in `ansible/inventory/group_vars/all.yml`
+and re-run the update playbook. Nothing else changes: the prompts, the models
+and the parsing are shared with the API providers, and switching back is a
+matter of restoring the provider name and the API key.
+
+Two consequences are worth planning around. The first is that a subscription
+carries usage limits rather than a bill, so a long import may pause partway
+through with a limit message; the importer records progress by document and
+level, and rerunning `scripts/import-grammar.sh` resumes from where the limit
+stopped it. The second is that the token expires after a year, and an expired
+token surfaces as `Claude Code CLI run failed: Not logged in`, which is
+repaired by minting a fresh one exactly as above.
 
 ## Updating
 

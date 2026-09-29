@@ -219,8 +219,12 @@ pub trait LlmProvider: Send + Sync {
 ```
 
 The factory `llm::create_provider` reads `llm_provider` and `llm_api_key` from
-config and returns a boxed implementation. Two are bundled: `anthropic`
-(Claude Sonnet) and `openai` (GPT-4o).
+config and returns a boxed implementation. Three are bundled: `anthropic`
+(Claude Sonnet over the Messages API), `openai` (GPT-4o), and `claude-cli`,
+which runs the locally installed Claude Code binary in print mode so that the
+calls draw on a Claude subscription rather than Console credits. The last of
+these spends no API credits, and `llm_api_key` carries its OAuth token instead
+of an API key; the prompts and the parsing are identical across all three.
 
 Prompts are deliberately strict ("Return ONLY the JSON array") and the
 seeders/exercises tolerate fenced code-blocks (```` ```json ````) when

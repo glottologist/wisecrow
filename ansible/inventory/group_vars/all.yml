@@ -54,9 +54,12 @@ postgres_db: wisecrow
 # Optional knobs — leave blank to omit from the generated .env.
 # Image backend: auto | unsplash | pexels | pixabay (blank = app default auto).
 image_provider: "auto"
-llm_provider: "anthropic"   # anthropic | openai
+llm_provider: "claude-cli"   # anthropic | openai | claude-cli
+# `claude-cli` runs the Claude Code binary in the container under a Claude
+# subscription instead of billing Console credits; llm_api_key then holds a
+# `claude setup-token` OAuth token rather than an API key.
 # Model id for the chosen provider. Blank = provider default
-# (anthropic → claude-sonnet-5, openai → gpt-4o).
+# (anthropic and claude-cli → claude-sonnet-5, openai → gpt-4o).
 llm_model: "claude-sonnet-5"
 remote_url: ""
 remote_api_key: ""

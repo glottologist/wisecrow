@@ -19,6 +19,14 @@ export WISECROW__LLM_API_KEY=sk-ant-...
 wisecrow seed-grammar --lang es --levels A1,A2,B1,B2,C1,C2
 ```
 
+Every path on this page shares that provider, so the choice of provider is
+also a choice of who pays for the run. Setting `WISECROW__LLM_PROVIDER` to
+`claude-cli` and `WISECROW__LLM_API_KEY` to a `claude setup-token` OAuth token
+runs the same prompts through the locally installed Claude Code binary under a
+Claude subscription, which matters most for `import-pdf`: a shelf of textbooks
+is thousands of calls. The deployment side of that switch is described in
+[Billing model calls to a subscription](https://github.com/glottologist/wisecrow/blob/main/DEPLOYMENT.md#billing-model-calls-to-a-subscription).
+
 Behind the scenes:
 
 1. The driver builds one `grammar_seed_prompt(language_name, level, count)`

@@ -50,8 +50,9 @@ same database.
 
 Requires:
 
-- `WISECROW__LLM_PROVIDER` set to `anthropic` or `openai`
-- `WISECROW__LLM_API_KEY` set to the corresponding API key
+- `WISECROW__LLM_PROVIDER` set to `anthropic`, `openai`, or `claude-cli`
+- `WISECROW__LLM_API_KEY` set to the corresponding API key, or to a
+  `claude setup-token` OAuth token when the provider is `claude-cli`
 
 If neither is set the CLI errors fast; the TUI logs an info message and the
 `g` keypress simply does nothing.

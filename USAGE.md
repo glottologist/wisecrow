@@ -51,8 +51,8 @@ export RUST_BACKTRACE=1
 The `gloss` and `graded-reader` commands — and `preview --gloss-unknowns` — call a large language model. Configure a provider before using them:
 
 ```sh
-export WISECROW__LLM_PROVIDER=anthropic   # or: openai
-export WISECROW__LLM_API_KEY=sk-...
+export WISECROW__LLM_PROVIDER=anthropic   # or: openai, claude-cli
+export WISECROW__LLM_API_KEY=sk-...       # claude-cli: sk-ant-oat01-… from `claude setup-token`
 # optional; blank uses provider default (claude-sonnet-5 / gpt-4o)
 export WISECROW__LLM_MODEL=claude-sonnet-5
 ```

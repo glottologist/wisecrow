@@ -46,6 +46,30 @@ RUN apt-get update \
         ca-certificates libssl3 tini wget poppler-utils \
  && rm -rf /var/lib/apt/lists/*
 
+# Claude Code, which the `claude-cli` LLM provider runs in print mode so the
+# model calls bill against a subscription instead of Console credits. Installed
+# from Anthropic's signed apt repository rather than the curl installer: apt
+# verifies the package signature on every install, the stable channel pins the
+# version to whenever the image was built, and no Node.js is pulled in. The
+# fingerprint is checked before the repository is trusted, and the build fails
+# if it changes. Dropping the provider from the deployment does not require
+# rebuilding without this: an unused binary costs disk and nothing else.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl gnupg \
+ && install -d -m 0755 /etc/apt/keyrings \
+ && curl -fsSL https://downloads.claude.ai/keys/claude-code.asc \
+        -o /etc/apt/keyrings/claude-code.asc \
+ && gpg --show-keys --with-colons /etc/apt/keyrings/claude-code.asc \
+        | grep -q '^fpr:::::::::31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE:' \
+ && echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/stable stable main" \
+        > /etc/apt/sources.list.d/claude-code.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends claude-code \
+ && apt-get purge -y curl gnupg \
+ && apt-get autoremove -y \
+ && rm -rf /var/lib/apt/lists/* \
+ && claude --version
+
 # Run as a non-root system user.
 RUN useradd --system --uid 10001 --user-group --no-create-home wisecrow
 

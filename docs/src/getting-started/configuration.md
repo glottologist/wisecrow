@@ -36,8 +36,8 @@ export WISECROW__DB_PASSWORD=secret
 
 | Variable | Purpose | Used by |
 |----------|---------|---------|
-| `WISECROW__LLM_PROVIDER` | `anthropic` or `openai`. | `seed-grammar`, `generate-exercises`, gloss, graded-reader |
-| `WISECROW__LLM_API_KEY`  | API key for the chosen provider. | same |
+| `WISECROW__LLM_PROVIDER` | `anthropic`, `openai`, or `claude-cli` (the local Claude Code binary, billed to a subscription). | `seed-grammar`, `generate-exercises`, gloss, graded-reader |
+| `WISECROW__LLM_API_KEY`  | API key for the chosen provider, or the `claude setup-token` OAuth token for `claude-cli`. | same |
 | `WISECROW__LLM_MODEL` | Optional model id (e.g. `claude-sonnet-5`, `gpt-4o`). Blank = provider default. | same |
 | `WISECROW__IMAGE_PROVIDER` | Image backend: `auto` (default), `unsplash`, `pexels`, or `pixabay`. | `learn`, `prefetch-media` (with `images`) |
 | `WISECROW__UNSPLASH_API_KEY` | Unsplash access key for card imagery. | same |

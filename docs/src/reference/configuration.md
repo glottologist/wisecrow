@@ -16,9 +16,9 @@ All variables are prefixed with `WISECROW__` (double underscore separator).
 | `DB_NAME` | string | one of B | All database commands |
 | `DB_USER` | string | one of B | All database commands |
 | `DB_PASSWORD` | secret | one of B | All database commands |
-| `LLM_PROVIDER` | `anthropic` \| `openai` | optional | gloss / graded-reader / seed-grammar / generate-exercises |
-| `LLM_API_KEY` | secret | with `LLM_PROVIDER` | same |
-| `LLM_MODEL` | string | optional | Model id; defaults: `claude-sonnet-5` (anthropic), `gpt-4o` (openai) |
+| `LLM_PROVIDER` | `anthropic` \| `openai` \| `claude-cli` | optional | gloss / graded-reader / seed-grammar / generate-exercises |
+| `LLM_API_KEY` | secret | with `LLM_PROVIDER` | API key, or a `claude setup-token` OAuth token for `claude-cli` |
+| `LLM_MODEL` | string | optional | Model id; defaults: `claude-sonnet-5` (anthropic, claude-cli), `gpt-4o` (openai) |
 | `IMAGE_PROVIDER` | string | optional (`auto`) | `auto` \| `unsplash` \| `pexels` \| `pixabay` |
 | `UNSPLASH_API_KEY` | secret | optional | `learn`, `prefetch-media` (with `images`) |
 | `PEXELS_API_KEY` | secret | optional | same |
