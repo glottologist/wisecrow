@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a17a6d85.js";
+            window.path_to_searchindex_js = "../searchindex-b3a40e7b.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-a32f9be8.js"></script>
@@ -224,8 +224,9 @@ same database.</p>
 <h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
 <p>Requires:</p>
 <ul>
-<li><code>WISECROW__LLM_PROVIDER</code> set to <code>anthropic</code> or <code>openai</code></li>
-<li><code>WISECROW__LLM_API_KEY</code> set to the corresponding API key</li>
+<li><code>WISECROW__LLM_PROVIDER</code> set to <code>anthropic</code>, <code>openai</code>, or <code>claude-cli</code></li>
+<li><code>WISECROW__LLM_API_KEY</code> set to the corresponding API key, or to a
+<code>claude setup-token</code> OAuth token when the provider is <code>claude-cli</code></li>
 </ul>
 <p>If neither is set the CLI errors fast; the TUI logs an info message and the
 <code>g</code> keypress simply does nothing.</p>

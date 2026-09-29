@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a17a6d85.js";
+            window.path_to_searchindex_js = "../searchindex-b3a40e7b.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-a32f9be8.js"></script>
@@ -362,8 +362,12 @@ pub trait LlmProvider: Send + Sync {
     fn name(&amp;self) -&gt; &amp;str;
 }</code></pre>
 <p>The factory <code>llm::create_provider</code> reads <code>llm_provider</code> and <code>llm_api_key</code> from
-config and returns a boxed implementation. Two are bundled: <code>anthropic</code>
-(Claude Sonnet) and <code>openai</code> (GPT-4o).</p>
+config and returns a boxed implementation. Three are bundled: <code>anthropic</code>
+(Claude Sonnet over the Messages API), <code>openai</code> (GPT-4o), and <code>claude-cli</code>,
+which runs the locally installed Claude Code binary in print mode so that the
+calls draw on a Claude subscription rather than Console credits. The last of
+these spends no API credits, and <code>llm_api_key</code> carries its OAuth token instead
+of an API key; the prompts and the parsing are identical across all three.</p>
 <p>Prompts are deliberately strict (“Return ONLY the JSON array”) and the
 seeders/exercises tolerate fenced code-blocks (<code>```json</code>) when
 parsing the response.</p>

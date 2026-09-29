@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a17a6d85.js";
+            window.path_to_searchindex_js = "../searchindex-b3a40e7b.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-a32f9be8.js"></script>
@@ -200,6 +200,13 @@ ingestion paths are available — pick whichever matches the source you have.</p
 export WISECROW__LLM_API_KEY=sk-ant-...
 wisecrow seed-grammar --lang es --levels A1,A2,B1,B2,C1,C2
 </code></pre>
+<p>Every path on this page shares that provider, so the choice of provider is
+also a choice of who pays for the run. Setting <code>WISECROW__LLM_PROVIDER</code> to
+<code>claude-cli</code> and <code>WISECROW__LLM_API_KEY</code> to a <code>claude setup-token</code> OAuth token
+runs the same prompts through the locally installed Claude Code binary under a
+Claude subscription, which matters most for <code>import-pdf</code>: a shelf of textbooks
+is thousands of calls. The deployment side of that switch is described in
+<a href="https://github.com/glottologist/wisecrow/blob/main/DEPLOYMENT.md#billing-model-calls-to-a-subscription">Billing model calls to a subscription</a>.</p>
 <p>Behind the scenes:</p>
 <ol>
 <li>The driver builds one <code>grammar_seed_prompt(language_name, level, count)</code>
