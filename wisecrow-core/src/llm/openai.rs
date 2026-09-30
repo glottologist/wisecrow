@@ -115,4 +115,8 @@ impl LlmProvider for OpenAiProvider {
     fn name(&self) -> &str {
         "openai"
     }
+
+    fn cache_identity(&self) -> Option<String> {
+        Some(format!("openai:chat-completions:v1:{}", self.model))
+    }
 }

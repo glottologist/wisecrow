@@ -10,6 +10,9 @@ With no arguments, process gd fr it ga cy es. SOURCES.md controls documents
 and levels. There is no total rule limit; existing rules are preserved and
 new proposals are checked for duplicates. PostgreSQL records progress by
 file contents and level, so reruns skip completed work and resume failures.
+Source extraction and rule comparisons are cached in PostgreSQL. Syllabus growth
+reuses extracted points and checks only unseen rule pairs; retries reuse results
+saved before a later failure. Previously uncached work still calls the model.
 The first run also checks old books without progress records for missed rules.
 This calls the configured model and writes grammar rules. Full output goes to logs/.
 Requires a deployed wisecrow binary supporting import-pdf --incremental.

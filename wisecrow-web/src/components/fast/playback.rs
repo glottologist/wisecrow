@@ -55,15 +55,6 @@ pub enum PlayError {
 }
 
 #[must_use]
-pub fn classify_play_failure(element_missing: bool) -> PlayError {
-    if element_missing {
-        PlayError::Unavailable
-    } else {
-        PlayError::Rejected
-    }
-}
-
-#[must_use]
 pub fn initial() -> Playback {
     Playback {
         mode: RunMode::AwaitingChoice,
@@ -221,8 +212,7 @@ fn on_source_changed(state: &Playback, source: Option<String>) -> (Playback, Opt
     }
 }
 
-/// Looks up the stable audio element and starts playback. Native/server builds
-/// are a no-op so the adapter compiles without a browser.
+/// Starts playback on the stable audio element in the browser or native WebView.
 pub async fn play_source(src: &str) -> Result<(), PlayError> {
     play_source_impl(src).await
 }
@@ -235,25 +225,52 @@ pub fn pause_element() {
 async fn play_source_impl(src: &str) -> Result<(), PlayError> {
     use wasm_bindgen::JsCast;
 
-    let window = web_sys::window().ok_or(classify_play_failure(true))?;
-    let document = window.document().ok_or(classify_play_failure(true))?;
+    let window = web_sys::window().ok_or(PlayError::Unavailable)?;
+    let document = window.document().ok_or(PlayError::Unavailable)?;
     let element = document
         .get_element_by_id(AUDIO_ELEMENT_ID)
-        .ok_or(classify_play_failure(true))?;
-    let audio: web_sys::HtmlAudioElement = element
-        .dyn_into()
-        .map_err(|_| classify_play_failure(true))?;
+        .ok_or(PlayError::Unavailable)?;
+    let audio: web_sys::HtmlAudioElement =
+        element.dyn_into().map_err(|_| PlayError::Unavailable)?;
     audio.set_src(src);
-    let promise = audio.play().map_err(|_| classify_play_failure(false))?;
+    let promise = audio.play().map_err(|_| PlayError::Rejected)?;
     wasm_bindgen_futures::JsFuture::from(promise)
         .await
         .map(|_| ())
-        .map_err(|_| classify_play_failure(false))
+        .map_err(|_| PlayError::Rejected)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    feature = "native",
+    not(feature = "server")
+))]
+async fn play_source_impl(src: &str) -> Result<(), PlayError> {
+    let eval = dioxus::document::eval(
+        r#"
+        const [id, source] = await dioxus.recv();
+        const audio = document.getElementById(id);
+        if (!audio) return "unavailable";
+        audio.src = source;
+        try { await audio.play(); return "playing"; }
+        catch { return "rejected"; }
+    "#,
+    );
+    eval.send((AUDIO_ELEMENT_ID, src))
+        .map_err(|_| PlayError::Unavailable)?;
+    match eval.join::<String>().await.as_deref() {
+        Ok("playing") => Ok(()),
+        Ok("rejected") => Err(PlayError::Rejected),
+        _ => Err(PlayError::Unavailable),
+    }
+}
+
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    any(not(feature = "native"), feature = "server")
+))]
 async fn play_source_impl(_src: &str) -> Result<(), PlayError> {
-    Err(classify_play_failure(true))
+    Err(PlayError::Unavailable)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -277,7 +294,29 @@ fn pause_element_impl() {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    feature = "native",
+    not(feature = "server")
+))]
+fn pause_element_impl() {
+    dioxus::prelude::spawn(async {
+        let eval = dioxus::document::eval(
+            r#"
+            const id = await dioxus.recv();
+            document.getElementById(id)?.pause();
+        "#,
+        );
+        if eval.send(AUDIO_ELEMENT_ID).is_err() || eval.join::<()>().await.is_err() {
+            tracing::warn!("Failed to pause native audio");
+        }
+    });
+}
+
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    any(not(feature = "native"), feature = "server")
+))]
 fn pause_element_impl() {}
 
 #[cfg(test)]

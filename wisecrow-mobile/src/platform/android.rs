@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine};
+use manganis::jni::objects::{JClass, JValue};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use uuid::Uuid;
@@ -46,7 +47,42 @@ impl AndroidPlatform {
     ///
     /// Returns a permanent platform error when JNI or the activity is unavailable.
     pub fn new() -> Result<Self, MobileError> {
-        let native = WisecrowPlatform::new().map_err(|_| MobileError::Permanent)?;
+        let native = manganis::android::with_activity(|env, activity| {
+            let result = env.with_local_frame(8, |env| {
+                // Native threads need the Activity's loader to find classes in the APK.
+                let loader = env
+                    .call_method(activity, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+                    .l()?;
+                let name = env.new_string("org.wisecrow.mobile.WisecrowPlatform")?;
+                let class = env
+                    .call_method(
+                        loader,
+                        "loadClass",
+                        "(Ljava/lang/String;)Ljava/lang/Class;",
+                        &[JValue::Object(&name)],
+                    )?
+                    .l()?;
+                let instance = env.new_object(
+                    JClass::from(class),
+                    "(Landroid/app/Activity;)V",
+                    &[JValue::Object(activity)],
+                )?;
+                env.new_global_ref(instance)
+            });
+            if result.is_err() {
+                // A handled JNI failure must not escape as a Java exception on detach.
+                if let Err(error) = env.exception_clear() {
+                    tracing::error!(%error, "failed to clear Android platform exception");
+                }
+            }
+            Some(result)
+        })
+        .ok_or(MobileError::Permanent)?
+        .map_err(|error| {
+            tracing::error!(%error, "failed to construct Android platform");
+            MobileError::Permanent
+        })?;
+        let native = WisecrowPlatform::from_global_ref(native);
         Ok(Self { native })
     }
 
@@ -547,7 +583,7 @@ const POLL_INTERVAL_MS: u64 = 50;
 const UUID_TEXT_BYTES: usize = 36;
 const MAX_NAME_CHARS: usize = 255;
 const MAX_CERTIFICATE_BYTES: u64 = 65_536;
-const MAX_PDF_BYTES: u64 = 67_108_864;
+const MAX_PDF_BYTES: u64 = 80 * 1024 * 1024;
 const SHA256_HEX_BYTES: usize = 64;
 const MAX_HTTP_RESPONSE_BYTES: u64 = 67_108_864;
 const MAX_HTTP_REQUEST_BYTES: usize = 16_777_216;

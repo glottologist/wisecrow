@@ -11,7 +11,7 @@ use wisecrow_dto::QuizItemDto;
 ///
 /// Gated like `components`, which holds the upload form: a build with neither
 /// half has no caller.
-#[cfg(any(feature = "server", feature = "web"))]
+#[cfg(any(feature = "server", feature = "web", feature = "native"))]
 pub(crate) const MAX_PDF_BYTES: usize = 80 * 1024 * 1024;
 
 /// Generates quiz items from an uploaded PDF.

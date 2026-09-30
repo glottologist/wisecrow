@@ -17,11 +17,12 @@ use sqlx::PgPool;
 use tracing::{debug, info, warn};
 
 use super::pdf::GrammarPassage;
+use super::pdf_cache::{PdfLlm, PdfLlmError};
 use super::rules::{
     slugify, NewGrammarRule, NewRuleExample, RulePlacement, RuleRepository, RuleSource,
 };
 use crate::errors::WisecrowError;
-use crate::llm::prompts::{pdf_rules_prompt, PassageExcerpt};
+use crate::llm::prompts::{pdf_rules_prompt, pdf_source_rules_prompt, PassageExcerpt};
 use crate::llm::LlmProvider;
 
 /// Output ceiling for one synthesis call.
@@ -323,45 +324,63 @@ pub async fn synthesise(
 
     let covered: Vec<&str> = covered.iter().map(String::as_str).collect();
     synthesise_excerpts(
-        provider,
+        &PdfLlm::new(provider, None),
         document,
         language_name,
         cefr_level,
         wanted,
-        &covered,
+        Coverage::Syllabus(&covered),
         &excerpts,
     )
     .await
 }
 
+pub(super) enum Coverage<'a> {
+    Syllabus(&'a [&'a str]),
+    Source(&'a [&'a str]),
+}
+
 pub(super) async fn synthesise_excerpts(
-    provider: &dyn LlmProvider,
+    model: &PdfLlm<'_>,
     document: &str,
     language_name: &str,
     cefr_level: &str,
     wanted: u32,
-    covered: &[&str],
+    covered: Coverage<'_>,
     excerpts: &[PassageExcerpt<'_>],
 ) -> Result<Synthesis, WisecrowError> {
-    let prompt = pdf_rules_prompt(language_name, cefr_level, wanted, covered, excerpts);
-    let response = provider.generate(&prompt, MAX_LLM_TOKENS).await?;
-    let proposed: Vec<LlmPdfRule> =
-        match crate::llm::parse_fenced_json(&response, "PDF grammar points as JSON") {
-            Ok(proposed) => proposed,
-            Err(WisecrowError::LlmError(reason)) => {
-                warn!(
-                    "{reason}; asking {} once more for the array alone",
-                    provider.name()
-                );
-                let nudged = [prompt.as_str(), JSON_NUDGE].concat();
-                let response = provider.generate(&nudged, MAX_LLM_TOKENS).await?;
-                crate::llm::parse_fenced_json(&response, "PDF grammar points as JSON")?
-            }
-            Err(error) => return Err(error),
-        };
-
+    let prompt = match covered {
+        Coverage::Syllabus(titles) => {
+            pdf_rules_prompt(language_name, cefr_level, wanted, titles, excerpts)
+        }
+        Coverage::Source(titles) => {
+            pdf_source_rules_prompt(language_name, cefr_level, wanted, titles, excerpts)
+        }
+    };
     let pages: Vec<usize> = excerpts.iter().map(|passage| passage.page).collect();
-    Ok(gate(proposed, document, &pages, wanted))
+    let parse = |response: &str| {
+        let proposed = crate::llm::parse_fenced_json(response, "PDF grammar points as JSON")?;
+        Ok(gate(proposed, document, &pages, wanted))
+    };
+    let reusable = |round: &Synthesis| round.rejected.is_empty();
+    match model
+        .generate(&prompt, MAX_LLM_TOKENS, parse, reusable)
+        .await
+    {
+        Ok(round) => Ok(round),
+        Err(PdfLlmError::Response(reason)) => {
+            warn!(
+                "{reason}; asking {} once more for the array alone",
+                model.name()
+            );
+            let nudged = [prompt.as_str(), JSON_NUDGE].concat();
+            model
+                .generate(&nudged, MAX_LLM_TOKENS, parse, reusable)
+                .await
+                .map_err(Into::into)
+        }
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// Keeps the points that carry what a seeded point carries, and drops the rest.

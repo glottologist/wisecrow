@@ -1,16 +1,18 @@
 pub mod api;
-#[cfg(any(feature = "server", feature = "web"))]
+#[cfg(any(feature = "server", feature = "web", feature = "native"))]
 pub mod components;
-#[cfg(any(feature = "server", feature = "web"))]
+#[cfg(any(feature = "server", feature = "web", feature = "native"))]
 pub mod router;
+#[cfg(any(feature = "server", feature = "web", feature = "native"))]
+pub mod session;
 
 #[cfg(feature = "server")]
 pub mod server;
 
-#[cfg(any(feature = "server", feature = "web"))]
+#[cfg(any(feature = "server", feature = "web", feature = "native"))]
 use dioxus::prelude::*;
 
-#[cfg(any(feature = "server", feature = "web"))]
+#[cfg(any(feature = "server", feature = "web", feature = "native"))]
 pub fn app() -> Element {
     use components::brand::BrandHead;
     use components::theme::ThemeProvider;

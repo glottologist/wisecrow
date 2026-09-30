@@ -118,10 +118,36 @@ Three things to know:
    progress in PostgreSQL by file contents, language and level. Reruns skip
    completed files even if renamed, resume failures and process changed files
    or new levels. Old imports without progress records receive one catch-up
-   scan. Every productive batch continues, including short answers; a round
-   with no new rules ends that chunk. Semantic deduplication is model judgment and
-   should be reviewed. Without `--incremental`, the legacy thirty-PDF-rule
+   scan. Extraction continues until no further source points are found, including
+   when an entire batch already exists in the syllabus. Semantic deduplication is
+   model judgment and should be reviewed. Without `--incremental`, the legacy thirty-PDF-rule
    target still applies.
+
+Incremental imports save source extraction responses in PostgreSQL's
+`grammar_llm_cache` table. Extraction depends on the source passages, language,
+level and points previously extracted from those passages. Adding syllabus rules
+does not change this request. A resumed chunk replays its saved batches and skips
+rules already committed. Response reuse logs `PDF LLM cache hit; skipped ... request`.
+
+The `grammar_rule_comparisons` table separately stores semantic duplicate decisions
+between pairs of rule texts. A saved match skips a candidate while the matching
+rule still exists with the same title and explanation. Saved nonmatches skip those
+pairs; only unseen or changed pairs are sent for review. This works even when the
+syllabus grows or review batch boundaries move. Logs report saved comparisons and
+the number of previously unchecked pairs sent for review. Examples and citations
+do not affect semantic comparison identity.
+
+Both caches distinguish provider/model settings; comparison decisions also
+distinguish language and review version. Changed source text, level or extraction
+prompt requires new extraction. First-time extraction and unseen comparisons still
+use the model. Provider errors, invalid responses and extraction batches with
+quality refusals remain retryable and are not cached. Saved responses and completed
+comparisons survive a later import rollback.
+
+Migration 038 adds the comparison table. Existing rules and completed import
+progress remain intact. Older syllabus-dependent extraction responses cannot be
+reused by the new source prompt, so unfinished chunks need an initial source pass.
+Dry runs and legacy top-up imports do not use these caches.
 
 A point that reads badly is edited like any other: export the level with
 `export-grammar`, correct it, and re-import via `import-grammar` -- `manual`

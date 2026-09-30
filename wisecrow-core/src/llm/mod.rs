@@ -11,6 +11,14 @@ use async_trait::async_trait;
 pub trait LlmProvider: Send + Sync {
     async fn generate(&self, prompt: &str, max_tokens: u32) -> Result<String, WisecrowError>;
     fn name(&self) -> &str;
+
+    /// Identifies the model and request settings for persistent result reuse.
+    ///
+    /// Exclude credentials. Change this identity when generation settings change.
+    /// Providers without a stable identity bypass the cache.
+    fn cache_identity(&self) -> Option<String> {
+        None
+    }
 }
 
 /// One word and its translation, as [`prompts::unknown_words_prompt`] asks for

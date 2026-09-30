@@ -92,10 +92,11 @@ internal class SecureCredentials(
     }
 
     private fun encrypt(authenticatedProfile: ByteArray, cleartext: ByteArray): String {
-        val iv = ByteArray(IV_BYTES)
-        java.security.SecureRandom().nextBytes(iv)
         val cipher = Cipher.getInstance(CIPHER_TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey(), GCMParameterSpec(TAG_BITS, iv))
+        // Android Keystore requires the provider to generate encryption IVs.
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey())
+        val iv = cipher.iv
+        if (iv.size != IV_BYTES) throw GeneralSecurityException("unexpected GCM IV size")
         cipher.updateAAD(authenticatedProfile)
         val ciphertext = cipher.doFinal(cleartext)
         val stored = ByteArray(HEADER_BYTES + ciphertext.size)

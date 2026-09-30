@@ -1,14 +1,19 @@
 use dioxus::prelude::*;
 
-use crate::api::auth::logout;
 use crate::components::brand::{BrandLockup, Lockup};
 use crate::components::theme::ThemeSelector;
 use crate::router::Route;
+use crate::session::logout;
 
 #[component]
 pub fn Layout() -> Element {
     let navigator = use_navigator();
     let mut error_msg: Signal<Option<String>> = use_signal(|| None);
+    if try_consume_context::<crate::session::SessionContext>()
+        .is_some_and(|session| !(session.authenticated)())
+    {
+        return rsx! { super::login::LoginPage {} };
+    }
     rsx! {
         div { class: "min-h-screen bg-gray-900 text-white",
             nav { class: "bg-gray-800 border-b border-gray-700 px-6 py-4",

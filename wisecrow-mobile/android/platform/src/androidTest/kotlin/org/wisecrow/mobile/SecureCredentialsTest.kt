@@ -99,6 +99,14 @@ class SecureCredentialsTest {
 
     @Test
     fun pickerRejectsOversizeWrongTypeAndCancellation() {
+        assertEquals(
+            PickerValidation.Valid,
+            DocumentPicker.validate("pdf", "application/pdf", "%PDF-1.7".toByteArray(), 80 * 1024 * 1024L),
+        )
+        assertEquals(
+            PickerValidation.Failure(PickerError.INVALID_INPUT),
+            DocumentPicker.validate("pdf", "application/pdf", "%PDF-1.7".toByteArray(), 80 * 1024 * 1024L + 1),
+        )
         val oversizedPdf = DocumentPicker.validate("pdf", "application/pdf", ByteArray(6), 5)
         val oversizedCa = DocumentPicker.validate(
             "certificate",

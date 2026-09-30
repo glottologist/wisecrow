@@ -10178,6 +10178,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "dioxus",
+ "dioxus-fullstack",
  "manganis",
  "proptest",
  "serde",
@@ -10193,6 +10194,7 @@ dependencies = [
  "uuid",
  "wisecrow-dto",
  "wisecrow-learning",
+ "wisecrow-web",
 ]
 
 [[package]]

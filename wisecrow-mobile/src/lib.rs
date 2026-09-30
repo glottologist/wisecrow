@@ -1,6 +1,7 @@
 pub mod application;
 pub mod auth;
 mod components;
+mod online;
 pub mod platform;
 mod router;
 pub mod storage;
@@ -14,16 +15,17 @@ use dioxus::prelude::*;
 use application::LocalStore;
 
 pub fn app() -> Element {
-    rsx! {
-        Router::<router::Route> {}
-    }
+    online::app()
 }
 
-/// The app with a local store the pages can read.
+/// Configures HTTPS requests for the shared native interface before launch.
+pub fn configure_online() -> Result<(), ServerFnError> {
+    online::configure()
+}
+
+/// The offline interface backed by a local store.
 ///
-/// The grammar pages draw entirely from the device's own database, so they
-/// need it in context; `app` remains for the launch paths that have not yet
-/// built one.
+/// The normal launch path uses the shared online interface instead.
 pub fn app_with_store(store: Arc<dyn LocalStore>) -> Element {
     use_context_provider(|| Arc::clone(&store)); // clone: every page shares the one store
     rsx! {
@@ -31,9 +33,7 @@ pub fn app_with_store(store: Arc<dyn LocalStore>) -> Element {
     }
 }
 
-/// The app with a store, an API and a media root, so grammar practice can
-/// fetch and play example clips. The launch paths that have an API wire it
-/// here; the others keep `app_with_store` and show examples as text.
+/// The offline interface with an API and media root for grammar example clips.
 pub fn app_with_media(
     store: Arc<dyn LocalStore>,
     api: Arc<dyn application::MobileApi>,

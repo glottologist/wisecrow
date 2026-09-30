@@ -155,6 +155,10 @@ impl LlmProvider for AnthropicProvider {
     fn name(&self) -> &str {
         "anthropic"
     }
+
+    fn cache_identity(&self) -> Option<String> {
+        Some(format!("anthropic:v1:thinking-disabled:{}", self.model))
+    }
 }
 
 #[cfg(test)]

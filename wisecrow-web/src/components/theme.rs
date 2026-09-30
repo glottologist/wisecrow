@@ -1,4 +1,3 @@
-// Rust guideline compliant 2026-09-10
 use dioxus::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
@@ -21,7 +20,10 @@ impl Theme {
         }
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(
+        target_arch = "wasm32",
+        all(feature = "native", not(feature = "server"))
+    ))]
     const fn attribute_value(self) -> &'static str {
         match self {
             Self::Light => "light",
@@ -37,6 +39,27 @@ pub fn ThemeProvider(children: Element) -> Element {
 
     let mut hydrated_theme = theme;
     use_effect(move || hydrated_theme.set(read_browser_theme()));
+    #[cfg(all(
+        feature = "native",
+        not(target_arch = "wasm32"),
+        not(feature = "server")
+    ))]
+    use_future(move || async move {
+        let eval = document::eval(
+            r#"
+            let saved;
+            try { saved = localStorage.getItem('wisecrow-theme'); } catch {}
+            const theme = saved === 'light' || saved === 'dark' ? saved
+                : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            document.documentElement.dataset.theme = theme;
+            return theme;
+        "#,
+        );
+        match eval.join::<String>().await {
+            Ok(value) => hydrated_theme.set(Theme::from_attribute(Some(&value))),
+            Err(_) => tracing::warn!("Could not restore native theme"),
+        }
+    });
 
     rsx! { {children} }
 }
@@ -149,15 +172,41 @@ fn apply_browser_theme(theme: Theme) {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(
+    feature = "native",
+    not(target_arch = "wasm32"),
+    not(feature = "server")
+))]
+fn apply_browser_theme(theme: Theme) {
+    spawn(async move {
+        let eval = document::eval(
+            r#"
+            const theme = await dioxus.recv();
+            document.documentElement.dataset.theme = theme;
+            try { localStorage.setItem('wisecrow-theme', theme); } catch {}
+        "#,
+        );
+        if eval.send(theme.attribute_value()).is_err() || eval.join::<()>().await.is_err() {
+            tracing::warn!("Could not apply native theme");
+        }
+    });
+}
+
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    any(not(feature = "native"), feature = "server")
+))]
 const fn apply_browser_theme(_theme: Theme) {}
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "server")]
     use dioxus::prelude::*;
     use rstest::rstest;
 
-    use super::{Theme, ThemeProvider, ThemeSelector};
+    use super::Theme;
+    #[cfg(feature = "server")]
+    use super::{ThemeProvider, ThemeSelector};
 
     #[rstest]
     #[case(Some("light"), Theme::Light)]

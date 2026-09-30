@@ -106,52 +106,29 @@ pub fn QuizPage() -> Element {
                 if loading() {
                     div { class: "text-center text-gray-400 py-8", "Generating quiz..." }
                 } else {
-                    form {
-                        class: "bg-gray-800 rounded-xl p-6 space-y-4",
-                        input {
-                            r#type: "file",
-                            accept: ".pdf",
-                            class: "w-full text-gray-300",
-                            onchange: move |evt: Event<FormData>| {
-                                async move {
-                                    let files = evt.data.files();
-                                    if let Some(file) = files.first() {
-                                        loading.set(true);
-                                        error_msg.set(None);
-                                        match file.read_bytes().await {
-                                            Ok(bytes) if bytes.len() > MAX_PDF_BYTES => {
-                                                error_msg.set(Some(format!(
-                                                    "PDF is {} MB; the limit is {} MB.",
-                                                    bytes.len() / (1024 * 1024),
-                                                    MAX_PDF_BYTES / (1024 * 1024),
-                                                )));
-                                            }
-                                            Ok(bytes) => {
-                                                match generate_quiz(bytes.into(), 20).await {
-                                                    Ok(quiz_items) => {
-                                                        if quiz_items.is_empty() {
-                                                            error_msg.set(Some(String::from(
-                                                                "No quiz questions could be generated from this PDF.",
-                                                            )));
-                                                        } else {
-                                                            items.set(quiz_items);
-                                                            started.set(true);
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        error_msg.set(Some(format!("Quiz generation failed: {e}")));
-                                                    }
-                                                }
-                                            }
-                                            Err(e) => {
-                                                error_msg.set(Some(format!("Failed to read file: {e}")));
-                                            }
-                                        }
-                                        loading.set(false);
-                                    }
+                    PdfUpload {
+                        on_pick: move |result: Result<Vec<u8>, String>| async move {
+                            error_msg.set(None);
+                            let bytes = match result {
+                                Ok(bytes) => bytes,
+                                Err(error) => {
+                                    error_msg.set(Some(error));
+                                    return;
                                 }
-                            },
-                        }
+                            };
+                            loading.set(true);
+                            match generate_quiz(bytes, 20).await {
+                                Ok(quiz_items) if !quiz_items.is_empty() => {
+                                    items.set(quiz_items);
+                                    started.set(true);
+                                }
+                                Ok(_) => error_msg.set(Some(String::from(
+                                    "No quiz questions could be generated from this PDF.",
+                                ))),
+                                Err(error) => error_msg.set(Some(format!("Quiz generation failed: {error}"))),
+                            }
+                            loading.set(false);
+                        },
                     }
                 }
 
@@ -242,6 +219,55 @@ pub fn QuizPage() -> Element {
                     }
                 },
             }
+        }
+    }
+}
+
+#[component]
+fn PdfUpload(on_pick: EventHandler<Result<Vec<u8>, String>>) -> Element {
+    let picker = try_consume_context::<std::sync::Arc<dyn crate::session::PdfPicker>>();
+    let mut selecting = use_signal(|| false);
+    if let Some(picker) = picker {
+        return rsx! {
+            button {
+                r#type: "button",
+                class: "w-full bg-emerald-600 hover:bg-emerald-500 rounded px-4 py-3 font-semibold transition",
+                disabled: selecting(),
+                onclick: move |_| {
+                    let picker = std::sync::Arc::clone(&picker); // clone: document selection outlives the event
+                    async move {
+                        selecting.set(true);
+                        match picker.pick(80 * 1024 * 1024).await {
+                            Ok(Some(bytes)) if bytes.len() <= MAX_PDF_BYTES => on_pick.call(Ok(bytes)),
+                            Ok(Some(_)) => on_pick.call(Err(String::from("PDF exceeds the 80 MB limit."))),
+                            Ok(None) => {},
+                            Err(error) => on_pick.call(Err(error.to_string())),
+                        }
+                        selecting.set(false);
+                    }
+                },
+                if selecting() { "Opening PDF…" } else { "Choose PDF" }
+            }
+        };
+    }
+    rsx! {
+        input {
+            r#type: "file",
+            accept: ".pdf",
+            aria_label: "Choose PDF",
+            class: "w-full text-gray-300",
+            onchange: move |event: Event<FormData>| async move {
+                if let Some(file) = event.data.files().first() {
+                    if file.size() > 80 * 1024 * 1024 {
+                        on_pick.call(Err(String::from("PDF exceeds the 80 MB limit.")));
+                        return;
+                    }
+                    let result = file.read_bytes().await
+                        .map(Into::into)
+                        .map_err(|_| String::from("Failed to read this PDF."));
+                    on_pick.call(result);
+                }
+            },
         }
     }
 }

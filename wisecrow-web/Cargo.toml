@@ -64,6 +64,7 @@ web-sys = { version = "0.3", features = [
 default = ["audio", "images"]
 server = ["dioxus/server", "dep:wisecrow-core", "dep:tokio", "dep:sqlx", "dep:dotenvy", "dep:config", "dep:tempfile", "dep:axum", "dep:axum-server", "dep:axum-extra", "dep:tower", "dep:tower-http", "dep:governor", "dep:rustls", "dep:rustls-pemfile"]
 web = ["dioxus/web"]
+native = ["dep:tokio"]
 # These deliberately do not imply `server`: dx enables that itself for the
 # server half, and implying it here would put `dioxus/server` into the client
 # build whenever the feature is named on the command line.

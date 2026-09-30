@@ -21,12 +21,18 @@ async fn async_sleep(ms: u64) {
     gloo_timers::future::TimeoutFuture::new(u32::try_from(ms).unwrap_or(100)).await;
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "server"))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    any(feature = "server", feature = "native")
+))]
 async fn async_sleep(ms: u64) {
     tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
 }
 
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "server")))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(any(feature = "server", feature = "native"))
+))]
 async fn async_sleep(ms: u64) {
     std::thread::sleep(std::time::Duration::from_millis(ms));
 }

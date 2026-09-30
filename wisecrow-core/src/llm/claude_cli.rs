@@ -278,6 +278,13 @@ impl LlmProvider for ClaudeCliProvider {
     fn name(&self) -> &str {
         "claude-cli"
     }
+
+    fn cache_identity(&self) -> Option<String> {
+        Some(format!(
+            "claude-cli:v1:thinking-disabled:{}:{SYSTEM_PROMPT}",
+            self.model
+        ))
+    }
 }
 
 #[cfg(test)]

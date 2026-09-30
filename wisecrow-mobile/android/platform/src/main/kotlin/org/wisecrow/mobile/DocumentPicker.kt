@@ -7,8 +7,11 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.result.ActivityResult
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -129,14 +132,42 @@ internal class DocumentPicker private constructor(
 
     private fun activityLauncher(activity: Activity): (Intent) -> Unit {
         val owner = activity as? AppCompatActivity ?: return unavailableLauncher()
-        return try {
-            val launcher = owner.registerForActivityResult(
+        return { intent ->
+            val requestId = activeRequestId.get()
+                ?: throw IllegalStateException("no document request")
+            owner.runOnUiThread { launchOnMain(owner, requestId, intent) }
+        }
+    }
+
+    private fun launchOnMain(owner: AppCompatActivity, requestId: String, intent: Intent) {
+        if (activeRequestId.get() != requestId) return
+        var launcher: ActivityResultLauncher<Intent>? = null
+        val observer = object : DefaultLifecycleObserver {
+            override fun onDestroy(owner: LifecycleOwner) {
+                launcher?.unregister()
+                cancel(requestId)
+                owner.lifecycle.removeObserver(this)
+            }
+        }
+        try {
+            // Rust requests arrive after STARTED, so register directly and release explicitly.
+            launcher = owner.activityResultRegistry.register(
+                "wisecrow-document-$requestId",
                 ActivityResultContracts.StartActivityForResult(),
-            ) { result -> complete(result) }
-            val launch: (Intent) -> Unit = { intent -> launcher.launch(intent) }
-            launch
-        } catch (_: IllegalStateException) {
-            unavailableLauncher()
+            ) { result ->
+                launcher?.unregister()
+                owner.lifecycle.removeObserver(observer)
+                complete(requestId, result)
+            }
+            owner.lifecycle.addObserver(observer)
+            launcher.launch(intent)
+        } catch (_: RuntimeException) {
+            launcher?.unregister()
+            owner.lifecycle.removeObserver(observer)
+            activeRequestId.compareAndSet(requestId, null)
+            requests.computeIfPresent(requestId) { _, _ ->
+                PickerPollResult.Failure(PickerError.LAUNCH_FAILED)
+            }
         }
     }
 
@@ -161,8 +192,8 @@ internal class DocumentPicker private constructor(
         return PickerStartResult.Failure(PickerError.LAUNCH_FAILED)
     }
 
-    private fun complete(result: ActivityResult) {
-        val requestId = activeRequestId.getAndSet(null) ?: return
+    private fun complete(requestId: String, result: ActivityResult) {
+        if (!activeRequestId.compareAndSet(requestId, null)) return
         val request = requests[requestId] as? PendingRequest ?: return
         val uri = result.data?.data
         if (result.resultCode != Activity.RESULT_OK || uri == null) {
@@ -288,7 +319,7 @@ internal class DocumentPicker private constructor(
         private const val CERTIFICATE_KIND = "certificate"
         private const val PDF_MIME = "application/pdf"
         private const val MAX_CERTIFICATE_BYTES = 65_536L
-        private const val MAX_PDF_BYTES = 67_108_864L
+        private const val MAX_PDF_BYTES = 80 * 1024 * 1024L
         private const val MAX_NAME_CHARS = 255
         private const val BUFFER_BYTES = 8_192
         private val PICKER_EXECUTOR = Executors.newSingleThreadExecutor()
