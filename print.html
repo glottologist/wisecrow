@@ -38,7 +38,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-2f7f9212.js";
+            window.path_to_searchindex_js = "searchindex-9afa311a.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-a32f9be8.js"></script>
@@ -455,16 +455,19 @@ and the <a href="#dual-n-back">Dual n-back guide</a>.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="android-build-install-and-use"><a class="header" href="#android-build-install-and-use">Android: build, install and use</a></h1>
-<p>Open <code>https://wisecrow.glottologist.co.uk:8443</code> in your phone’s browser to use
-Wise Crow today. The native Android application still needs the connections
-described below before it can sign in, download lessons or work offline.</p>
+<p>Open <strong>WisecrowMobile</strong> and sign in with your existing Wise Crow account.
+The Android app now bundles the same Dioxus interface as the website and
+connects to <code>https://wisecrow.glottologist.co.uk:8443</code>. Lessons require a network
+connection; offline downloads are not yet exposed by the app.</p>
 <p>This guide covers a Linux workstation and a USB-connected Android phone. Build
 on the workstation where the repository lives; calypso continues to run the
 server. The Android build does not require a local PostgreSQL database.</p>
 <h2 id="current-readiness"><a class="header" href="#current-readiness">Current readiness</a></h2>
-<p><strong>Checked on 29 September 2026: the signed ARM64 development APK builds and
-passes package inspection. Installation and launch on a phone remain unverified.</strong>
-The native application still has these gaps:</p>
+<p><strong>Checked on 30 September 2026: the signed ARM64 development APK installs and
+starts on a Samsung SM-F946B running Android 16. Android reports
+<code>pageSizeCompat=0</code>.</strong> The shared interface and native adapters compile and pass
+automated checks. The phone was locked during inspection, so successful device
+sign-in, playback and PDF selection still need confirmation.</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -472,17 +475,15 @@ The native application still has these gaps:</p>
 </thead>
 <tbody>
 <tr><td>Launchable package</td><td>The verified APK contains <code>org.wisecrow.mobile</code>, Dioxus’s <code>dev.dioxus.main.MainActivity</code>, native library metadata and the launcher intent. It supports ARM64, declares minimum API 26 and targets API 35. Its launcher label is <code>WisecrowMobile</code>.</td></tr>
-<tr><td>Server connection and local data</td><td><code>src/transport/api.rs</code> holds a server origin but does not implement <code>MobileApi</code>. The Android entry point in <code>src/main.rs</code> launches <code>app</code>, without the store/API/media contexts supplied by <code>app_with_media</code> in <code>src/lib.rs</code>.</td></tr>
-<tr><td>User interface</td><td><code>src/components/home.rs</code> displays a fixed “Local storage is ready.” message. That message does not check the database. Learn and N-back are placeholders; the navigation has only Home. There is no login, server-settings or download screen. Grammar components exist but need the missing store context and downloaded data.</td></tr>
+<tr><td>Server connection</td><td><code>src/online.rs</code> configures an HTTPS RPC client for the deployed server. Native login uses <code>/api/mobile/login</code>, restores identity with <code>/api/mobile/me</code>, and stores the bearer token using Android Keystore-backed credentials. Redirects are disabled and TLS verification remains enabled.</td></tr>
+<tr><td>User interface</td><td>The entry point now renders <code>wisecrow_web::app</code>, including its sign-in, language selection, Learn, Fast, N-back, PDF Quiz, grammar placement, practice, brainmap, branding and themes. Fast playback and theme changes use the native WebView bridge. PDF selection uses the Android document picker.</td></tr>
+<tr><td>Offline storage</td><td>The existing SQLite/sync implementation and separate offline components remain available as library code. The online entry point does not connect them to the shared UI. There is no download or offline menu.</td></tr>
 </tbody>
 </table>
 </div>
-<p>The <code>src/</code> paths in this table are relative to <code>wisecrow-mobile/</code>. The underlying
-storage, sync and grammar code has automated tests, but that is not evidence of
-a working installed app. Fast mode is not a route in the mobile shell.</p>
-<p><strong>The following commands are the development build/install procedure. They do
-not complete these missing features.</strong> Finish the application connections
-before expecting a usable offline learning app.</p>
+<p>The <code>src/</code> paths in this table are relative to <code>wisecrow-mobile/</code>. Sharing the
+web components keeps the online experience aligned across platforms. It does
+not supply offline learning or verify every workflow on the phone.</p>
 <h2 id="prepare-the-workstation"><a class="header" href="#prepare-the-workstation">Prepare the workstation</a></h2>
 <p>Allow approximately <strong>30–60 minutes</strong> for a first-time SDK/toolchain setup,
 depending on downloads. The examples use Bash.</p>
@@ -507,6 +508,11 @@ metadata. The platform module declares the same plugin versions. See the
 and <a href="https://developer.android.com/build/kotlin-support">Android Kotlin compatibility reference</a>.
 The Dioxus CLI must already be on <code>PATH</code>; its installation is described below.
 Stay in this shell for the build commands.</p>
+<p>The workspace’s <code>.cargo/config.toml</code> adds <code>max-page-size=16384</code> and
+<code>common-page-size=16384</code> linker options for ARM64 and x86-64 Android targets.
+Dioxus reads these Cargo target settings too. NDK 27 needs these explicit
+options for 16 KB ELF and RELRO alignment; host builds are unaffected. See
+Android’s <a href="https://developer.android.com/guide/practices/page-sizes">16 KB page-size instructions</a>.</p>
 <h3 id="other-linux-setups"><a class="header" href="#other-linux-setups">Other Linux setups</a></h3>
 <ol>
 <li>
@@ -597,9 +603,11 @@ commands target a 64-bit ARM phone. Keep the terminal open for installation.</p>
 <p><code>--package-types apk</code> matters: CLI 0.7.10 otherwise defaults to an Android App
 Bundle (<code>.aab</code>), which is not directly installed with <code>adb install</code>. This is
 a development build. The CLI’s generated Gradle project uses debug signing
-when release signing has not been configured. The mobile crate does not
-enable Dioxus’s unused <code>fullstack</code> feature, which would also trigger a host
-server build. The deployed server continues to run independently.</p>
+when release signing has not been configured. The mobile crate depends
+directly on <code>dioxus-fullstack</code> for RPC client support. Do not add the
+<code>fullstack</code> feature to its direct <code>dioxus</code> dependency: CLI 0.7.10 interprets
+that as a request to bundle a host server, even with <code>--fullstack false</code>.
+The deployed server continues to run independently.</p>
 </li>
 <li>
 <p>Check that the command succeeded and locate the output:</p>
@@ -620,6 +628,23 @@ previous failed build contains your latest changes.</p>
 <code>launchable-activity</code> entry. <strong>Stop here if the launcher entry is absent</strong>.
 Signature verification is
 described in the official <a href="https://developer.android.com/tools/apksigner">apksigner reference</a>.</p>
+</li>
+<li>
+<p>Verify native-library alignment in the actual APK:</p>
+<pre><code class="language-bash">export WISECROW_APK_CHECK="$(mktemp -d)"
+unzip "$WISECROW_APK" 'lib/*/*.so' -d "$WISECROW_APK_CHECK"
+"$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" \
+  -lW "$WISECROW_APK_CHECK/lib/arm64-v8a/libmain.so"
+"$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 -v 4 "$WISECROW_APK"
+</code></pre>
+<p>Every <code>LOAD</code> segment must have alignment at least <code>0x4000</code> (16 KB).
+For <code>GNU_RELRO</code>, the sum of <code>VirtAddr</code> and <code>MemSiz</code> must be divisible by
+<code>0x4000</code>. <code>zipalign</code> must report <code>Verification successful</code>. The current
+ARM64 APK contains only <code>libmain.so</code>; inspect every <code>.so</code> if dependencies
+add more. For an x86-64 APK, use its <code>lib/x86_64/</code> path instead.</p>
+<p>A device’s API version does not establish its page size. Check with
+<code>adb -s "$WISECROW_DEVICE" shell getconf PAGE_SIZE</code> after selecting the
+device below. Runtime testing on a 16 KB system requires a result of <code>16384</code>.</p>
 </li>
 </ol>
 <p>For an x86-64 emulator, install the <code>x86_64-linux-android</code> Rust target and replace
@@ -668,31 +693,28 @@ to the phone’s Downloads folder using USB file transfer or your usual file
 transfer tool.</li>
 <li>Open the APK in the phone’s Files app. If Android requests it, allow that
 app to install this package, then select <strong>Install</strong>.</li>
-<li>Open <strong>WisecrowMobile</strong>. This development build provides the native shell;
-use the website for sign-in and lessons.</li>
+<li>Open <strong>WisecrowMobile</strong> and sign in with your existing account.</li>
 </ol>
 <h2 id="use-on-android"><a class="header" href="#use-on-android">Use on Android</a></h2>
-<p>For the current usable interface:</p>
 <ol>
-<li>Open <code>https://wisecrow.glottologist.co.uk:8443</code> in the phone’s browser.</li>
+<li>Open <strong>WisecrowMobile</strong> while connected to the internet.</li>
 <li>Sign in with your existing Wise Crow account.</li>
-<li>Select the language and learning mode on the website.</li>
+<li>Choose your languages under <strong>Start a session</strong>, then select the learning
+mode. <strong>Quiz</strong> opens PDF quizzes; <strong>Choose PDF</strong> opens Android’s document picker.</li>
 </ol>
-<p>The website needs network access. Installing the native shell does not add
-offline support to the website.</p>
-<p>For the <strong>native APK</strong>, the current code aims to
-show Home and its fixed storage message. There are no working sign-in or
-download instructions to follow yet. Rebuilding the server or copying grammar
-PDFs to the phone will not fill those missing application connections.</p>
-<p>The native release should be accepted only after these flows are implemented
-and verified on a device:</p>
+<p>The app restores a saved login when reopened. <strong>Logout</strong> revokes the server
+session when reachable and deletes the local credential. Light and dark themes
+use the same controls as the website. The website remains available in the
+phone’s browser at <code>https://wisecrow.glottologist.co.uk:8443</code>.</p>
+<p>Both interfaces currently require network access. The following offline flows
+remain future acceptance requirements:</p>
 <div class="table-wrapper">
 <table>
 <thead>
 <tr><th>Flow</th><th>What must work</th></tr>
 </thead>
 <tbody>
-<tr><td>Connect</td><td>Configure <code>https://wisecrow.glottologist.co.uk:8443</code> as the server origin, authenticate and register the device. The URL is the server root, not a <code>/fast</code> or <code>/api</code> route.</td></tr>
+<tr><td>Connect offline services</td><td>Register the device and connect the profile-scoped local store and sync API to the shared UI. The online login does not initialize an offline profile.</td></tr>
 <tr><td>Download</td><td>Select a language, complete the initial vocabulary and grammar sync, and display completion.</td></tr>
 <tr><td>Learn offline</td><td>Open downloaded lessons without a network connection and save answers locally.</td></tr>
 <tr><td>Reconnect</td><td>Upload pending answers and refresh progress without duplicates.</td></tr>
@@ -700,8 +722,7 @@ and verified on a device:</p>
 </tbody>
 </table>
 </div>
-<p>These are acceptance requirements, not existing menu labels. The current router
-and screens do not expose this workflow. The
+<p>These are acceptance requirements, not existing menu labels. The
 <a href="#wisecrow-mobile-1">mobile API reference</a> describes the underlying pieces.</p>
 <h2 id="update-an-installed-build"><a class="header" href="#update-an-installed-build">Update an installed build</a></h2>
 <ol>
@@ -726,8 +747,11 @@ own maintained signing configuration; <code>--release</code> alone does not esta
 <tr><td>Kotlin reports metadata <code>2.2.0</code>, expected <code>2.0.0</code></td><td>Enter the Nix shell or apply <code>android/gradle.init.gradle</code> using the project Gradle home above. Editing the generated Gradle project is not persistent.</td></tr>
 <tr><td><code>INSTALL_FAILED_NO_MATCHING_ABIS</code></td><td>Compare <code>adb -s "$WISECROW_DEVICE" shell getprop ro.product.cpu.abilist</code> with the Rust build target.</td></tr>
 <tr><td><code>INSTALL_FAILED_UPDATE_INCOMPATIBLE</code></td><td>Rebuild with the signing key used for the installed app.</td></tr>
+<tr><td>“This app isn’t 16 KB-compatible” / “ELF alignment check failed”</td><td>Rebuild with the workspace’s Android linker flags and inspect the packaged ELF and ZIP alignment as above.</td></tr>
 <tr><td>Install succeeds but no app icon appears</td><td>Inspect the packaged manifest’s launcher activity; rebuild with the corrected manifest override.</td></tr>
-<tr><td>Only Home appears, with no login or download controls</td><td>This matches the current shell. The missing application UI and wiring need implementation.</td></tr>
+<tr><td>“Local storage is ready” is still the only screen</td><td>This is the older placeholder APK. Rebuild and install the shared-interface version using the same signing key.</td></tr>
+<tr><td>Login cannot reach the server</td><td>Check that the phone can open the deployed HTTPS origin. The native RPC client verifies public TLS certificates and does not use the offline platform’s imported-CA settings.</td></tr>
+<tr><td>No download controls</td><td>Offline downloads are not yet connected to the shared interface. Online lessons need a network connection.</td></tr>
 </tbody>
 </table>
 </div>
@@ -747,12 +771,50 @@ and launcher <code>dev.dioxus.main.MainActivity</code>. The packaged manifest re
 <code>wisecrow_network_security_config</code>; its XML forbids cleartext and retains the
 intended system/user certificate trust anchors. The policy lives in the
 platform module because Dioxus generates its own <code>network_security_config.xml</code>.</p>
-<p>Workspace checks, Clippy and formatting passed. All 682 enabled workspace
-tests passed (185 skipped), as did all 47 mobile tests run independently and
-all 8 Kotlin unit tests. Documentation tests passed with no cases discovered.</p>
-<p>No device was connected. Installation, launch, instrumented Android tests and
-phone playback remain unverified. This APK uses development signing; it is
-not a verified production release.</p>
+<p>On 30 September, all 743 enabled workspace tests passed (191 skipped), as did
+all 8 Kotlin unit tests. Workspace and ARM64 Android Clippy passed with warnings
+denied. Documentation tests passed with no cases discovered. The native session
+tests cover credential persistence, restore, expiration, failed secure storage,
+and local logout when remote revocation fails.</p>
+<p>The web server feature passed 83 tests (11 skipped), including the signed-out
+native route guard. The browser/WASM configuration also passed <code>cargo check</code>.
+All five Android platform instrumentation tests passed on the connected phone.
+Those tests initially exposed an existing credential encryption defect: the
+key required randomized encryption but the code supplied its own IV. Encryption
+now lets the Keystore provider generate the IV, retaining the authenticated
+storage format and strict encryption policy; see
+<a href="https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec.Builder.html">Android’s key generation requirements</a>.
+The tests cover encryption, tamper rejection, profile separation, deletion,
+app-private paths and bounded PDF validation. They do not exercise interactive
+document selection or authenticated learning screens.</p>
+<p>The initial APK’s four <code>libmain.so</code> LOAD segments had <code>0x1000</code> alignment,
+causing Android’s 16 KB compatibility warning. After adding the Cargo linker
+settings, the rebuilt APK’s only native library has <code>0x4000</code> LOAD alignment
+and a 16 KB-aligned RELRO end. Its extracted payload matches the inspected
+library, and <code>zipalign -c -P 16 4</code> and signature verification pass. Reinstalling
+changed Android’s reported <code>pageSizeCompat</code> from <code>4</code> to <code>0</code>. The phone reports
+<code>PAGE_SIZE=4096</code>, so runtime on a 16 KB kernel remains untested. The x86-64
+linker configuration has not been verified with an emulator build.</p>
+<p>The first device launch on 30 September crashed because the generated Manganis
+constructor looked for <code>WisecrowPlatform</code> using the system class loader from a
+native thread. <code>AndroidPlatform::new</code> now loads the class through the Activity’s
+class loader, retains the instance as a global JNI reference and clears handled
+Java exceptions before detaching. This follows Android’s
+<a href="https://developer.android.com/ndk/guides/jni-tips#faq:-why-didnt-findclass-find-my-class">JNI class-loader guidance</a>.</p>
+<p>The shared-interface APK passed signature and ZIP alignment inspection and
+installed with <code>adb install -r</code>. Its SHA-256 is
+<code>59cdefa8cefdc681642c4f93f8a1a068e46ece43da1f8054116d04c0d74d1947</code>.
+Its process remained alive after launch, with no new crash entry. The phone was
+locked during inspection; a temporary WebView debug connection timed out and
+was removed. Earlier user confirmation of the placeholder Home screen applies
+to the previous APK, not this interface. Device sign-in, lessons, playback and
+PDF picking remain unverified until the phone is unlocked and used.</p>
+<p>Android document selection now registers on the main thread through
+<code>ActivityResultRegistry</code>, since Rust can request selection after the Activity
+has started. The launcher is released on result or Activity destruction, as
+required by the <a href="https://developer.android.com/reference/androidx/activity/result/ActivityResultRegistry">Android registry API</a>.
+The standalone platform tests run with <code>gradle -p android/platform testDebugUnitTest --no-daemon</code> inside the Nix shell.</p>
+<p>This APK uses development signing; it is not a verified production release.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="ingesting-corpora"><a class="header" href="#ingesting-corpora">Ingesting corpora</a></h1>
 <p><code>ingest</code> is Wisecrow’s main data-acquisition command. This guide covers the
@@ -1651,11 +1713,33 @@ rows naming that level.</li>
 progress in PostgreSQL by file contents, language and level. Reruns skip
 completed files even if renamed, resume failures and process changed files
 or new levels. Old imports without progress records receive one catch-up
-scan. Every productive batch continues, including short answers; a round
-with no new rules ends that chunk. Semantic deduplication is model judgment and
-should be reviewed. Without <code>--incremental</code>, the legacy thirty-PDF-rule
+scan. Extraction continues until no further source points are found, including
+when an entire batch already exists in the syllabus. Semantic deduplication is
+model judgment and should be reviewed. Without <code>--incremental</code>, the legacy thirty-PDF-rule
 target still applies.</li>
 </ol>
+<p>Incremental imports save source extraction responses in PostgreSQL’s
+<code>grammar_llm_cache</code> table. Extraction depends on the source passages, language,
+level and points previously extracted from those passages. Adding syllabus rules
+does not change this request. A resumed chunk replays its saved batches and skips
+rules already committed. Response reuse logs <code>PDF LLM cache hit; skipped ... request</code>.</p>
+<p>The <code>grammar_rule_comparisons</code> table separately stores semantic duplicate decisions
+between pairs of rule texts. A saved match skips a candidate while the matching
+rule still exists with the same title and explanation. Saved nonmatches skip those
+pairs; only unseen or changed pairs are sent for review. This works even when the
+syllabus grows or review batch boundaries move. Logs report saved comparisons and
+the number of previously unchecked pairs sent for review. Examples and citations
+do not affect semantic comparison identity.</p>
+<p>Both caches distinguish provider/model settings; comparison decisions also
+distinguish language and review version. Changed source text, level or extraction
+prompt requires new extraction. First-time extraction and unseen comparisons still
+use the model. Provider errors, invalid responses and extraction batches with
+quality refusals remain retryable and are not cached. Saved responses and completed
+comparisons survive a later import rollback.</p>
+<p>Migration 038 adds the comparison table. Existing rules and completed import
+progress remain intact. Older syllabus-dependent extraction responses cannot be
+reused by the new source prompt, so unfinished chunks need an initial source pass.
+Dry runs and legacy top-up imports do not use these caches.</p>
 <p>A point that reads badly is edited like any other: export the level with
 <code>export-grammar</code>, correct it, and re-import via <code>import-grammar</code> – <code>manual</code>
 overrides <code>pdf</code> on the next upsert.</p>
