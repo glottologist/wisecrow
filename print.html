@@ -38,7 +38,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-9afa311a.js";
+            window.path_to_searchindex_js = "searchindex-7026aba3.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-a32f9be8.js"></script>
@@ -1730,6 +1730,13 @@ pairs; only unseen or changed pairs are sent for review. This works even when th
 syllabus grows or review batch boundaries move. Logs report saved comparisons and
 the number of previously unchecked pairs sent for review. Examples and citations
 do not affect semantic comparison identity.</p>
+<p>A review request numbers its own candidates from zero, because a later batch
+carries only those still undecided. An answer that names a candidate nobody asked
+about, decides one twice, or matches a rule it was not shown is rejected, and the
+log names which of those happened along with the start of the answer. The rejection
+then goes back to the model, which is asked once more before the import gives up on
+that request, as an answer that is not a JSON array of points already is. A provider
+that failed outright is not asked again.</p>
 <p>Both caches distinguish provider/model settings; comparison decisions also
 distinguish language and review version. Changed source text, level or extraction
 prompt requires new extraction. First-time extraction and unseen comparisons still
