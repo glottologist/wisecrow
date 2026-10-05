@@ -8,6 +8,8 @@ use crate::{errors::WisecrowError, llm::LlmProvider};
 
 // Increment when cached response validation or interpretation changes.
 const CACHE_VERSION: u32 = 1;
+/// How much of an unusable answer reaches the log.
+const EXCERPT: usize = 240;
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum PdfLlmError {
@@ -68,8 +70,8 @@ impl<'a> PdfLlm<'a> {
         reusable: impl Fn(&T) -> bool,
     ) -> Result<T, PdfLlmError> {
         let Some((pool, identity)) = &self.cache else {
-            return parse(&self.provider.generate(prompt, max_tokens).await?)
-                .map_err(PdfLlmError::Response);
+            let response = self.provider.generate(prompt, max_tokens).await?;
+            return parse(&response).map_err(|error| self.unusable(error, &response));
         };
         let key = request_key(self.provider.name(), identity, prompt, max_tokens)?;
         let mut transaction = pool.begin().await?;
@@ -102,7 +104,7 @@ impl<'a> PdfLlm<'a> {
 
         info!("PDF LLM cache miss; calling {}", self.name());
         let response = self.provider.generate(prompt, max_tokens).await?;
-        let parsed = parse(&response).map_err(PdfLlmError::Response)?;
+        let parsed = parse(&response).map_err(|error| self.unusable(error, &response))?;
         if reusable(&parsed) {
             sqlx::query(
                 "INSERT INTO grammar_llm_cache (request_sha256, provider_identity, max_tokens, response)
@@ -118,6 +120,26 @@ impl<'a> PdfLlm<'a> {
         transaction.commit().await?;
         Ok(parsed)
     }
+
+    /// An answer the caller cannot use is worth seeing: nothing else keeps it,
+    /// and every rejection reads alike in an import log without it.
+    fn unusable(&self, error: WisecrowError, response: &str) -> PdfLlmError {
+        warn!(
+            "{} answered unusably: {error}; answer began {}",
+            self.name(),
+            excerpt(response)
+        );
+        PdfLlmError::Response(error)
+    }
+}
+
+/// Keeps a long or malformed answer from filling the import log.
+fn excerpt(response: &str) -> &str {
+    let end = response
+        .char_indices()
+        .nth(EXCERPT)
+        .map_or(response.len(), |(index, _)| index);
+    &response[..end]
 }
 
 fn request_key(

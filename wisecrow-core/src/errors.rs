@@ -38,6 +38,12 @@ pub enum WisecrowError {
     QuizGenerationError(String),
     #[error("LLM error: {0}")]
     LlmError(String),
+    /// The provider gave no answer at all, as when a usage limit is spent, a
+    /// credential is refused or the service cannot be reached. Every later
+    /// call would fail the same way, so a batch should stop rather than move
+    /// on to its next item.
+    #[error("LLM unavailable: {0}")]
+    LlmUnavailable(String),
     #[error("Sync error: {0}")]
     SyncError(String),
     #[error("Unsupported language: {0}")]

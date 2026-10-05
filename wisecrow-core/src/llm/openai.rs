@@ -84,14 +84,12 @@ impl LlmProvider for OpenAiProvider {
             .json(&request)
             .send()
             .await
-            .map_err(|e| WisecrowError::LlmError(format!("OpenAI request failed: {e}")))?;
+            .map_err(|e| WisecrowError::LlmUnavailable(format!("OpenAI request failed: {e}")))?;
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(WisecrowError::LlmError(format!(
-                "OpenAI API error {status}: {body}"
-            )));
+            return Err(super::status_error("OpenAI", status, &body));
         }
 
         let parsed: OpenAiResponse = response.json().await.map_err(|e| {

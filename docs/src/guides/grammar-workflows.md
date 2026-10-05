@@ -137,6 +137,14 @@ syllabus grows or review batch boundaries move. Logs report saved comparisons an
 the number of previously unchecked pairs sent for review. Examples and citations
 do not affect semantic comparison identity.
 
+A review request numbers its own candidates from zero, because a later batch
+carries only those still undecided. An answer that names a candidate nobody asked
+about, decides one twice, or matches a rule it was not shown is rejected, and the
+log names which of those happened along with the start of the answer. The rejection
+then goes back to the model, which is asked once more before the import gives up on
+that request, as an answer that is not a JSON array of points already is. A provider
+that failed outright is not asked again.
+
 Both caches distinguish provider/model settings; comparison decisions also
 distinguish language and review version. Changed source text, level or extraction
 prompt requires new extraction. First-time extraction and unseen comparisons still

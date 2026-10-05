@@ -159,6 +159,26 @@ fn escape_raw_control_characters(json: &str) -> Option<String> {
     repaired.then_some(out)
 }
 
+/// Classifies a provider's HTTP refusal.
+///
+/// A spent quota (429), a refused credential (401, 403) or a failing service
+/// (5xx, including Anthropic's 529) refuses every later call as well, so it is
+/// [`WisecrowError::LlmUnavailable`]. Any other status faults this one
+/// request, such as a prompt that is too long, and is
+/// [`WisecrowError::LlmError`].
+pub(crate) fn status_error(
+    provider: &str,
+    status: reqwest::StatusCode,
+    body: &str,
+) -> WisecrowError {
+    let message = format!("{provider} API error {status}: {body}");
+    if matches!(status.as_u16(), 401 | 403 | 429) || status.is_server_error() {
+        WisecrowError::LlmUnavailable(message)
+    } else {
+        WisecrowError::LlmError(message)
+    }
+}
+
 /// Creates an LLM provider based on configuration.
 ///
 /// `llm_api_key` carries whichever credential the chosen provider bills
@@ -217,6 +237,27 @@ pub fn create_provider(config: &Config) -> Result<Box<dyn LlmProvider>, Wisecrow
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refusals_that_recur_on_every_call_are_unavailable() {
+        for code in [401, 403, 429, 500, 529] {
+            let status = reqwest::StatusCode::from_u16(code).expect("a valid status");
+            assert!(
+                matches!(status_error("Anthropic", status, "body"), WisecrowError::LlmUnavailable(m) if m.contains("body")),
+                "{code} should stop a batch"
+            );
+        }
+        for code in [400, 404, 413] {
+            let status = reqwest::StatusCode::from_u16(code).expect("a valid status");
+            assert!(
+                matches!(
+                    status_error("Anthropic", status, "body"),
+                    WisecrowError::LlmError(_)
+                ),
+                "{code} faults one request only"
+            );
+        }
+    }
 
     #[derive(serde::Deserialize, PartialEq, Eq, Debug)]
     struct Sample {

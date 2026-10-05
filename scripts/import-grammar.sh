@@ -14,6 +14,9 @@ Source extraction and rule comparisons are cached in PostgreSQL. Syllabus growth
 reuses extracted points and checks only unseen rule pairs; retries reuse results
 saved before a later failure. Previously uncached work still calls the model.
 The first run also checks old books without progress records for missed rules.
+A language that fails is logged and the rest still run; the script then exits 1.
+A model provider that cannot answer at all (a spent usage limit, a lapsed login,
+an outage) stops the script at once with exit status 75.
 This calls the configured model and writes grammar rules. Full output goes to logs/.
 Requires a deployed wisecrow binary supporting import-pdf --incremental.
 HELP
@@ -50,14 +53,30 @@ for language in "${languages[@]}"; do
     "${compose[@]}" exec -T wisecrow-web test -d "/app/grammar/$language"
 done
 
+# The importer exits with this status when the model provider cannot answer;
+# every later language would fail the same way, so only this one stops the loop.
+llm_unavailable=75
+failed=()
 for language in "${languages[@]}"; do
     printf '\nImporting unfinished %s documents at their recorded levels\n' "$language" | tee -a "$log"
     # Omitting --level lets the importer keep levels ordered and extract each
     # document once; an explicit six-level loop would also admit unlevelled books.
+    status=0
     "${compose[@]}" exec -T wisecrow-web wisecrow import-pdf --incremental \
         --file "/app/grammar/$language" --lang "$language" 2>&1 \
         | tee -a "$log" \
-        | awk '/ INFO| WARN| ERROR|^[Ee]rror/ { print; fflush() }'
+        | awk '/ INFO| WARN| ERROR|^[Ee]rror/ { print; fflush() }' \
+        || status=$?
+    if (( status == llm_unavailable )); then
+        printf '\nThe model provider cannot answer (usage limit, login or outage); stopped at %s.\n' \
+            "$language" | tee -a "$log" >&2
+        printf 'Import stopped. See %s; rerun this script to resume.\n' "$log" >&2
+        exit "$llm_unavailable"
+    elif (( status != 0 )); then
+        printf 'Import of %s failed with exit status %d; continuing with the next language.\n' \
+            "$language" "$status" | tee -a "$log" >&2
+        failed+=("$language")
+    fi
 done
 
 printf '\nCoverage after import (zero rows included; no rule ceiling):\n' | tee -a "$log"
@@ -81,3 +100,7 @@ ORDER BY requested.position, cl.sort_order;
 COMMIT;
 SQL
 printf '\nImport commands finished. Review duplicate, Skipped and Refused lines in %s.\n' "$log"
+if (( ${#failed[@]} > 0 )); then
+    printf 'Unfinished languages: %s. Rerun this script to resume them.\n' "${failed[*]}" | tee -a "$log" >&2
+    exit 1
+fi

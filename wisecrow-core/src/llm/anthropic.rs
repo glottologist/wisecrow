@@ -132,14 +132,12 @@ impl LlmProvider for AnthropicProvider {
             .json(&request)
             .send()
             .await
-            .map_err(|e| WisecrowError::LlmError(format!("Anthropic request failed: {e}")))?;
+            .map_err(|e| WisecrowError::LlmUnavailable(format!("Anthropic request failed: {e}")))?;
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(WisecrowError::LlmError(format!(
-                "Anthropic API error {status}: {body}"
-            )));
+            return Err(super::status_error("Anthropic", status, &body));
         }
 
         // `{e:?}` rather than `{e}`: reqwest's Display for a decode failure is

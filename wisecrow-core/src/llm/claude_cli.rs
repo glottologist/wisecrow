@@ -125,9 +125,11 @@ fn truncated(max_tokens: u32) -> WisecrowError {
 ///
 /// # Errors
 ///
-/// Returns [`WisecrowError::LlmError`] when the CLI printed something other
-/// than a result object, when it reported a failure of its own, when the
-/// answer was truncated at `max_tokens`, or when the answer is empty.
+/// Returns [`WisecrowError::LlmUnavailable`] when the CLI printed something
+/// other than a result object or reported a failure of its own, such as a
+/// spent usage limit or a lapsed login, since every later run would fail
+/// alike. Returns [`WisecrowError::LlmError`] when the answer was truncated at
+/// `max_tokens` or is empty, which faults only this request.
 fn read_answer(
     stdout: &[u8],
     stderr: &[u8],
@@ -148,7 +150,7 @@ fn read_answer(
         } else {
             detail.to_owned()
         };
-        return Err(WisecrowError::LlmError(format!(
+        return Err(WisecrowError::LlmUnavailable(format!(
             "`{BINARY} -p` printed no result object ({status}): {detail}"
         )));
     };
@@ -161,7 +163,7 @@ fn read_answer(
         if answer.contains("output token maximum") {
             return Err(truncated(max_tokens));
         }
-        return Err(WisecrowError::LlmError(format!(
+        return Err(WisecrowError::LlmUnavailable(format!(
             "Claude Code CLI run failed: {}",
             if answer.trim().is_empty() {
                 "no reason given".to_owned()
@@ -185,13 +187,13 @@ fn read_answer(
 impl LlmProvider for ClaudeCliProvider {
     /// # Errors
     ///
-    /// Returns [`WisecrowError::LlmError`] if `claude` cannot be run, if the
-    /// prompt cannot be handed to it, or if the run does not produce an
-    /// answer.
+    /// Returns [`WisecrowError::LlmUnavailable`] if `claude` cannot be run or
+    /// the prompt cannot be handed to it, and otherwise the errors of
+    /// [`read_answer`].
     async fn generate(&self, prompt: &str, max_tokens: u32) -> Result<String, WisecrowError> {
         for directory in [&self.config_dir, &self.working_dir] {
             tokio::fs::create_dir_all(directory).await.map_err(|e| {
-                WisecrowError::LlmError(format!(
+                WisecrowError::LlmUnavailable(format!(
                     "Failed to create {} for the Claude Code CLI: {e}",
                     directory.display()
                 ))
@@ -246,14 +248,14 @@ impl LlmProvider for ClaudeCliProvider {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| {
-                WisecrowError::LlmError(format!(
+                WisecrowError::LlmUnavailable(format!(
                     "Failed to run `{BINARY}`: {e}. The claude-cli provider needs Claude Code \
                      installed on this host."
                 ))
             })?;
 
         let mut stdin = child.stdin.take().ok_or_else(|| {
-            WisecrowError::LlmError(
+            WisecrowError::LlmUnavailable(
                 "Claude Code CLI gave no stdin to write the prompt to".to_owned(),
             )
         })?;
@@ -264,8 +266,9 @@ impl LlmProvider for ClaudeCliProvider {
             stdin.write_all(prompt.as_bytes()).await?;
             stdin.shutdown().await
         };
-        let ((), output) = tokio::try_join!(feed, child.wait_with_output())
-            .map_err(|e| WisecrowError::LlmError(format!("Claude Code CLI run failed: {e}")))?;
+        let ((), output) = tokio::try_join!(feed, child.wait_with_output()).map_err(|e| {
+            WisecrowError::LlmUnavailable(format!("Claude Code CLI run failed: {e}"))
+        })?;
 
         read_answer(
             &output.stdout,
@@ -313,7 +316,7 @@ mod tests {
             result_json("\"is_error\":true,\"result\":\"Not logged in · Please run /login\"");
         let error = read_answer(&stdout, b"", Some(0), 256).expect_err("is_error must not pass");
         assert!(
-            error.to_string().contains("Not logged in"),
+            matches!(&error, WisecrowError::LlmUnavailable(m) if m.contains("Not logged in")),
             "the CLI's own reason should reach the caller: {error}"
         );
     }
@@ -339,8 +342,8 @@ mod tests {
         );
         let error = read_answer(&stdout, b"", Some(0), 2048).expect_err("an overrun must not pass");
         assert!(
-            error.to_string().contains("max_tokens ceiling of 2048"),
-            "an overrun should read as truncation against the caller's budget: {error}"
+            matches!(&error, WisecrowError::LlmError(m) if m.contains("max_tokens ceiling of 2048")),
+            "an overrun should read as truncation against the caller's budget: {error:?}"
         );
     }
 
@@ -362,6 +365,10 @@ mod tests {
     fn non_json_stdout_reports_the_exit_status_and_stderr() {
         let error = read_answer(b"", b"error: unknown option '--tools'\n", Some(1), 256)
             .expect_err("a rejected flag must not pass");
+        assert!(
+            matches!(error, WisecrowError::LlmUnavailable(_)),
+            "a CLI that will not run cannot answer later calls either: {error:?}"
+        );
         let message = error.to_string();
         assert!(message.contains("exit 1"), "message: {message}");
         assert!(message.contains("unknown option"), "message: {message}");

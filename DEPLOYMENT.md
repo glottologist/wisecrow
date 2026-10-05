@@ -52,6 +52,13 @@ Both scripts default to `gd fr it ga cy es`; pass language codes to resume a
 subset, for example `./scripts/import-grammar.sh fr it`. Audio can be previewed
 without synthesis with `./scripts/prefetch-grammar-audio.sh --preview`.
 
+A language whose import fails does not stop the others: the import script logs
+it, runs the remaining languages and the coverage report, then exits 1 and names
+the unfinished languages. A model provider that cannot answer at all, such as a
+spent usage limit, a lapsed login or an outage, is different. Every later call
+would fail too, so `import-pdf` stops at once with exit status 75, and the script
+stops with it.
+
 Import reads each eligible document at the A1–C2 levels named by its
 `SOURCES.md` row, lowest level first. The script uses `import-pdf --incremental`:
 it visits every extracted prose chunk with no total rule ceiling, rejects exact

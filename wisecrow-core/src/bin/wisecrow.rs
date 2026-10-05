@@ -648,7 +648,8 @@ async fn handle_import_pdf(args: ImportPdfArgs) -> Result<(), Error> {
 
         // A model answer that will not parse, twice, is this document at this
         // level and nothing more; the rest of the shelf still runs. A database
-        // or extraction failure is not the model's and still ends the run.
+        // or extraction failure is not the model's and still ends the run, as
+        // does a provider that cannot answer, which would fail every document.
         let outcome =
             match import_passages(&pool, provider.as_ref(), target, name, extracted, options).await
             {
@@ -1521,8 +1522,30 @@ async fn handle_prefetch_grammar_audio(args: PrefetchGrammarAudioArgs) -> Result
     Ok(())
 }
 
+/// Exit status (`EX_TEMPFAIL`) for a run stopped because the model provider
+/// could not answer at all, as when a usage limit is spent. A wrapper over
+/// several runs can stop on it and carry on past any other failure.
+const EXIT_LLM_UNAVAILABLE: u8 = 75;
+
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> std::process::ExitCode {
+    match run().await {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("Error: {error:?}");
+            if matches!(
+                error.downcast_ref::<WisecrowError>(),
+                Some(WisecrowError::LlmUnavailable(_))
+            ) {
+                std::process::ExitCode::from(EXIT_LLM_UNAVAILABLE)
+            } else {
+                std::process::ExitCode::FAILURE
+            }
+        }
+    }
+}
+
+async fn run() -> Result<(), Error> {
     tracing_subscriber::fmt::init();
     if let Err(e) = dotenvy::dotenv() {
         tracing::debug!("No .env file loaded: {e}");

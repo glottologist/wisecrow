@@ -21,8 +21,11 @@ struct Model {
     calls: AtomicUsize,
     reject_title: Option<&'static str>,
     review_answer: Option<&'static str>,
+    /// Answered to a review that has not yet been told what was wrong with it.
+    first_review_answer: Option<&'static str>,
     cache_identity: Option<&'static str>,
     fail_review_title: Option<&'static str>,
+    renumber_review: bool,
     reviewed: Mutex<Vec<(String, String)>>,
 }
 
@@ -33,8 +36,10 @@ impl Model {
             calls: AtomicUsize::new(0),
             reject_title: None,
             review_answer: None,
+            first_review_answer: None,
             cache_identity: None,
             fail_review_title: None,
+            renumber_review: false,
             reviewed: Mutex::new(Vec::new()),
         }
     }
@@ -52,13 +57,18 @@ impl LlmProvider for Model {
             if let Some(answer) = self.review_answer {
                 return Ok(answer.to_owned());
             }
+            if let Some(answer) = self.first_review_answer {
+                if !prompt.contains("Your previous answer was rejected") {
+                    return Ok(answer.to_owned());
+                }
+            }
             let data: Value = serde_json::from_str(data)
                 .map_err(|error| WisecrowError::LlmError(error.to_string()))?;
             let candidates = data["candidates"]
                 .as_array()
                 .ok_or_else(|| WisecrowError::LlmError("missing candidates".into()))?;
             let mut decisions = Vec::new();
-            for candidate in candidates {
+            for (position, candidate) in candidates.iter().enumerate() {
                 let indices = candidate["compare_with"]
                     .as_array()
                     .ok_or_else(|| WisecrowError::LlmError("missing comparison targets".into()))?;
@@ -91,11 +101,16 @@ impl LlmProvider for Model {
                         duplicate = Some(index);
                     }
                 }
+                // A model that numbers its answers by position in the request,
+                // rather than echoing the supplied index.
+                let index = if self.renumber_review {
+                    json!(position)
+                } else {
+                    candidate["index"].clone()
+                };
                 decisions.push(match duplicate {
-                    Some(target) => {
-                        json!({"kind":"duplicate", "index":candidate["index"], "target":target})
-                    }
-                    None => json!({"kind":"distinct", "index":candidate["index"]}),
+                    Some(target) => json!({"kind":"duplicate", "index":index, "target":target}),
+                    None => json!({"kind":"distinct", "index":index}),
                 });
             }
             return Ok(json!({"decisions": decisions}).to_string());
@@ -882,5 +897,71 @@ async fn cancellation_releases_the_lock_and_does_not_complete_the_chunk(
     )
     .await??;
     assert_eq!(result.placed, 1);
+    Ok(())
+}
+
+/// Later comparison batches only carry the candidates still undecided, so the
+/// indices they request are no longer contiguous. The request must number its
+/// own candidates, or a model that answers by position names nobody.
+#[sqlx::test(migrations = "./migrations")]
+#[ignore = "requires PostgreSQL with database creation privileges"]
+async fn a_later_comparison_batch_accepts_answers_numbered_by_position(pool: PgPool) -> TestResult {
+    let lang = language(&pool).await?;
+    sqlx::query(
+        "INSERT INTO grammar_rules (language_id, cefr_level_id, slug, title, explanation, source)
+         VALUES ($1, (SELECT id FROM cefr_levels WHERE code = 'A1'),
+                 'original', 'Original rule', 'The original condition.', 'manual')",
+    )
+    .bind(lang)
+    .execute(&pool)
+    .await?;
+    // Enough existing rules to push the second candidate into a later batch.
+    seed_rules(&pool, lang, 70).await?;
+    let mut model = Model::new(vec![
+        json!([point("Reworded rule", 1), point("Fresh rule", 1)]).to_string(),
+        points(0, 0, 1),
+    ]);
+    model.reject_title = Some("Reworded rule");
+    model.renumber_review = true;
+    let result = import_passages(
+        &pool,
+        &model,
+        target(lang, "A1"),
+        document("book.pdf"),
+        &[passage(1, 10)],
+    )
+    .await?;
+    assert_eq!((result.placed, result.duplicates), (1, 1));
+    let titles: Vec<String> =
+        sqlx::query_scalar("SELECT title FROM grammar_rules WHERE source = 'pdf'")
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(titles, ["Fresh rule"]);
+    Ok(())
+}
+
+/// A rejected set of decisions ends the whole document, so the fault goes back
+/// to the model once before the import gives up on it.
+#[sqlx::test(migrations = "./migrations")]
+#[ignore = "requires PostgreSQL with database creation privileges"]
+async fn a_rejected_comparison_answer_is_asked_again_with_the_fault(pool: PgPool) -> TestResult {
+    let lang = language(&pool).await?;
+    seed_rules(&pool, lang, 1).await?;
+    let mut model = Model::new(vec![
+        json!([point("Fresh rule", 1)]).to_string(),
+        points(0, 0, 1),
+    ]);
+    model.first_review_answer = Some(r#"{"decisions":[{"kind":"distinct","index":7}]}"#);
+    let result = import_passages(
+        &pool,
+        &model,
+        target(lang, "A1"),
+        document("book.pdf"),
+        &[passage(1, 10)],
+    )
+    .await?;
+    assert_eq!(result.placed, 1);
+    // Two synthesis calls and a review asked twice.
+    assert_eq!(model.calls.load(Ordering::SeqCst), 4);
     Ok(())
 }
