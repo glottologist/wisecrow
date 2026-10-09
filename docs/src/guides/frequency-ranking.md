@@ -9,12 +9,12 @@ frequency lists nobody has published.
 ## Why ranking is a required step
 
 Ingestion sets each new translation's `frequency` to 1 and increments it when
-the same pair arrives again, so the column starts as a duplicate count rather
-than a measure of commonality. Deck selection then asks for rows with
-`frequency > 1`, which means a corpus ingested once and never ranked offers the
-learner almost nothing: on a 25,000-pair Welsh sample, ten rows cleared that
-filter. Running `frequency` is what turns a pile of aligned sentences into an
-ordered curriculum.
+the same pair arrives again, so that column starts as a duplicate count rather
+than a measure of commonality. Deck selection ignores it. A card needs a
+ranked `corpus_frequency` of at least 1, so a row that ranking never scored
+stays out however many times the pair was imported. A count of one is a card
+and sorts last. Running `frequency` is what turns a pile of aligned sentences
+into an ordered curriculum.
 
 ```sh
 wisecrow frequency --lang es
@@ -158,7 +158,8 @@ the deck filter is the figure that matters:
 
 ```sh
 psql -d wisecrow -c \
-  "SELECT count(*) FILTER (WHERE frequency > 1) AS ranked, count(*) AS total
+  "SELECT count(*) FILTER (WHERE corpus_frequency >= 1) AS ranked,
+          count(*) AS total
      FROM translations;"
 ```
 

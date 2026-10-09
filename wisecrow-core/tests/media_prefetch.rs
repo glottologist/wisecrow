@@ -207,6 +207,118 @@ mod preview {
 
     #[tokio::test]
     #[ignore = "requires PostgreSQL"]
+    async fn frequency_one_follows_higher_counts_in_the_deck() -> TestResult {
+        let pool = reset_pool().await?;
+        seed_pair(&pool).await?;
+        let common = seed_word(&pool, "house", "maison", 40, true).await?;
+        let rare = seed_word(&pool, "cat", "chat", 3, true).await?;
+        let once = seed_word(&pool, "tomorrow", "maireach", 1, true).await?;
+        let unglossed = seed_word(&pool, "noise", "bruit", 1, false).await?;
+        let sibling: i32 = sqlx::query_scalar(
+            "INSERT INTO translations
+                 (from_language_id, to_language_id, from_phrase, to_phrase, corpus_frequency)
+             SELECT n.id, f.id, 'hound', 'chat', 1 FROM languages n, languages f
+             WHERE n.code = 'en' AND f.code = 'fr'
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await?;
+        let unranked: i32 = sqlx::query_scalar(
+            "INSERT INTO translations
+                 (from_language_id, to_language_id, from_phrase, to_phrase, corpus_frequency)
+             SELECT n.id, f.id, 'never', 'jamais', NULL FROM languages n, languages f
+             WHERE n.code = 'en' AND f.code = 'fr'
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO word_glosses
+                 (lang_code, word, native_lang, translation, display_form, teachable,
+                  presentation_version)
+             VALUES ('fr', 'jamais', 'en', 'never', 'jamais', true, $1)",
+        )
+        .bind(CURRENT_PRESENTATION_VERSION)
+        .execute(&pool)
+        .await?;
+        let phrase = seed_word(&pool, "good day", "bon jour", 1, false).await?;
+        seed_phrase(&pool, phrase, "bon jour").await?;
+
+        let deck = VocabularyQuery::preparation_ids(&pool, "en", "fr").await?;
+        assert_eq!(deck, vec![common, rare, once, phrase]);
+        let learning = VocabularyQuery::unlearned(&pool, "en", "fr", 100).await?;
+        let unlearned_ids: Vec<i32> = learning.iter().map(|entry| entry.translation_id).collect();
+        assert_eq!(unlearned_ids, vec![common, rare, unglossed, once]);
+        assert_eq!(
+            VocabularyQuery::available_word_count(&pool, "en", "fr").await?,
+            4
+        );
+
+        let langs = Langs::new("en", "fr");
+        let providers = MediaProviders::default();
+        let (_stop, cancel) = never_cancelled();
+        let audio =
+            PrefetchOptions::new(10, 0, 1024, RequestedMedia::Audio, PrefetchMode::Preview)?;
+        let spoken = prefetch_media(&pool, &langs, &audio, &providers, cancel.clone()).await?;
+        let mut spoken_ids: Vec<i32> = spoken
+            .outcomes
+            .iter()
+            .map(|item| item.translation_id)
+            .collect();
+        spoken_ids.sort_unstable();
+        let mut expected = vec![common, rare, once, phrase];
+        expected.sort_unstable();
+        assert_eq!(spoken_ids, expected);
+        assert!(spoken
+            .outcomes
+            .iter()
+            .all(|item| item.audio == Some(MediaOutcome::Missing) && item.image.is_none()));
+        for (offset, id) in [(0, common), (1, rare), (2, once), (3, phrase)] {
+            let page = PrefetchOptions::new(
+                1,
+                offset,
+                1024,
+                RequestedMedia::Audio,
+                PrefetchMode::Preview,
+            )?;
+            let summary = prefetch_media(&pool, &langs, &page, &providers, cancel.clone()).await?;
+            assert_eq!(summary.outcomes.len(), 1);
+            assert_eq!(summary.outcomes[0].translation_id, id);
+        }
+
+        let images =
+            PrefetchOptions::new(10, 0, 1024, RequestedMedia::Images, PrefetchMode::Preview)?;
+        let pictured = prefetch_media(&pool, &langs, &images, &providers, cancel.clone()).await?;
+        let mut pictured_ids: Vec<i32> = pictured
+            .outcomes
+            .iter()
+            .map(|item| item.translation_id)
+            .collect();
+        pictured_ids.sort_unstable();
+        assert_eq!(pictured_ids, expected);
+        assert!(pictured
+            .outcomes
+            .iter()
+            .all(|item| { item.audio.is_none() && item.image == Some(MediaOutcome::Unsupported) }));
+
+        let once_page_options =
+            PrefetchOptions::new(1, 2, 1024, RequestedMedia::Both, PrefetchMode::Preview)?;
+        let once_page =
+            prefetch_media(&pool, &langs, &once_page_options, &providers, cancel).await?;
+        assert_eq!(once_page.outcomes.len(), 1);
+        assert_eq!(once_page.outcomes[0].translation_id, once);
+        assert_eq!(once_page.outcomes[0].audio, Some(MediaOutcome::Missing));
+        assert_eq!(once_page.outcomes[0].image, Some(MediaOutcome::Unsupported));
+        let excluded = [unglossed, sibling, unranked];
+        assert!(spoken
+            .outcomes
+            .iter()
+            .all(|item| !excluded.contains(&item.translation_id)));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
     async fn preview_reports_misses_and_pages_the_fixed_deck() -> TestResult {
         let pool = reset_pool().await?;
         let ids = seed_ready_words(&pool).await?;

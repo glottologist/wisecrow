@@ -250,8 +250,9 @@ impl VocabularyQuery {
 }
 ```
 
-The query filters on `frequency > 1` and `LENGTH(phrase) BETWEEN 2 AND 200` so
-single-letter rows and runaway TMX glitches do not pollute decks.
+The query keeps a row whose `corpus_frequency` is at least 1, including a
+count of one, and drops a row ranking never scored. Length bounds keep runaway
+TMX glitches out; a single-character side needs a current teachable presentation.
 Source: `wisecrow-core/src/vocabulary.rs`.
 
 ## `users`

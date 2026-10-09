@@ -38,6 +38,10 @@ const LEARN_ROUTES: &[(&str, &str)] = &[
         "/api/learn/fast-deck",
         r#"{"native":"en","foreign":"de","size":100}"#,
     ),
+    (
+        "/api/learn/fast-available",
+        r#"{"native":"en","foreign":"de"}"#,
+    ),
     ("/api/learn/session/complete", r#"{"session_id":1}"#),
 ];
 const NBACK_ROUTES: &[(&str, &str)] = &[

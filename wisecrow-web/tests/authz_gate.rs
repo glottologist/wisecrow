@@ -133,37 +133,86 @@ async fn learning_post_status(token: &str, path: &str, body: String) -> StatusCo
         .status()
 }
 
+async fn seed_fast_word_count(count: i32) {
+    let db = pool().expect("pool");
+    sqlx::query(
+        "INSERT INTO languages (code, name) VALUES ('zz', 'Size Native'), ('qy', 'Size Foreign')
+         ON CONFLICT (code) DO NOTHING",
+    )
+    .execute(db)
+    .await
+    .expect("languages");
+    sqlx::query(
+        "DELETE FROM translations
+          WHERE from_language_id = (SELECT id FROM languages WHERE code = 'zz')
+            AND to_language_id = (SELECT id FROM languages WHERE code = 'qy')",
+    )
+    .execute(db)
+    .await
+    .expect("clear pair");
+    sqlx::query(
+        "INSERT INTO translations
+             (from_language_id, to_language_id, from_phrase, to_phrase, corpus_frequency)
+         SELECT native.id, target.id, 'w' || g.n, 'v' || g.n, g.n
+           FROM generate_series(1, $1) AS g(n)
+           JOIN languages native ON native.code = 'zz'
+           JOIN languages target ON target.code = 'qy'",
+    )
+    .bind(count)
+    .execute(db)
+    .await
+    .expect("seed words");
+}
+
 #[tokio::test]
 #[ignore = "requires PostgreSQL"]
 async fn normal_and_fast_deck_size_boundaries_return_expected_status() {
     initialize_test_pool().await;
     let token = create_test_session(SIZE_EMAIL).await;
-    for (path, size, expected) in [
-        ("/api/learn/session/create", 0, StatusCode::BAD_REQUEST),
-        ("/api/learn/session/create", 1, StatusCode::OK),
-        ("/api/learn/session/create", 500, StatusCode::OK),
-        ("/api/learn/session/create", 501, StatusCode::BAD_REQUEST),
-        ("/api/learn/fast-deck", 0, StatusCode::BAD_REQUEST),
-        ("/api/learn/fast-deck", 1, StatusCode::OK),
-        ("/api/learn/fast-deck", 500, StatusCode::OK),
-        ("/api/learn/fast-deck", 501, StatusCode::BAD_REQUEST),
+    seed_fast_word_count(501).await;
+    for (size, expected) in [
+        (0, StatusCode::BAD_REQUEST),
+        (1, StatusCode::OK),
+        (500, StatusCode::OK),
+        (501, StatusCode::BAD_REQUEST),
     ] {
-        let body = if path.ends_with("fast-deck") {
-            serde_json::json!({"native": "en", "foreign": "de", "size": size}).to_string()
-        } else {
-            serde_json::json!({
-                "native": "en",
-                "foreign": "de",
-                "deck_size": size,
-                "speed_ms": 1000
-            })
-            .to_string()
-        };
-        assert_eq!(learning_post_status(&token, path, body).await, expected);
+        let body = serde_json::json!({
+            "native": "en",
+            "foreign": "de",
+            "deck_size": size,
+            "speed_ms": 1000
+        })
+        .to_string();
+        assert_eq!(
+            learning_post_status(&token, "/api/learn/session/create", body).await,
+            expected
+        );
     }
+    for (size, expected) in [
+        (0, StatusCode::BAD_REQUEST),
+        (1, StatusCode::OK),
+        (501, StatusCode::OK),
+        (502, StatusCode::BAD_REQUEST),
+    ] {
+        let body = serde_json::json!({"native": "zz", "foreign": "qy", "size": size}).to_string();
+        assert_eq!(
+            learning_post_status(&token, "/api/learn/fast-deck", body).await,
+            expected,
+            "fast deck size {size}"
+        );
+    }
+    let db = pool().expect("pool");
+    sqlx::query(
+        "DELETE FROM translations
+          WHERE from_language_id = (SELECT id FROM languages WHERE code = 'zz')
+            AND to_language_id = (SELECT id FROM languages WHERE code = 'qy')",
+    )
+    .execute(db)
+    .await
+    .expect("cleanup words");
     sqlx::query("DELETE FROM users WHERE email = $1")
         .bind(SIZE_EMAIL)
-        .execute(pool().expect("pool"))
+        .execute(db)
         .await
         .expect("cleanup");
 }

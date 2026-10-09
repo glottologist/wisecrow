@@ -21,6 +21,10 @@ const PAGE_SIZE: i64 = 5000;
 /// Rows updated or removed per statement.
 const BATCH_SIZE: usize = 1000;
 
+/// Corpus count for a pair the deck must not teach. Selection keeps a count
+/// of at least 1, so this stays out while a real word seen once stays in.
+const DEMOTED_FREQUENCY: i32 = 0;
+
 /// What a prune did, or would do.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct PruneReport {
@@ -28,7 +32,7 @@ pub struct PruneReport {
     /// Pairs deleted: the phrase is not in the language's script, a side holds
     /// characters that render as nothing, or both sides say the same thing.
     pub deleted: usize,
-    /// Pairs demoted to corpus_frequency 1: the phrase is one unsegmented run,
+    /// Pairs demoted to corpus_frequency 0: the phrase is one unsegmented run,
     /// or the native side holds no word the published list recognises.
     pub demoted: usize,
 }
@@ -40,9 +44,9 @@ impl Pruner {
     ///
     /// A phrase in the wrong script is deleted: it is not the language it
     /// claims to be, and nothing downstream can use it. A phrase that is one
-    /// over-long unsegmented run is only demoted to corpus_frequency 1, which is what
-    /// [`crate::lang::MAX_WORD_CHARS`] achieves at ranking time — the row is
-    /// left alone, it simply stops outranking real words.
+    /// over-long unsegmented run, or whose prompt holds no recognised word, is
+    /// demoted to corpus_frequency 0. A deck admits a count of at least 1, so
+    /// the row leaves the deck and a real word counted once stays.
     ///
     /// # Errors
     ///
@@ -144,7 +148,7 @@ impl Pruner {
                 || crate::lang::is_degenerate_pair(source, target)
             {
                 doomed.push(*id);
-            } else if corpus_frequency.is_some_and(|f| f > 1)
+            } else if corpus_frequency.is_some_and(|frequency| frequency > DEMOTED_FREQUENCY)
                 && (crate::lang::is_unsegmented_run(phrase)
                     || native_vocabulary
                         .is_some_and(|v| !crate::lang::has_recognised_word(native, v)))
@@ -167,7 +171,8 @@ impl Pruner {
 
     async fn demote(pool: &PgPool, ids: &[i32]) -> Result<(), WisecrowError> {
         for batch in ids.chunks(BATCH_SIZE) {
-            sqlx::query("UPDATE translations SET corpus_frequency = 1 WHERE id = ANY($1)")
+            sqlx::query("UPDATE translations SET corpus_frequency = $1 WHERE id = ANY($2)")
+                .bind(DEMOTED_FREQUENCY)
                 .bind(batch)
                 .execute(pool)
                 .await?;
@@ -213,6 +218,7 @@ mod tests {
             row(3, &latin_run, 17_596),
             row(4, "Chaidh e gu 東京 an-dè", 12),
             row(5, &latin_run, 1),
+            row(6, "madainn", 1),
         ];
 
         let (doomed, demoted) = Pruner::classify(&rows, "gd", "to", None);
@@ -220,8 +226,8 @@ mod tests {
         assert_eq!(doomed, vec![2], "only the kana blob is not Gaelic");
         assert_eq!(
             demoted,
-            vec![3],
-            "the Latin run is Gaelic-shaped but is one 122-character token"
+            vec![3, 5],
+            "an over-long token is junk at any positive count, including 1"
         );
     }
 
@@ -301,10 +307,8 @@ mod tests {
 
     #[test]
     fn leaves_an_already_demoted_run_alone() {
-        // Nothing to do for a row that cannot reach a deck: `unlearned` filters
-        // on corpus_frequency > 1, so re-demoting it would be a write for no
-        // change.
-        let rows = vec![row(1, &"i".repeat(122), 1)];
+        // Already at 0. Writing 0 again would not change the row.
+        let rows = vec![row(1, &"i".repeat(122), 0)];
 
         let (doomed, demoted) = Pruner::classify(&rows, "gd", "to", None);
 
@@ -314,9 +318,8 @@ mod tests {
 
     #[test]
     fn leaves_an_unranked_run_alone() {
-        // An unsegmented run ranking never scored is already outside every deck,
-        // because NULL fails `corpus_frequency > 1`. Demoting it would write a
-        // value where the absence of one is the more truthful state.
+        // An unsegmented run ranking never scored stays unranked. NULL is not a
+        // corpus count, and writing 0 would record it as pruned junk.
         let rows = vec![unranked_row(1, &"i".repeat(122))];
 
         let (doomed, demoted) = Pruner::classify(&rows, "gd", "to", None);

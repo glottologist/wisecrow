@@ -153,11 +153,29 @@ pub async fn complete_session(session_id: i32) -> Result<(), ServerFnError> {
     Ok(())
 }
 
+/// How many distinct words a fast deck can draw for this pair.
+///
+/// # Errors
+///
+/// Returns validation, authentication, or sanitized storage errors.
+#[post("/api/learn/fast-available")]
+pub async fn fast_available_words(native: String, foreign: String) -> Result<u32, ServerFnError> {
+    use wisecrow::vocabulary::VocabularyQuery;
+
+    crate::server::auth::current_user().await?;
+    crate::server::validate_lang(&native)?;
+    crate::server::validate_lang(&foreign)?;
+    VocabularyQuery::available_word_count(crate::server::pool()?, &native, &foreign)
+        .await
+        .map_err(|error| crate::server::internal_error("fast deck word count", &error))
+}
+
 /// Returns the top-ranked translations for a passive fast-mode run.
 ///
-/// Writes nothing: fast mode has no session row and no SRS state. The deck
-/// is an 80/20 word/phrase interleave; with no phrases promoted yet it is
-/// simply the top words at full size.
+/// Writes nothing: fast mode has no session row and no SRS state. `size` is
+/// a word count, from 1 up to every available word in the language. Phrases
+/// are mixed in on top of those words and do not replace them. With no
+/// phrases promoted yet the deck is simply the top words.
 ///
 /// # Errors
 ///
@@ -173,8 +191,22 @@ pub async fn create_fast_deck(
     crate::server::auth::current_user().await?;
     crate::server::validate_lang(&native)?;
     crate::server::validate_lang(&foreign)?;
-    let deck_size = validate_requested_deck_size(size)?;
+    if size == 0 {
+        return Err(crate::server::client_error(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Choose between 1 and the number of available words",
+        ));
+    }
     let pool = crate::server::pool()?;
+    let available = VocabularyQuery::available_word_count(pool, &native, &foreign)
+        .await
+        .map_err(|error| crate::server::internal_error("fast deck word count", &error))?;
+    if size > available {
+        return Err(crate::server::client_error(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Choose between 1 and the number of available words",
+        ));
+    }
 
     let words = VocabularyQuery::ranked_candidates(
         pool,
@@ -205,7 +237,8 @@ pub async fn create_fast_deck(
         .into_iter()
         .map(|entry| fast_card(entry, false))
         .collect();
+    let deck_len = words.len().saturating_add(phrases.len());
     Ok(FastDeckDto {
-        cards: interleave_deck(words, phrases, deck_size),
+        cards: interleave_deck(words, phrases, deck_len),
     })
 }

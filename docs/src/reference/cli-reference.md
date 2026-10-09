@@ -513,10 +513,11 @@ wisecrow prefetch-media -n <NATIVE> -f <FOREIGN> [--limit N] [--offset N] [--max
 
 Prepares the on-disk cache for a finite slice of the pair's preparation
 deck: the first 10,000 ranked words that carry a current presentation and
-the first 2,000 ranked phrases, interleaved to at most 10,000 entries. The
-deck is the same however much of it a run asks for, so `--offset` names a
-stable position until the ranking or presentations change; after an
-import, ranking or enrichment, preview again from offset zero.
+the first 2,000 ranked phrases, interleaved to at most 10,000 entries. A
+count of one is included and sorts last. The deck is the same however much
+of it a run asks for, so `--offset` names a stable position until the
+ranking or presentations change; after an import, ranking or enrichment,
+preview again from offset zero.
 
 ```sh
 wisecrow prefetch-media -n en -f fr --limit 100 --offset 0 --dry-run

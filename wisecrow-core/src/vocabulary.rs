@@ -127,15 +127,25 @@ fn ranked_statement(
     phrase_filter: PhraseFilter,
     policy: SelectionPolicy,
     projection: CandidateProjection,
+    limited: bool,
+    count_only: bool,
 ) -> String {
     let carded = carded.predicate();
     let phrase = phrase_filter.predicate();
     let teachable = phrase_filter.teachable_predicate();
     let presentation = presentation_predicate(phrase_filter, policy);
-    let selected = selected_words_cte(carded, phrase, &teachable, &presentation);
+    let selected = selected_words_cte(carded, phrase, &teachable, &presentation, limited);
     let scored = scored_candidates_ctes(carded, phrase, &presentation);
-    let columns = projection.columns();
-    format!("{MEMBERSHIP_CTES},\n{selected},\n{scored}\n{columns}\n{FINAL_SELECTION}")
+    let tail = if count_only {
+        "SELECT count(*)
+         FROM best
+         JOIN translation_presentations p ON p.translation_id = best.id
+         WHERE p.teachable"
+            .to_owned()
+    } else {
+        format!("{}\n{FINAL_SELECTION}", projection.columns())
+    };
+    format!("{MEMBERSHIP_CTES},\n{selected},\n{scored}\n{tail}")
 }
 
 /// Admission of word rows by presentation state. Under `Learning`,
@@ -171,7 +181,14 @@ fn presentation_predicate(phrases: PhraseFilter, policy: SelectionPolicy) -> Str
     }
 }
 
-fn selected_words_cte(carded: &str, phrase: &str, teachable: &str, presentation: &str) -> String {
+fn selected_words_cte(
+    carded: &str,
+    phrase: &str,
+    teachable: &str,
+    presentation: &str,
+    limited: bool,
+) -> String {
+    let limit = if limited { "LIMIT $3" } else { "" };
     format!(
         "selected_words AS MATERIALIZED (
            SELECT lower(btrim(t.to_phrase, '{trim}')) AS norm_to,
@@ -179,7 +196,7 @@ fn selected_words_cte(carded: &str, phrase: &str, teachable: &str, presentation:
            FROM translations t
            WHERE t.from_language_id = (SELECT id FROM languages WHERE code = $1)
              AND t.to_language_id = (SELECT id FROM languages WHERE code = $2)
-             AND t.corpus_frequency > 1
+             AND t.corpus_frequency >= 1
              AND LENGTH(t.from_phrase) BETWEEN 1 AND 200
              AND LENGTH(t.to_phrase) BETWEEN 1 AND 200
              {carded}
@@ -188,7 +205,7 @@ fn selected_words_cte(carded: &str, phrase: &str, teachable: &str, presentation:
              {presentation}
            GROUP BY lower(btrim(t.to_phrase, '{trim}'))
            ORDER BY max_frequency DESC, norm_to
-           LIMIT $3
+           {limit}
          )",
         trim = crate::frequency::MATCH_TRIM_SQL
     )
@@ -207,7 +224,7 @@ fn scored_candidates_ctes(carded: &str, phrase: &str, presentation: &str) -> Str
            FROM translations t
            WHERE t.from_language_id = (SELECT id FROM languages WHERE code = $1)
              AND t.to_language_id = (SELECT id FROM languages WHERE code = $2)
-             AND t.corpus_frequency > 1
+             AND t.corpus_frequency >= 1
              AND LENGTH(t.from_phrase) BETWEEN 1 AND 200
              AND LENGTH(t.to_phrase) BETWEEN 1 AND 200
              {carded}
@@ -292,6 +309,8 @@ impl VocabularyQuery {
             phrase_filter,
             SelectionPolicy::Learning,
             CandidateProjection::Learning,
+            true,
+            false,
         );
         let mut transaction = pool.begin().await?;
         sqlx::query("SET TRANSACTION READ ONLY")
@@ -321,9 +340,10 @@ impl VocabularyQuery {
 
     /// Returns the fixed preparation deck for a pair: the first 10,000 ranked
     /// words with a current teachable presentation and the first 2,000 ranked
-    /// phrases, interleaved to at most 10,000 IDs. The deck does not depend
-    /// on how much of it a caller asks for, so a page position is stable
-    /// across invocations until the ranking or presentations change.
+    /// phrases, interleaved to at most 10,000 IDs. A count of one is included
+    /// and sorts last. The deck does not depend on how much of it a caller
+    /// asks for, so a page position is stable until the ranking or
+    /// presentations change.
     ///
     /// # Errors
     ///
@@ -341,6 +361,47 @@ impl VocabularyQuery {
                 "Preparation selection timed out".into(),
             )),
         }
+    }
+
+    /// How many distinct words a fast deck can draw for this pair.
+    ///
+    /// The count uses the same admission rules as [`Self::ranked_candidates`]
+    /// for words, including a corpus count of one and excluding phrases.
+    /// Unranked rows stay out.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails or the count does not fit
+    /// in `u32`.
+    pub async fn available_word_count(
+        pool: &PgPool,
+        native_lang: &str,
+        foreign_lang: &str,
+    ) -> Result<u32, WisecrowError> {
+        let statement = ranked_statement(
+            IncludeCarded::Yes,
+            PhraseFilter::Exclude,
+            SelectionPolicy::Learning,
+            CandidateProjection::Id,
+            false,
+            true,
+        );
+        let mut transaction = pool.begin().await?;
+        sqlx::query("SET TRANSACTION READ ONLY")
+            .execute(&mut *transaction)
+            .await?;
+        sqlx::query("SELECT set_config('statement_timeout', $1, true)")
+            .bind(RANKED_QUERY_TIMEOUT)
+            .execute(&mut *transaction)
+            .await?;
+        let count: i64 = sqlx::query_scalar(&statement)
+            .bind(native_lang)
+            .bind(foreign_lang)
+            .fetch_one(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
+        u32::try_from(count)
+            .map_err(|_| WisecrowError::InvalidInput("available word count exceeds bounds".into()))
     }
 
     async fn preparation_ids_unbounded(
@@ -436,6 +497,8 @@ async fn preparation_page(
         phrase_filter,
         SelectionPolicy::Preparation,
         CandidateProjection::Id,
+        true,
+        false,
     );
     let ids = sqlx::query_scalar::<_, i32>(&statement)
         .bind(native_lang)

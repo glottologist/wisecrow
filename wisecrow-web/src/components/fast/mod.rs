@@ -2,9 +2,9 @@ mod playback;
 
 use dioxus::prelude::*;
 
-use wisecrow_dto::{FastDeckDto, SpeedController, MAX_DECK_SIZE};
+use wisecrow_dto::{FastDeckDto, SpeedController};
 
-use crate::api::learn::create_fast_deck;
+use crate::api::learn::{create_fast_deck, fast_available_words};
 use crate::api::media::{get_audio_data, get_image_data};
 use crate::components::learn::preload::{self, CardChannels, ImageReady};
 
@@ -37,14 +37,17 @@ async fn async_sleep(ms: u64) {
     std::thread::sleep(std::time::Duration::from_millis(ms));
 }
 
-fn requested_size(custom: &str, preset: u32) -> Result<u32, String> {
+fn requested_size(custom: &str, preset: u32, maximum: u32) -> Result<u32, String> {
     let typed = custom.trim();
-    if typed.is_empty() {
-        return Ok(preset);
-    }
-    match typed.parse::<u32>() {
-        Ok(size) if (1..=MAX_DECK_SIZE).contains(&size) => Ok(size),
-        _ => Err(format!("Choose a number between 1 and {MAX_DECK_SIZE}")),
+    let chosen = if typed.is_empty() {
+        preset
+    } else {
+        typed.parse::<u32>().unwrap_or(0)
+    };
+    if (1..=maximum).contains(&chosen) {
+        Ok(chosen)
+    } else {
+        Err(format!("Choose a number between 1 and {maximum}"))
     }
 }
 
@@ -89,13 +92,31 @@ pub fn FastPage(native: String, foreign: String) -> Element {
 
     let mut preset_size = use_signal(|| FAST_DECK_SIZE);
     let mut custom_size = use_signal(String::new);
+    let mut available: Signal<Option<u32>> = use_signal(|| None);
+    let mut size_loading = use_signal(|| true);
     // Signals rather than the props themselves so the start handler stays
     // `Copy` and can serve both buttons.
     let native = use_signal(|| native);
     let foreign = use_signal(|| foreign);
 
+    use_future(move || async move {
+        match fast_available_words(native(), foreign()).await {
+            Ok(count) => {
+                if count > 0 {
+                    preset_size.set(count.min(FAST_DECK_SIZE));
+                }
+                available.set(Some(count));
+            }
+            Err(error) => error_msg.set(Some(format!("Failed to count words: {error}"))),
+        }
+        size_loading.set(false);
+    });
+
     let start_run = move |event: PlaybackEvent| {
-        let Ok(size) = requested_size(&custom_size.read(), preset_size()) else {
+        let Some(maximum) = available() else {
+            return;
+        };
+        let Ok(size) = requested_size(&custom_size.read(), preset_size(), maximum) else {
             return;
         };
         loading.set(true);
@@ -188,6 +209,14 @@ pub fn FastPage(native: String, foreign: String) -> Element {
         }
     });
 
+    if size_loading() && deck().is_none() {
+        return rsx! {
+            div { class: "text-center text-gray-400 text-xl py-20",
+                "Checking how many words are available..."
+            }
+        };
+    }
+
     if loading() {
         return rsx! {
             div { class: "text-center text-gray-400 text-xl py-20", "Loading deck..." }
@@ -201,19 +230,35 @@ pub fn FastPage(native: String, foreign: String) -> Element {
     }
 
     let Some(d) = deck() else {
-        let choice = requested_size(&custom_size.read(), preset_size());
+        let Some(maximum) = available() else {
+            return rsx! {
+                div { class: "text-center text-gray-400 text-xl py-20", "Loading deck..." }
+            };
+        };
+        if maximum == 0 {
+            return rsx! {
+                div { class: "text-center text-gray-400 text-xl py-20",
+                    "No words available for this language."
+                }
+            };
+        }
+        let choice = requested_size(&custom_size.read(), preset_size(), maximum);
         let size_ok = choice.is_ok();
         let size_error = choice.err();
         let typed_custom = !custom_size.read().trim().is_empty();
+        let presets: Vec<u32> = FAST_SIZE_PRESETS
+            .into_iter()
+            .filter(|preset| *preset <= maximum)
+            .collect();
         return rsx! {
             div { class: "max-w-2xl mx-auto",
                 div { class: "bg-gray-800 rounded-xl p-8 space-y-6",
                     h2 { class: "text-2xl font-bold text-cyan-400", "Fast download" }
                     p { class: "text-sm text-gray-400",
-                        "Choose how many common words and phrases to include."
+                        "Choose how many words to include, most common first. Phrases are mixed in and do not replace those words."
                     }
                     div { class: "flex flex-wrap justify-center gap-3",
-                        for preset in FAST_SIZE_PRESETS {
+                        for preset in presets {
                             button {
                                 key: "{preset}",
                                 aria_pressed: preset == preset_size() && !typed_custom,
@@ -232,8 +277,8 @@ pub fn FastPage(native: String, foreign: String) -> Element {
                             id: "fast-size",
                             r#type: "number",
                             min: "1",
-                            max: "{MAX_DECK_SIZE}",
-                            placeholder: "1–{MAX_DECK_SIZE}",
+                            max: "{maximum}",
+                            placeholder: "1–{maximum}",
                             class: "bg-gray-700 rounded px-3 py-2 w-24 text-center",
                             value: "{custom_size}",
                             oninput: move |event| custom_size.set(event.value()),
@@ -406,32 +451,42 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case("", 25, 25)]
-    #[case(" \t\n", 250, 250)]
-    #[case("1", 100, 1)]
-    #[case("50", 100, 50)]
-    #[case("500", 100, MAX_DECK_SIZE)]
-    #[case(" 42 ", 100, 42)]
+    #[case("", 25, 500, 25)]
+    #[case(" \t\n", 250, 2500, 250)]
+    #[case("1", 100, 2500, 1)]
+    #[case("50", 100, 2500, 50)]
+    #[case("500", 100, 500, 500)]
+    #[case("2500", 100, 2500, 2500)]
+    #[case(" 42 ", 100, 2500, 42)]
     fn requested_size_uses_preset_or_valid_custom(
         #[case] custom: &str,
         #[case] preset: u32,
+        #[case] maximum: u32,
         #[case] expected: u32,
     ) {
-        assert_eq!(requested_size(custom, preset), Ok(expected));
+        assert_eq!(requested_size(custom, preset, maximum), Ok(expected));
     }
 
     #[rstest]
-    #[case("0")]
-    #[case("501")]
-    #[case("abc")]
-    #[case("-1")]
-    #[case("1.5")]
-    #[case("4294967296")]
-    #[case("五十")]
-    fn requested_size_rejects_invalid_custom(#[case] custom: &str) {
+    #[case("0", 500)]
+    #[case("501", 500)]
+    #[case("abc", 2500)]
+    #[case("-1", 2500)]
+    #[case("1.5", 2500)]
+    #[case("4294967296", 2500)]
+    #[case("五十", 2500)]
+    fn requested_size_rejects_invalid_custom(#[case] custom: &str, #[case] maximum: u32) {
         assert_eq!(
-            requested_size(custom, FAST_DECK_SIZE),
-            Err(format!("Choose a number between 1 and {MAX_DECK_SIZE}"))
+            requested_size(custom, FAST_DECK_SIZE, maximum),
+            Err(format!("Choose a number between 1 and {maximum}"))
+        );
+    }
+
+    #[test]
+    fn requested_size_rejects_a_preset_above_the_available_count() {
+        assert_eq!(
+            requested_size("", 100, 40),
+            Err("Choose a number between 1 and 40".to_owned())
         );
     }
 
