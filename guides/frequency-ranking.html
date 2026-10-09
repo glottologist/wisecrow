@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-7026aba3.js";
+            window.path_to_searchindex_js = "../searchindex-ce320b5c.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-a32f9be8.js"></script>
@@ -187,12 +187,12 @@ almost no cards until it has been ranked, and what to do for languages whose
 frequency lists nobody has published.</p>
 <h2 id="why-ranking-is-a-required-step"><a class="header" href="#why-ranking-is-a-required-step">Why ranking is a required step</a></h2>
 <p>Ingestion sets each new translation’s <code>frequency</code> to 1 and increments it when
-the same pair arrives again, so the column starts as a duplicate count rather
-than a measure of commonality. Deck selection then asks for rows with
-<code>frequency &gt; 1</code>, which means a corpus ingested once and never ranked offers the
-learner almost nothing: on a 25,000-pair Welsh sample, ten rows cleared that
-filter. Running <code>frequency</code> is what turns a pile of aligned sentences into an
-ordered curriculum.</p>
+the same pair arrives again, so that column starts as a duplicate count rather
+than a measure of commonality. Deck selection ignores it. A card needs a
+ranked <code>corpus_frequency</code> of at least 1, so a row that ranking never scored
+stays out however many times the pair was imported. A count of one is a card
+and sorts last. Running <code>frequency</code> is what turns a pile of aligned sentences
+into an ordered curriculum.</p>
 <pre><code class="language-sh">wisecrow frequency --lang es
 </code></pre>
 <p>With no <code>--file</code>, the command fetches the Hermit Dave FrequencyWords list for
@@ -307,7 +307,8 @@ is the count becoming honest, not data going missing.</p>
 <p>The command reports how many rows it updated, and the count of rows that clear
 the deck filter is the figure that matters:</p>
 <pre><code class="language-sh">psql -d wisecrow -c \
-  "SELECT count(*) FILTER (WHERE frequency &gt; 1) AS ranked, count(*) AS total
+  "SELECT count(*) FILTER (WHERE corpus_frequency &gt;= 1) AS ranked,
+          count(*) AS total
      FROM translations;"
 </code></pre>
 <p>If the update reports zero, work through three causes in order: the language

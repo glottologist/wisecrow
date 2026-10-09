@@ -38,7 +38,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-7026aba3.js";
+            window.path_to_searchindex_js = "searchindex-ce320b5c.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-a32f9be8.js"></script>
@@ -973,12 +973,12 @@ almost no cards until it has been ranked, and what to do for languages whose
 frequency lists nobody has published.</p>
 <h2 id="why-ranking-is-a-required-step"><a class="header" href="#why-ranking-is-a-required-step">Why ranking is a required step</a></h2>
 <p>Ingestion sets each new translation’s <code>frequency</code> to 1 and increments it when
-the same pair arrives again, so the column starts as a duplicate count rather
-than a measure of commonality. Deck selection then asks for rows with
-<code>frequency &gt; 1</code>, which means a corpus ingested once and never ranked offers the
-learner almost nothing: on a 25,000-pair Welsh sample, ten rows cleared that
-filter. Running <code>frequency</code> is what turns a pile of aligned sentences into an
-ordered curriculum.</p>
+the same pair arrives again, so that column starts as a duplicate count rather
+than a measure of commonality. Deck selection ignores it. A card needs a
+ranked <code>corpus_frequency</code> of at least 1, so a row that ranking never scored
+stays out however many times the pair was imported. A count of one is a card
+and sorts last. Running <code>frequency</code> is what turns a pile of aligned sentences
+into an ordered curriculum.</p>
 <pre><code class="language-sh">wisecrow frequency --lang es
 </code></pre>
 <p>With no <code>--file</code>, the command fetches the Hermit Dave FrequencyWords list for
@@ -1093,7 +1093,8 @@ is the count becoming honest, not data going missing.</p>
 <p>The command reports how many rows it updated, and the count of rows that clear
 the deck filter is the figure that matters:</p>
 <pre><code class="language-sh">psql -d wisecrow -c \
-  "SELECT count(*) FILTER (WHERE frequency &gt; 1) AS ranked, count(*) AS total
+  "SELECT count(*) FILTER (WHERE corpus_frequency &gt;= 1) AS ranked,
+          count(*) AS total
      FROM translations;"
 </code></pre>
 <p>If the update reports zero, work through three causes in order: the language
@@ -2768,10 +2769,11 @@ trying the quiz UI.</p>
 </code></pre>
 <p>Prepares the on-disk cache for a finite slice of the pair’s preparation
 deck: the first 10,000 ranked words that carry a current presentation and
-the first 2,000 ranked phrases, interleaved to at most 10,000 entries. The
-deck is the same however much of it a run asks for, so <code>--offset</code> names a
-stable position until the ranking or presentations change; after an
-import, ranking or enrichment, preview again from offset zero.</p>
+the first 2,000 ranked phrases, interleaved to at most 10,000 entries. A
+count of one is included and sorts last. The deck is the same however much
+of it a run asks for, so <code>--offset</code> names a stable position until the
+ranking or presentations change; after an import, ranking or enrichment,
+preview again from offset zero.</p>
 <pre><code class="language-sh">wisecrow prefetch-media -n en -f fr --limit 100 --offset 0 --dry-run
 wisecrow prefetch-media -n en -f fr --limit 100 --offset 0 --max-bytes 67108864
 wisecrow prefetch-media -n en -f br --limit 100 --audio=false --images=true --dry-run
@@ -4104,8 +4106,9 @@ pub struct VocabularyQuery;
 impl VocabularyQuery {
     pub async fn unlearned(pool: &amp;PgPool, native: &amp;str, foreign: &amp;str, limit: u32) -&gt; Result&lt;Vec&lt;VocabularyEntry&gt;, WisecrowError&gt;;
 }</code></pre>
-<p>The query filters on <code>frequency &gt; 1</code> and <code>LENGTH(phrase) BETWEEN 2 AND 200</code> so
-single-letter rows and runaway TMX glitches do not pollute decks.
+<p>The query keeps a row whose <code>corpus_frequency</code> is at least 1, including a
+count of one, and drops a row ranking never scored. Length bounds keep runaway
+TMX glitches out; a single-character side needs a current teachable presentation.
 Source: <code>wisecrow-core/src/vocabulary.rs</code>.</p>
 <h2 id="users"><a class="header" href="#users"><code>users</code></a></h2>
 <pre><code class="language-rust ignore">pub struct User { pub id, pub display_name, pub created_at }

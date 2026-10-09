@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-7026aba3.js";
+            window.path_to_searchindex_js = "../searchindex-ce320b5c.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-a32f9be8.js"></script>
@@ -386,8 +386,9 @@ pub struct VocabularyQuery;
 impl VocabularyQuery {
     pub async fn unlearned(pool: &amp;PgPool, native: &amp;str, foreign: &amp;str, limit: u32) -&gt; Result&lt;Vec&lt;VocabularyEntry&gt;, WisecrowError&gt;;
 }</code></pre>
-<p>The query filters on <code>frequency &gt; 1</code> and <code>LENGTH(phrase) BETWEEN 2 AND 200</code> so
-single-letter rows and runaway TMX glitches do not pollute decks.
+<p>The query keeps a row whose <code>corpus_frequency</code> is at least 1, including a
+count of one, and drops a row ranking never scored. Length bounds keep runaway
+TMX glitches out; a single-character side needs a current teachable presentation.
 Source: <code>wisecrow-core/src/vocabulary.rs</code>.</p>
 <h2 id="users"><a class="header" href="#users"><code>users</code></a></h2>
 <pre><code class="language-rust ignore">pub struct User { pub id, pub display_name, pub created_at }
