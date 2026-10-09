@@ -15,8 +15,9 @@ reuses extracted points and checks only unseen rule pairs; retries reuse results
 saved before a later failure. Previously uncached work still calls the model.
 The first run also checks old books without progress records for missed rules.
 A language that fails is logged and the rest still run; the script then exits 1.
-A model provider that cannot answer at all (a spent usage limit, a lapsed login,
-an outage) stops the script at once with exit status 75.
+A usage limit pauses until the reset time named in the provider message, or
+for two hours when that message names none, then the same language resumes.
+A lapsed login or an outage still stops the script at once with exit status 75.
 This calls the configured model and writes grammar rules. Full output goes to logs/.
 Requires a deployed wisecrow binary supporting import-pdf --incremental.
 HELP
@@ -53,30 +54,128 @@ for language in "${languages[@]}"; do
     "${compose[@]}" exec -T wisecrow-web test -d "/app/grammar/$language"
 done
 
-# The importer exits with this status when the model provider cannot answer;
-# every later language would fail the same way, so only this one stops the loop.
+# The importer exits with this status when the model provider cannot answer.
+# A usage limit names when it lifts; a lapsed login or an outage does not, and
+# every later call would fail the same way, so only those stop the loop.
 llm_unavailable=75
+# Past the stated reset, so a retry does not land on the second the window opens.
+limit_reset_buffer=120
+limit_fallback_seconds=$((2 * 60 * 60))
+limit_max_seconds=$((8 * 24 * 60 * 60))
 failed=()
-for language in "${languages[@]}"; do
-    printf '\nImporting unfinished %s documents at their recorded levels\n' "$language" | tee -a "$log"
-    # Omitting --level lets the importer keep levels ordered and extract each
-    # document once; an explicit six-level loop would also admit unlevelled books.
-    status=0
-    "${compose[@]}" exec -T wisecrow-web wisecrow import-pdf --incremental \
-        --file "/app/grammar/$language" --lang "$language" 2>&1 \
-        | tee -a "$log" \
-        | awk '/ INFO| WARN| ERROR|^[Ee]rror/ { print; fflush() }' \
-        || status=$?
-    if (( status == llm_unavailable )); then
-        printf '\nThe model provider cannot answer (usage limit, login or outage); stopped at %s.\n' \
-            "$language" | tee -a "$log" >&2
-        printf 'Import stopped. See %s; rerun this script to resume.\n' "$log" >&2
-        exit "$llm_unavailable"
-    elif (( status != 0 )); then
-        printf 'Import of %s failed with exit status %d; continuing with the next language.\n' \
-            "$language" "$status" | tee -a "$log" >&2
-        failed+=("$language")
+
+# Print how long a pause is, as "2h 5m" or "2d 3h".
+format_pause() {
+    local seconds=$1
+    local hours=$((seconds / 3600))
+    local minutes=$(((seconds % 3600) / 60))
+    if (( hours >= 48 )); then
+        printf '%dd %dh' $((hours / 24)) $((hours % 24))
+    elif (( hours > 0 && minutes > 0 )); then
+        printf '%dh %dm' "$hours" "$minutes"
+    elif (( hours > 0 )); then
+        printf '%dh' "$hours"
+    else
+        printf '%dm' "$minutes"
     fi
+}
+
+# Unix time of the reset named in one provider error, plus the buffer.
+# Returns 1 when the line names no usable time.
+seconds_until_reset() {
+    local line=$1
+    local resets_re='resets[[:space:]]+(.*)$'
+    if [[ ! $line =~ $resets_re ]]; then
+        return 1
+    fi
+    local spec=${BASH_REMATCH[1]}
+    spec=${spec%$'\r'}
+    spec=${spec%"${spec##*[![:space:]]}"}
+    spec=${spec%.}
+    local tz=UTC
+    local clock=$spec
+    local tz_re='^(.*)[[:space:]]+\(([^)]+)\)$'
+    if [[ $spec =~ $tz_re ]]; then
+        clock=${BASH_REMATCH[1]}
+        tz=${BASH_REMATCH[2]}
+        clock=${clock%"${clock##*[![:space:]]}"}
+    fi
+    local epoch
+    if ! epoch=$(TZ="$tz" date -d "$clock" +%s 2>/dev/null); then
+        return 1
+    fi
+    local now
+    now=$(date -u +%s)
+    if (( epoch <= now )); then
+        local rolled
+        if [[ $clock =~ ^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) ]]; then
+            if ! rolled=$(TZ="$tz" date -d "$clock + 7 days" +%s 2>/dev/null); then
+                return 1
+            fi
+        elif ! rolled=$(TZ="$tz" date -d "$clock + 1 day" +%s 2>/dev/null); then
+            return 1
+        fi
+        epoch=$rolled
+    fi
+    local wait=$((epoch + limit_reset_buffer - now))
+    if (( wait < 30 || wait > limit_max_seconds )); then
+        return 1
+    fi
+    printf '%s\n' "$wait"
+}
+
+# Seconds to pause when the new log bytes name a usage limit. Returns 1 when
+# they do not, which is a lapsed login or an outage.
+usage_limit_pause_seconds() {
+    local log=$1
+    local offset=$2
+    local line
+    line=$(tail -c +"$((offset + 1))" "$log" \
+        | grep -E -i 'session limit|weekly limit|usage limit|5-hour limit|hit your .+ limit' \
+        | tail -n 1 || true)
+    if [[ -z $line ]]; then
+        return 1
+    fi
+    local seconds
+    if seconds=$(seconds_until_reset "$line"); then
+        printf '%s\n' "$seconds"
+    else
+        printf '%s\n' "$limit_fallback_seconds"
+    fi
+}
+
+for language in "${languages[@]}"; do
+    while true; do
+        printf '\nImporting unfinished %s documents at their recorded levels\n' "$language" | tee -a "$log"
+        # Omitting --level lets the importer keep levels ordered and extract each
+        # document once; an explicit six-level loop would also admit unlevelled books.
+        log_offset=$(stat -c %s "$log")
+        status=0
+        "${compose[@]}" exec -T wisecrow-web wisecrow import-pdf --incremental \
+            --file "/app/grammar/$language" --lang "$language" 2>&1 \
+            | tee -a "$log" \
+            | awk '/ INFO| WARN| ERROR|^[Ee]rror/ { print; fflush() }' \
+            || status=$?
+        if (( status == llm_unavailable )); then
+            if pause_seconds=$(usage_limit_pause_seconds "$log" "$log_offset"); then
+                resume=$(date -u -d "now + ${pause_seconds} seconds" '+%Y-%m-%d %H:%M UTC')
+                printf '\nUsage limit while importing %s. Pausing until %s (%s), then resuming.\n' \
+                    "$language" "$resume" "$(format_pause "$pause_seconds")" \
+                    | tee -a "$log" >&2
+                sleep "$pause_seconds"
+                continue
+            fi
+            printf '\nThe model provider cannot answer (login or outage); stopped at %s.\n' \
+                "$language" | tee -a "$log" >&2
+            printf 'Import stopped. See %s; rerun this script to resume.\n' "$log" >&2
+            exit "$llm_unavailable"
+        elif (( status != 0 )); then
+            printf 'Import of %s failed with exit status %d; continuing with the next language.\n' \
+                "$language" "$status" | tee -a "$log" >&2
+            failed+=("$language")
+        fi
+        break
+    done
 done
 
 printf '\nCoverage after import (zero rows included; no rule ceiling):\n' | tee -a "$log"

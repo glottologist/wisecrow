@@ -54,10 +54,11 @@ without synthesis with `./scripts/prefetch-grammar-audio.sh --preview`.
 
 A language whose import fails does not stop the others: the import script logs
 it, runs the remaining languages and the coverage report, then exits 1 and names
-the unfinished languages. A model provider that cannot answer at all, such as a
-spent usage limit, a lapsed login or an outage, is different. Every later call
-would fail too, so `import-pdf` stops at once with exit status 75, and the script
-stops with it.
+the unfinished languages. A spent usage limit is different. `import-pdf` exits 75,
+and the script pauses until the reset time in that message (two hours when the
+message names none) and then resumes the same language. A lapsed login or an
+outage still stops the script at once with exit status 75, because every later
+call would fail the same way.
 
 Import reads each eligible document at the A1–C2 levels named by its
 `SOURCES.md` row, lowest level first. The script uses `import-pdf --incremental`:
@@ -448,12 +449,13 @@ and the parsing are shared with the API providers, and switching back is a
 matter of restoring the provider name and the API key.
 
 Two consequences are worth planning around. The first is that a subscription
-carries usage limits rather than a bill, so a long import may pause partway
-through with a limit message; the importer records progress by document and
-level, and rerunning `scripts/import-grammar.sh` resumes from where the limit
-stopped it. The second is that the token expires after a year, and an expired
-token surfaces as `Claude Code CLI run failed: Not logged in`, which is
-repaired by minting a fresh one exactly as above.
+carries usage limits rather than a bill, so a long import pauses until the
+reset named in the limit message and then continues. The importer records
+progress by document and level, so stopping the script and rerunning
+`scripts/import-grammar.sh` also resumes from where it left off. The second is
+that the token expires after a year, and an expired token surfaces as
+`Claude Code CLI run failed: Not logged in`, which is repaired by minting a
+fresh one exactly as above.
 
 ## Updating
 

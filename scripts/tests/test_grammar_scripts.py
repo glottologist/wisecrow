@@ -1,9 +1,11 @@
 """Exercise the host scripts without calling Docker, a model, or a speech provider."""
 
+from datetime import datetime, timedelta, timezone
 import fcntl
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -37,6 +39,12 @@ elif "wisecrow" in args:
               f"cached 2, missing {missing}, generated 0, failed 0, unsupported 0; "
               "0 bytes generated; 0 clips pruned")
     elif command == "import-pdf":
+        if os.environ.get("GRAMMAR_TEST_LIMIT") == "1":
+            marker = Path(os.environ["GRAMMAR_TEST_LIMIT_MARKER"])
+            if not marker.exists():
+                marker.write_text("1")
+                print(os.environ["GRAMMAR_TEST_LIMIT_MESSAGE"], file=sys.stderr)
+                sys.exit(75)
         print("extractor noise preserved only in the full log")
         print(f"\x1b[32m INFO\x1b[0m wisecrow: Placed 1 {lang} A1 points")
     else:
@@ -57,13 +65,23 @@ class GrammarScripts(unittest.TestCase):
         docker = binary / "docker"
         docker.write_text(f"#!{sys.executable}\n{FAKE_DOCKER}")
         docker.chmod(0o755)
+        sleep = binary / "sleep"
+        sleep.write_text(
+            f"#!{sys.executable}\n"
+            "import os, sys\n"
+            "with open(os.environ['GRAMMAR_TEST_SLEEPS'], 'a') as handle:\n"
+            "    handle.write(sys.argv[1] + '\\n')\n"
+        )
+        sleep.chmod(0o755)
         self.calls_path = self.root / "calls.jsonl"
         self.sql_path = self.root / "coverage.sql"
+        self.sleeps_path = self.root / "sleeps"
         self.environment = {
             **os.environ,
             "PATH": f"{binary}{os.pathsep}{os.environ['PATH']}",
             "GRAMMAR_TEST_CALLS": str(self.calls_path),
             "GRAMMAR_TEST_SQL": str(self.sql_path),
+            "GRAMMAR_TEST_SLEEPS": str(self.sleeps_path),
         }
 
     def run_script(self, name, *args, **environment):
@@ -81,6 +99,47 @@ class GrammarScripts(unittest.TestCase):
         if not self.calls_path.exists():
             return []
         return [json.loads(line) for line in self.calls_path.read_text().splitlines()]
+
+    def sleeps(self):
+        if not self.sleeps_path.exists():
+            return []
+        return [int(line) for line in self.sleeps_path.read_text().splitlines()]
+
+    def imports(self):
+        return [call for call in self.calls() if "import-pdf" in call]
+
+    def limit_environment(self, message):
+        return {
+            "GRAMMAR_TEST_LIMIT": "1",
+            "GRAMMAR_TEST_LIMIT_MESSAGE": message,
+            "GRAMMAR_TEST_LIMIT_MARKER": str(self.root / "limit-used"),
+        }
+
+    def assert_paused_until(self, result, clock):
+        """The recorded sleep matches clock (UTC) plus the two-minute buffer."""
+        match = re.search(
+            r"Pausing until (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) UTC",
+            result.stderr,
+        )
+        self.assertIsNotNone(match, result.stderr)
+        epoch = int(subprocess.check_output(
+            ["date", "-u", "-d", f"{clock} UTC", "+%s"], text=True,
+        ).strip())
+        target = datetime.fromtimestamp(epoch, timezone.utc)
+        now = datetime.now(timezone.utc)
+        step = timedelta(days=7) if clock[:3] in {
+            "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun",
+        } else timedelta(days=1)
+        if target <= now:
+            target += step
+        expected = target + timedelta(seconds=120)
+        slept = self.sleeps()
+        self.assertEqual(len(slept), 1, slept)
+        self.assertAlmostEqual(
+            slept[0],
+            int(expected.timestamp()) - int(now.timestamp()),
+            delta=60,
+        )
 
     def test_audio_generates_and_verifies_each_language_from_any_directory(self):
         result = self.run_script("prefetch-grammar-audio.sh")
@@ -141,6 +200,68 @@ class GrammarScripts(unittest.TestCase):
             "extractor noise" in log.read_text()
             for log in (self.root / "logs").glob("*.log")
         ))
+
+    def test_session_limit_pauses_until_the_named_reset_then_resumes(self):
+        reset = datetime.now(timezone.utc) + timedelta(hours=3)
+        hour = reset.hour % 12 or 12
+        clock = f"{hour}:{reset.minute:02d}{'am' if reset.hour < 12 else 'pm'}"
+        result = self.run_script(
+            "import-grammar.sh",
+            **self.limit_environment(
+                "Error: LLM unavailable: Claude Code CLI run failed: "
+                f"You've hit your session limit · resets {clock} (UTC)"
+            ),
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            [call[-1] for call in self.imports()],
+            ["gd", "gd", "fr", "it", "ga", "cy", "es"],
+        )
+        self.assert_paused_until(result, clock)
+        self.assertIn("then resuming", result.stderr)
+
+    def test_weekly_limit_pauses_until_the_named_weekday(self):
+        result = self.run_script(
+            "import-grammar.sh",
+            **self.limit_environment(
+                "Error: LLM unavailable: Claude Code CLI run failed: "
+                "You've hit your weekly limit · resets Mon 12:00am (UTC)"
+            ),
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.imports()[0][-1], "gd")
+        self.assertEqual(self.imports()[1][-1], "gd")
+        self.assert_paused_until(result, "Mon 12:00am")
+
+    def test_untimed_usage_limit_pauses_for_two_hours(self):
+        result = self.run_script(
+            "import-grammar.sh",
+            **self.limit_environment(
+                "Error: LLM unavailable: Claude Code CLI run failed: "
+                "You've hit your session limit"
+            ),
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            [call[-1] for call in self.imports()],
+            ["gd", "gd", "fr", "it", "ga", "cy", "es"],
+        )
+        self.assertEqual(self.sleeps(), [7200])
+        self.assertIn("2h", result.stderr)
+
+    def test_login_failure_still_stops_without_pausing(self):
+        result = self.run_script(
+            "import-grammar.sh",
+            **self.limit_environment(
+                "Error: LLM unavailable: Claude Code CLI run failed: "
+                "Not logged in · Please run /login"
+            ),
+        )
+        self.assertEqual(result.returncode, 75, result.stdout + result.stderr)
+        self.assertEqual(len(self.imports()), 1)
+        self.assertEqual(self.sleeps(), [])
+        self.assertIn("login or outage", result.stderr)
+        self.assertFalse(self.sql_path.exists())
 
     def test_invalid_languages_do_not_start_docker(self):
         for name in ("import-grammar.sh", "prefetch-grammar-audio.sh"):
