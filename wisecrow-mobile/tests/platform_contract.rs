@@ -21,10 +21,6 @@ async fn desktop_platform_implements_the_native_boundary() {
     let profile_id = Uuid::from_u128(1);
 
     assert!(matches!(
-        platform.pick_pdf(1_024).await,
-        Err(MobileError::Unsupported)
-    ));
-    assert!(matches!(
         platform.pick_certificate(1_024).await,
         Err(MobileError::Unsupported)
     ));

@@ -21,11 +21,6 @@ pub struct SessionContext {
     pub authenticated: Signal<bool>,
 }
 
-/// Native document selection with a byte limit enforced before returning data.
-pub trait PdfPicker: Send + Sync {
-    fn pick(&self, maximum_bytes: u64) -> SessionFuture<'_, Option<Vec<u8>>>;
-}
-
 pub(crate) async fn login(email: String, password: String) -> Result<UserDto, ServerFnError> {
     if let Some(mut session) = try_consume_context::<SessionContext>() {
         let user = session.client.login(&email, &password).await?;

@@ -8,7 +8,6 @@ use crate::components::learn::LearnPage;
 use crate::components::login::LoginPage;
 use crate::components::nback::NbackPage;
 use crate::components::not_found::NotFound;
-use crate::components::quiz::QuizPage;
 
 #[derive(Clone, Routable, Debug, PartialEq, Eq)]
 #[rustfmt::skip]
@@ -24,8 +23,6 @@ pub enum Route {
         NbackPage { native: String, foreign: String },
         #[route("/fast/:native/:foreign")]
         FastPage { native: String, foreign: String },
-        #[route("/quiz")]
-        QuizPage {},
         // The four-segment placement and brainmap routes are declared before
         // the three-segment practice route only for readability; they cannot
         // collide, since the router matches on segment count first.

@@ -256,7 +256,6 @@ pub trait CertificateStore: Send + Sync {
 
 #[async_trait]
 pub trait FilePicker: Send + Sync {
-    async fn pick_pdf(&self, maximum_bytes: u64) -> Result<Option<PickedFile>, MobileError>;
     async fn pick_certificate(&self, maximum_bytes: u64)
         -> Result<Option<PickedFile>, MobileError>;
 }

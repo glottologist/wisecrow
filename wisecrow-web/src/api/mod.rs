@@ -6,4 +6,3 @@ pub mod media;
 pub mod mobile_media;
 pub mod mobile_sync;
 pub mod nback;
-pub mod quiz;

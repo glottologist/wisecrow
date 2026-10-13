@@ -1,4 +1,5 @@
 use sqlx::PgPool;
+use wisecrow::presentation::CURRENT_PRESENTATION_VERSION;
 use wisecrow::vocabulary::VocabularyQuery;
 
 async fn test_pool() -> PgPool {
@@ -541,4 +542,57 @@ async fn ranked_candidates_deduplicates_spellings_when_carded_included() {
     .expect("dedup");
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].from_phrase, "bread");
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn fast_available_count_matches_the_unlimited_word_deck() {
+    use wisecrow::vocabulary::{IncludeCarded, PhraseFilter};
+    let pool = test_pool().await;
+    cleanup(&pool).await;
+    cleanup_phrases(&pool).await;
+
+    // Two spellings of one word, a card the fast deck still includes, and a
+    // count of one. Pruned junk, an unranked row, a promoted phrase, a rejected
+    // gloss, and a one-character word with no current gloss stay out.
+    seed(&pool, "Yes", "Ie", 500).await;
+    seed(&pool, "Yes.", "Ie.", 500).await;
+    let carded = seed_returning_id(&pool, "water", "dŵr", 900).await;
+    seed_card(&pool, carded).await;
+    seed(&pool, "tomorrow", "yfory", 1).await;
+    seed(&pool, "junk", "sothach", 0).await;
+    seed_unranked(&pool, "never", "byth", 40).await;
+    let phrase = seed_returning_id(&pool, "good morning", "bore da", 50).await;
+    seed_phrase_link(&pool, phrase, "bore da").await;
+    seed(&pool, "noise", "sŵn", 40).await;
+    seed_presentation(&pool, "sŵn", "noise", "sŵn", false).await;
+    seed(&pool, "I", "i", 30).await;
+    sqlx::query(
+        "INSERT INTO word_glosses
+             (lang_code, word, native_lang, translation, display_form,
+              teachable, presentation_version)
+         VALUES ('cy', 'â', 'en', 'and', 'â', true, $1)",
+    )
+    .bind(CURRENT_PRESENTATION_VERSION)
+    .execute(&pool)
+    .await
+    .expect("current gloss");
+    seed(&pool, "and", "â", 20).await;
+
+    let deck = VocabularyQuery::ranked_candidates(
+        &pool,
+        "en",
+        "cy",
+        10_000,
+        IncludeCarded::Yes,
+        PhraseFilter::Exclude,
+    )
+    .await
+    .expect("unlimited deck");
+    let count = VocabularyQuery::available_word_count(&pool, "en", "cy")
+        .await
+        .expect("available count");
+    let words: Vec<&str> = deck.iter().map(|entry| entry.to_phrase.as_str()).collect();
+    assert_eq!(words, vec!["dŵr", "Ie", "â", "yfory"]);
+    assert_eq!(count, u32::try_from(deck.len()).expect("deck length"));
 }

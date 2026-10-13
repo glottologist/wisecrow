@@ -25,11 +25,6 @@ pub fn Layout() -> Element {
                         Link { to: Route::Home {}, class: "px-3 py-2 rounded hover:bg-gray-700 transition",
                             "Home"
                         }
-                        Link {
-                            to: Route::QuizPage {},
-                            class: "px-3 py-2 rounded hover:bg-gray-700 transition",
-                            "Quiz"
-                        }
                         a {
                             href: "https://github.com/glottologist/wisecrow",
                             target: "_blank",

@@ -27,6 +27,10 @@ pub enum PhraseFilter {
 }
 
 const RANKED_QUERY_TIMEOUT: &str = "2s";
+/// A fast page counts every admitted word, so it cannot share the two-second
+/// budget of a limited deck fetch. Thirty seconds covers a cold index-only
+/// scan that still has to consult the heap, and frees the connection after that.
+const WORD_COUNT_TIMEOUT: &str = "30s";
 const PREPARATION_QUERY_TIMEOUT: &str = "60s";
 const PREPARATION_DEADLINE: std::time::Duration = std::time::Duration::from_secs(60);
 /// Ranked words the fixed preparation deck draws from.
@@ -128,24 +132,76 @@ fn ranked_statement(
     policy: SelectionPolicy,
     projection: CandidateProjection,
     limited: bool,
-    count_only: bool,
 ) -> String {
     let carded = carded.predicate();
     let phrase = phrase_filter.predicate();
     let teachable = phrase_filter.teachable_predicate();
     let presentation = presentation_predicate(phrase_filter, policy);
-    let selected = selected_words_cte(carded, phrase, &teachable, &presentation, limited);
+    let selected = selected_words_cte(
+        "selected_words",
+        carded,
+        phrase,
+        &teachable,
+        &presentation,
+        limited,
+        "t.corpus_frequency >= 1",
+    );
     let scored = scored_candidates_ctes(carded, phrase, &presentation);
-    let tail = if count_only {
-        "SELECT count(*)
-         FROM best
-         JOIN translation_presentations p ON p.translation_id = best.id
-         WHERE p.teachable"
-            .to_owned()
-    } else {
-        format!("{}\n{FINAL_SELECTION}", projection.columns())
-    };
-    format!("{MEMBERSHIP_CTES},\n{selected},\n{scored}\n{tail}")
+    format!(
+        "{MEMBERSHIP_CTES},\n{selected},\n{scored}\n{}\n{FINAL_SELECTION}",
+        projection.columns()
+    )
+}
+
+/// Distinct words a fast deck can draw. Same admission as
+/// [`selected_words_cte`] for included cards and excluded phrases, without the
+/// representative pass.
+///
+/// The bulk of the count is `corpus_frequency > 1`. The covering indexes admit
+/// only that predicate, so a single `>= 1` scan cannot use them and heap-fetches
+/// every ranked row. A frequency of one is counted separately and only adds a
+/// word the bulk count does not already contain.
+fn learning_word_count_statement() -> String {
+    let phrase = PhraseFilter::Exclude.predicate();
+    let teachable = PhraseFilter::Exclude.teachable_predicate();
+    let presentation = presentation_predicate(PhraseFilter::Exclude, SelectionPolicy::Learning);
+    let above = selected_words_cte(
+        "above",
+        "",
+        phrase,
+        &teachable,
+        &presentation,
+        false,
+        "t.corpus_frequency > 1",
+    );
+    let hapax = selected_words_cte(
+        "hapax_all",
+        "",
+        phrase,
+        &teachable,
+        &presentation,
+        false,
+        "t.corpus_frequency = 1",
+    );
+    format!(
+        "WITH promoted_ids AS (
+             SELECT DISTINCT translation_id
+             FROM phrase_translations
+             WHERE translation_id IS NOT NULL
+         ),
+         unteachable_words AS (
+             SELECT word FROM word_glosses
+             WHERE native_lang = $1 AND lang_code = $2 AND NOT teachable
+         ),
+         {above},
+         {hapax}
+         SELECT (SELECT count(*) FROM above) + (
+             SELECT count(*) FROM hapax_all AS hapax
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM above WHERE above.norm_to = hapax.norm_to
+             )
+         )"
+    )
 }
 
 /// Admission of word rows by presentation state. Under `Learning`,
@@ -182,21 +238,27 @@ fn presentation_predicate(phrases: PhraseFilter, policy: SelectionPolicy) -> Str
 }
 
 fn selected_words_cte(
+    name: &str,
     carded: &str,
     phrase: &str,
     teachable: &str,
     presentation: &str,
     limited: bool,
+    frequency_sql: &str,
 ) -> String {
-    let limit = if limited { "LIMIT $3" } else { "" };
+    let order_limit = if limited {
+        "ORDER BY max_frequency DESC, norm_to\n           LIMIT $3"
+    } else {
+        ""
+    };
     format!(
-        "selected_words AS MATERIALIZED (
+        "{name} AS MATERIALIZED (
            SELECT lower(btrim(t.to_phrase, '{trim}')) AS norm_to,
                   max(t.corpus_frequency) AS max_frequency
            FROM translations t
            WHERE t.from_language_id = (SELECT id FROM languages WHERE code = $1)
              AND t.to_language_id = (SELECT id FROM languages WHERE code = $2)
-             AND t.corpus_frequency >= 1
+             AND {frequency_sql}
              AND LENGTH(t.from_phrase) BETWEEN 1 AND 200
              AND LENGTH(t.to_phrase) BETWEEN 1 AND 200
              {carded}
@@ -204,8 +266,7 @@ fn selected_words_cte(
              {teachable}
              {presentation}
            GROUP BY lower(btrim(t.to_phrase, '{trim}'))
-           ORDER BY max_frequency DESC, norm_to
-           {limit}
+           {order_limit}
          )",
         trim = crate::frequency::MATCH_TRIM_SQL
     )
@@ -310,7 +371,6 @@ impl VocabularyQuery {
             SelectionPolicy::Learning,
             CandidateProjection::Learning,
             true,
-            false,
         );
         let mut transaction = pool.begin().await?;
         sqlx::query("SET TRANSACTION READ ONLY")
@@ -367,7 +427,9 @@ impl VocabularyQuery {
     ///
     /// The count uses the same admission rules as [`Self::ranked_candidates`]
     /// for words, including a corpus count of one and excluding phrases.
-    /// Unranked rows stay out.
+    /// Unranked rows stay out. It does not build the representative row. Rows
+    /// above a count of one are read from the covering index; a count of one
+    /// is added only when that word is not already included.
     ///
     /// # Errors
     ///
@@ -378,20 +440,18 @@ impl VocabularyQuery {
         native_lang: &str,
         foreign_lang: &str,
     ) -> Result<u32, WisecrowError> {
-        let statement = ranked_statement(
-            IncludeCarded::Yes,
-            PhraseFilter::Exclude,
-            SelectionPolicy::Learning,
-            CandidateProjection::Id,
-            false,
-            true,
-        );
+        let statement = learning_word_count_statement();
         let mut transaction = pool.begin().await?;
         sqlx::query("SET TRANSACTION READ ONLY")
             .execute(&mut *transaction)
             .await?;
         sqlx::query("SELECT set_config('statement_timeout', $1, true)")
-            .bind(RANKED_QUERY_TIMEOUT)
+            .bind(WORD_COUNT_TIMEOUT)
+            .execute(&mut *transaction)
+            .await?;
+        // The planner's row estimate for a language is a handful, so phrase
+        // exclusion becomes a nested loop over every ranked row.
+        sqlx::query("SELECT set_config('enable_nestloop', 'off', true)")
             .execute(&mut *transaction)
             .await?;
         let count: i64 = sqlx::query_scalar(&statement)
@@ -498,7 +558,6 @@ async fn preparation_page(
         SelectionPolicy::Preparation,
         CandidateProjection::Id,
         true,
-        false,
     );
     let ids = sqlx::query_scalar::<_, i32>(&statement)
         .bind(native_lang)

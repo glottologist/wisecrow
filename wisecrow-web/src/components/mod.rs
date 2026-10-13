@@ -7,5 +7,4 @@ pub mod learn;
 pub mod login;
 pub mod nback;
 pub mod not_found;
-pub mod quiz;
 pub mod theme;

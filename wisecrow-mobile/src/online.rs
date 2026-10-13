@@ -8,7 +8,7 @@ use uuid::Uuid;
 use wisecrow_dto::{MobileSessionDto, UserDto};
 use wisecrow_web::session::{SessionClient, SessionContext, SessionFuture};
 
-use crate::application::{CredentialStore, FilePicker, MobileError};
+use crate::application::{CredentialStore, MobileError};
 
 const PROFILE_ID: Uuid = Uuid::from_u128(0x4630759a_7596_4396_8c54_b08365f60dae);
 const SERVER_URL: &str = "https://wisecrow.glottologist.co.uk:8443";
@@ -190,28 +190,8 @@ fn authorization_headers(token: &str) -> Result<fullstack::HeaderMap, ServerFnEr
     Ok(headers)
 }
 
-struct NativePdfPicker(Arc<dyn FilePicker>);
-
-impl wisecrow_web::session::PdfPicker for NativePdfPicker {
-    fn pick(&self, maximum_bytes: u64) -> SessionFuture<'_, Option<Vec<u8>>> {
-        Box::pin(async move {
-            self.0
-                .pick_pdf(maximum_bytes)
-                .await
-                .map(|file| file.map(|file| file.bytes))
-                .map_err(|_| {
-                    ServerFnError::new("Could not open this PDF. Choose a PDF smaller than 80 MB.")
-                })
-        })
-    }
-}
-
 pub(crate) fn app() -> Element {
     let credentials = use_context::<Arc<dyn CredentialStore>>();
-    let picker = use_context::<Arc<dyn FilePicker>>();
-    use_context_provider(|| {
-        Arc::new(NativePdfPicker(picker)) as Arc<dyn wisecrow_web::session::PdfPicker>
-    });
     let session = use_hook(|| Arc::new(OnlineSession::new(credentials, Arc::new(ServerSession))));
     let mut authenticated = use_signal(|| false);
     use_context_provider(|| SessionContext {

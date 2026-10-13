@@ -272,11 +272,6 @@ fn validate_fingerprint(fingerprint: &str) -> Result<(), MobileError> {
 
 #[async_trait]
 impl FilePicker for AndroidPlatform {
-    async fn pick_pdf(&self, maximum_bytes: u64) -> Result<Option<PickedFile>, MobileError> {
-        self.pick("pdf", validate_maximum(maximum_bytes, MAX_PDF_BYTES)?)
-            .await
-    }
-
     async fn pick_certificate(
         &self,
         maximum_bytes: u64,
@@ -374,7 +369,6 @@ fn picked_file(
 
 fn validate_media_type(kind: &str, media_type: &str) -> Result<(), MobileError> {
     let valid = match kind {
-        "pdf" => media_type == "application/pdf",
         "certificate" => matches!(
             media_type,
             "application/pkix-cert" | "application/x-x509-ca-cert" | "application/x-pem-file"
@@ -583,7 +577,6 @@ const POLL_INTERVAL_MS: u64 = 50;
 const UUID_TEXT_BYTES: usize = 36;
 const MAX_NAME_CHARS: usize = 255;
 const MAX_CERTIFICATE_BYTES: u64 = 65_536;
-const MAX_PDF_BYTES: u64 = 80 * 1024 * 1024;
 const SHA256_HEX_BYTES: usize = 64;
 const MAX_HTTP_RESPONSE_BYTES: u64 = 67_108_864;
 const MAX_HTTP_REQUEST_BYTES: usize = 16_777_216;

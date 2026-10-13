@@ -17,10 +17,8 @@ fn main() {
         return;
     }
     let credentials: Arc<dyn wisecrow_mobile::application::CredentialStore> = platform.clone();
-    let picker: Arc<dyn wisecrow_mobile::application::FilePicker> = platform.clone();
     dioxus::LaunchBuilder::mobile()
         .with_context(credentials)
-        .with_context(picker)
         .with_context(platform)
         .launch(wisecrow_mobile::app);
 }
@@ -51,10 +49,8 @@ fn main() {
         return;
     }
     let credentials: Arc<dyn wisecrow_mobile::application::CredentialStore> = platform.clone();
-    let picker: Arc<dyn wisecrow_mobile::application::FilePicker> = platform.clone();
     dioxus::LaunchBuilder::desktop()
         .with_context(credentials)
-        .with_context(picker)
         .with_context(platform)
         .launch(wisecrow_mobile::app);
 }

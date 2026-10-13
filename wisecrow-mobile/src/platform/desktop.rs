@@ -71,10 +71,6 @@ impl CertificateStore for DesktopPlatform {
 
 #[async_trait]
 impl FilePicker for DesktopPlatform {
-    async fn pick_pdf(&self, _maximum_bytes: u64) -> Result<Option<PickedFile>, MobileError> {
-        Err(MobileError::Unsupported)
-    }
-
     async fn pick_certificate(
         &self,
         _maximum_bytes: u64,
