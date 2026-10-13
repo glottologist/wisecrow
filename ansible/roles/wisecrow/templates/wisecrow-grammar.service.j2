@@ -4,11 +4,12 @@ After=docker.service
 Requires=docker.service
 
 [Service]
-Type=oneshot
+# systemd 257 rejects a success restart on a one-shot service. The script loops.
+Type=simple
 WorkingDirectory={{ deploy_dir }}
 ExecStart=/bin/bash {{ deploy_dir }}/scripts/grammar-service.sh
-Restart=on-success
-RestartSec=1
+Restart=on-failure
+RestartSec=30
 
 [Install]
 WantedBy=multi-user.target

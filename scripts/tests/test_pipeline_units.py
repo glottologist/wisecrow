@@ -12,8 +12,9 @@ class PipelineUnits(unittest.TestCase):
     def test_corpus_unit_prepares_one_step_and_never_ingests(self):
         unit = (TEMPLATES / "wisecrow-corpus.service.j2").read_text()
         script = (ROOT / "scripts" / "prepare-corpus.sh").read_text()
-        self.assertIn("Type=oneshot", unit)
-        self.assertIn("Restart=on-success", unit)
+        self.assertIn("Type=simple", unit)
+        self.assertIn("Restart=on-failure", unit)
+        self.assertNotIn("Restart=on-success", unit)
         self.assertIn("scripts/prepare-corpus.sh", unit)
         self.assertIn(
             "wisecrow prepare-corpus --config /app/language-pairs.toml",
@@ -26,15 +27,16 @@ class PipelineUnits(unittest.TestCase):
     def test_grammar_unit_imports_only_after_pending_status(self):
         unit = (TEMPLATES / "wisecrow-grammar.service.j2").read_text()
         script = (ROOT / "scripts" / "grammar-service.sh").read_text()
-        self.assertIn("Type=oneshot", unit)
-        self.assertIn("Restart=on-success", unit)
+        self.assertIn("Type=simple", unit)
+        self.assertIn("Restart=on-failure", unit)
+        self.assertNotIn("Restart=on-success", unit)
         self.assertIn("scripts/grammar-service.sh", unit)
         status = script.index("grammar-status")
-        idle_exit = script.index("exit 0")
+        idle_wait = script.index("sleep 60")
         importer = script.index("scripts/import-grammar.sh")
         audio = script.index("scripts/prefetch-grammar-audio.sh")
-        self.assertLess(status, idle_exit)
-        self.assertLess(idle_exit, importer)
+        self.assertLess(status, idle_wait)
+        self.assertLess(idle_wait, importer)
         self.assertLess(importer, audio)
         self.assertNotIn("wisecrow ingest", unit)
         self.assertNotIn("wisecrow ingest", script)
