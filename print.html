@@ -38,7 +38,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-ce320b5c.js";
+            window.path_to_searchindex_js = "searchindex-c6713f59.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-a32f9be8.js"></script>
@@ -2286,7 +2286,7 @@ never use <code>format!()</code> for URL parts.</p>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="cli-reference"><a class="header" href="#cli-reference">CLI reference</a></h1>
-<p>The <code>wisecrow</code> binary ships with thirty-three subcommands. Most have a short alias
+<p>The <code>wisecrow</code> binary ships with thirty-six subcommands. Most have a short alias
 (in parentheses below) for shell ergonomics.</p>
 <h2 id="synopsis"><a class="header" href="#synopsis">Synopsis</a></h2>
 <pre><code class="language-text">wisecrow &lt;COMMAND&gt; [ARGS...]
@@ -2304,6 +2304,8 @@ list.</p>
 <tr><td><a href="#download-all"><code>download-all</code></a></td><td><code>da</code></td><td style="text-align: center">no</td><td>Fetch every language pair against one native lang.</td></tr>
 <tr><td><a href="#ingest"><code>ingest</code></a></td><td><code>i</code></td><td style="text-align: center">yes</td><td>Fetch + parse + persist translations.</td></tr>
 <tr><td><a href="#frequency"><code>frequency</code></a></td><td><code>fr</code></td><td style="text-align: center">yes</td><td>Rank stored translations from a word-frequency list.</td></tr>
+<tr><td><a href="#prepare-corpus"><code>prepare-corpus</code></a></td><td>—</td><td style="text-align: center">yes</td><td>One archive, one ranking, or one media batch for the pair file.</td></tr>
+<tr><td><a href="#grammar-status"><code>grammar-status</code></a></td><td>—</td><td style="text-align: center">yes</td><td>Report whether grammar import or example audio is still unfinished.</td></tr>
 <tr><td><a href="#learn"><code>learn</code></a></td><td><code>r</code></td><td style="text-align: center">yes</td><td>Open the SRS flashcard TUI.</td></tr>
 <tr><td><a href="#nback"><code>nback</code></a></td><td><code>nb</code></td><td style="text-align: center">yes</td><td>Run an adaptive dual n-back session.</td></tr>
 <tr><td><a href="#list-languages"><code>list-languages</code></a></td><td><code>l</code></td><td style="text-align: center">no</td><td>Print the supported-language table.</td></tr>
@@ -2462,6 +2464,56 @@ whichever side of a pair holds the listed language, so ingest direction is
 irrelevant. Only whole phrases match: a word list ranks single-word rows, not
 the sentences containing that word. A file that parses to no entries is an
 error rather than a silent no-op.</p>
+<hr>
+<h2 id="prepare-corpus"><a class="header" href="#prepare-corpus"><code>prepare-corpus</code></a></h2>
+<pre><code class="language-sh">wisecrow prepare-corpus [--config PATH]
+</code></pre>
+<p>Performs one step for the first unfinished pair in the config file, then
+exits. A step is one of: read one selected archive, record a missing
+archive, rank the foreign language from the stored corpus when the evidence
+checksum has changed, or prepare audio and one picture for a batch of ranked
+single-word rows. It prints <code>worked</code>, <code>idle</code>, or <code>retry</code>. All three exit 0;
+the host unit sleeps after <code>idle</code> or <code>retry</code>.</p>
+<p>The default config is <code>deploy/language-pairs.toml</code>. The initial pairs are
+English to Scottish Gaelic, French, Italian, and Spanish. French, Italian,
+and Spanish take OpenSubtitles, CCAligned, ParaCrawl, and NLLB. Scottish
+Gaelic also takes CCMatrix. An explicit <code>corpora</code> list on a pair replaces
+that policy.</p>
+<p>The first run re-reads those archives, including OpenSubtitles rows already
+in the database, because nothing recorded which file they came from. Inserts
+use <code>ON CONFLICT DO NOTHING</code> and do not increment <code>frequency</code>. Operator
+<code>ingest</code> still does. After a success or a recorded 404, that archive is not
+downloaded again.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th style="text-align: right">Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--config</code></td><td style="text-align: right"><code>deploy/language-pairs.toml</code></td><td>Pair file. Inside the deployed container this is <code>/app/language-pairs.toml</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<h2 id="grammar-status"><a class="header" href="#grammar-status"><code>grammar-status</code></a></h2>
+<pre><code class="language-sh">wisecrow grammar-status [--config PATH] [--shelf PATH]
+</code></pre>
+<p>Prints <code>idle</code> and exits 0 when every configured foreign language has
+finished the <code>SOURCES.md</code> import schedule and has a live clip for every
+correct example. Prints <code>work</code> plus the unfinished language codes and exits
+10 otherwise. It does not call a model and does not synthesise audio. A
+progress row for an older file hash or importer version does not count.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th style="text-align: right">Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--config</code></td><td style="text-align: right"><code>deploy/language-pairs.toml</code></td><td>Pair file whose foreign languages are checked.</td></tr>
+<tr><td><code>--shelf</code></td><td style="text-align: right"><code>/app/grammar</code></td><td>Grammar shelf whose <code>SOURCES.md</code> is the schedule.</td></tr>
+</tbody>
+</table>
+</div>
 <hr>
 <h2 id="extract-words"><a class="header" href="#extract-words"><code>extract-words</code></a></h2>
 <pre><code class="language-sh">wisecrow extract-words -n &lt;NATIVE&gt; -f &lt;FOREIGN&gt; [--limit N] [--min-occurrences N]
