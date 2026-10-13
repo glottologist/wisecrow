@@ -181,32 +181,59 @@ mod implementation {
 
             let subject = subject(id).await?;
             let db = crate::server::pool()?;
-            let query = subject
-                .applicable_image_query()
-                .ok_or_else(|| not_found("No picture applies"))?
-                .to_owned();
-            let fetcher = crate::api::media::image_fetcher()?;
-            let fingerprint = wisecrow::media::image_cache_key(&subject, &fetcher)
-                .ok_or_else(|| not_found("No picture applies"))?;
-            let client = reqwest::Client::new();
             let cache = MediaCache::new(db.clone()) // clone: MediaCache owns an Arc-backed pool handle
                 .map_err(|error| {
                     crate::server::internal_error("image cache initialization", &error)
                 })?;
-            let (path, attribution) = cache
-                .get_or_fetch_attributed(id, MediaType::Image, &fingerprint, || async {
-                    wisecrow::media::images::fetch_image(&client, &query, &fetcher)
+            let configured = wisecrow::media::images::ImageFetcher::from_config(
+                &crate::api::media::app_config()?,
+            );
+            let provider_ids = configured
+                .as_ref()
+                .map(wisecrow::media::images::ImageFetcher::provider_ids);
+            let found =
+                wisecrow::media::cached_picture(&cache, id, &subject, provider_ids.as_deref())
+                    .await
+                    .map_err(|error| crate::server::internal_error("image cache lookup", &error))?;
+            let (path, fingerprint, attribution) = match found {
+                wisecrow::media::CachedPicture::NotApplicable
+                | wisecrow::media::CachedPicture::KnownMiss => {
+                    return Err(not_found("No picture applies"));
+                }
+                wisecrow::media::CachedPicture::Hit { path, attribution } => {
+                    let named = provider_ids.as_ref().and_then(|ids| {
+                        subject
+                            .image_fingerprint(ids, wisecrow::media::images::IMAGE_FORMAT_VERSION)
+                            .map(|fingerprint| fingerprint.as_str().to_owned())
+                    });
+                    (path, named, attribution)
+                }
+                wisecrow::media::CachedPicture::Missing => {
+                    let Some(fetcher) = configured else {
+                        return Err(crate::server::client_error(
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            "Image capability is not configured",
+                        ));
+                    };
+                    let query = subject
+                        .applicable_image_query()
+                        .ok_or_else(|| not_found("No picture applies"))?
+                        .to_owned();
+                    let fingerprint = wisecrow::media::image_cache_key(&subject, &fetcher)
+                        .ok_or_else(|| not_found("No picture applies"))?;
+                    let client = reqwest::Client::new();
+                    let (path, attribution) = cache
+                        .get_or_fetch_attributed(id, MediaType::Image, &fingerprint, || async {
+                            wisecrow::media::images::fetch_image(&client, &query, &fetcher)
+                                .await
+                                .map(|image| (image.bytes, image.attribution))
+                        })
                         .await
-                        .map(|image| (image.bytes, image.attribution))
-                })
-                .await
-                .map_err(|error| crate::server::internal_error("image fetch", &error))?;
-            Ok((
-                path,
-                Some(fingerprint.as_str().to_owned()),
-                attribution,
-                "Image",
-            ))
+                        .map_err(|error| crate::server::internal_error("image fetch", &error))?;
+                    (path, Some(fingerprint.as_str().to_owned()), attribution)
+                }
+            };
+            Ok((path, fingerprint, attribution, "Image"))
         }
 
         #[cfg(not(feature = "images"))]

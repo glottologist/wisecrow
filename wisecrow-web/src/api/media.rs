@@ -223,28 +223,57 @@ mod implementation {
     ) -> Result<Option<wisecrow_dto::CardImageDto>, ServerFnError> {
         let db = crate::server::pool()?;
         let subject = load_subject(db, translation_id).await?;
-        let Some(query) = subject.applicable_image_query() else {
-            return Ok(None);
-        };
-        let fetcher = super::image_fetcher()?;
-        let Some(fingerprint) = wisecrow::media::image_cache_key(&subject, &fetcher) else {
-            return Ok(None);
-        };
-        let client = reqwest::Client::new();
         let cache =
             MediaCache::new(db.clone()) // clone: MediaCache owns an Arc-backed pool handle
                 .map_err(|error| {
                     crate::server::internal_error("image cache initialization", &error)
                 })?;
-        let query = query.to_owned();
-        let (path, attribution) = cache
-            .get_or_fetch_attributed(translation_id, MediaType::Image, &fingerprint, || async {
-                wisecrow::media::images::fetch_image(&client, &query, &fetcher)
+        let configured = wisecrow::media::images::ImageFetcher::from_config(&super::app_config()?);
+        let provider_ids = configured
+            .as_ref()
+            .map(wisecrow::media::images::ImageFetcher::provider_ids);
+        let found = wisecrow::media::cached_picture(
+            &cache,
+            translation_id,
+            &subject,
+            provider_ids.as_deref(),
+        )
+        .await
+        .map_err(|error| crate::server::internal_error("image cache lookup", &error))?;
+        let (path, attribution) = match found {
+            wisecrow::media::CachedPicture::NotApplicable
+            | wisecrow::media::CachedPicture::KnownMiss => return Ok(None),
+            wisecrow::media::CachedPicture::Hit { path, attribution } => (path, attribution),
+            wisecrow::media::CachedPicture::Missing => {
+                let Some(fetcher) = configured else {
+                    return Err(crate::server::client_error(
+                        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                        "Image capability is not configured",
+                    ));
+                };
+                let Some(query) = subject.applicable_image_query() else {
+                    return Ok(None);
+                };
+                let Some(fingerprint) = wisecrow::media::image_cache_key(&subject, &fetcher) else {
+                    return Ok(None);
+                };
+                let query = query.to_owned();
+                let client = reqwest::Client::new();
+                cache
+                    .get_or_fetch_attributed(
+                        translation_id,
+                        MediaType::Image,
+                        &fingerprint,
+                        || async {
+                            wisecrow::media::images::fetch_image(&client, &query, &fetcher)
+                                .await
+                                .map(|image| (image.bytes, image.attribution))
+                        },
+                    )
                     .await
-                    .map(|image| (image.bytes, image.attribution))
-            })
-            .await
-            .map_err(|error| crate::server::internal_error("image fetch", &error))?;
+                    .map_err(|error| crate::server::internal_error("image fetch", &error))?
+            }
+        };
         let bytes = super::read_bounded_file(&path, MAX_IMAGE_BYTES, "Image").await?;
         let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
         Ok(Some(wisecrow_dto::CardImageDto {

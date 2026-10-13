@@ -75,6 +75,58 @@ impl DatabasePersister {
         Ok(())
     }
 
+    /// Inserts pairs that are not already stored.
+    ///
+    /// An existing `(from_language_id, from_phrase, to_language_id, to_phrase)`
+    /// row is left untouched, including its `frequency`. Operator ingest still
+    /// uses [`Self::persist_translations`], which increments that column.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database transaction fails.
+    pub async fn persist_translations_once(
+        &self,
+        batch: &[TranslationPair],
+        from_lang_id: i32,
+        to_lang_id: i32,
+    ) -> Result<(), WisecrowError> {
+        if batch.is_empty() {
+            return Ok(());
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        let deduped: Vec<&TranslationPair> = batch
+            .iter()
+            .filter(|pair| seen.insert((&pair.source_text, &pair.target_text)))
+            .collect();
+
+        let sources: Vec<&str> = deduped
+            .iter()
+            .map(|pair| pair.source_text.as_str())
+            .collect();
+        let targets: Vec<&str> = deduped
+            .iter()
+            .map(|pair| pair.target_text.as_str())
+            .collect();
+
+        let mut tx = self.pool.begin().await?;
+        sqlx::query(
+            "INSERT INTO translations (from_language_id, from_phrase, to_language_id, to_phrase)
+             SELECT $1, phrase, $3, target_phrase
+             FROM unnest($2::text[], $4::text[]) AS t(phrase, target_phrase)
+             ON CONFLICT (from_language_id, from_phrase, to_language_id, to_phrase)
+             DO NOTHING",
+        )
+        .bind(from_lang_id)
+        .bind(sources)
+        .bind(to_lang_id)
+        .bind(targets)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     async fn maybe_flush_translations(
         &self,
         batch: &mut Vec<TranslationPair>,
@@ -111,6 +163,36 @@ impl DatabasePersister {
 
         if !translation_batch.is_empty() {
             self.persist_translations(&translation_batch, from_lang_id, to_lang_id)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    /// As [`Self::consume`], inserting each pair at most once.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any batch persistence fails.
+    pub async fn consume_once(
+        &self,
+        mut receiver: Receiver<TranslationPair>,
+        from_lang_id: i32,
+        to_lang_id: i32,
+    ) -> Result<(), WisecrowError> {
+        let mut translation_batch: Vec<TranslationPair> = Vec::new();
+
+        while let Some(pair) = receiver.recv().await {
+            translation_batch.push(pair);
+            if translation_batch.len() >= TRANSLATION_BATCH_SIZE {
+                self.persist_translations_once(&translation_batch, from_lang_id, to_lang_id)
+                    .await?;
+                translation_batch.clear();
+            }
+        }
+
+        if !translation_batch.is_empty() {
+            self.persist_translations_once(&translation_batch, from_lang_id, to_lang_id)
                 .await?;
         }
 

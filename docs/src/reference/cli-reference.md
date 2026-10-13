@@ -1,6 +1,6 @@
 # CLI reference
 
-The `wisecrow` binary ships with thirty-three subcommands. Most have a short alias
+The `wisecrow` binary ships with thirty-six subcommands. Most have a short alias
 (in parentheses below) for shell ergonomics.
 
 ## Synopsis
@@ -20,6 +20,8 @@ list.
 | [`download-all`](#download-all) | `da` | no | Fetch every language pair against one native lang. |
 | [`ingest`](#ingest) | `i` | yes | Fetch + parse + persist translations. |
 | [`frequency`](#frequency) | `fr` | yes | Rank stored translations from a word-frequency list. |
+| [`prepare-corpus`](#prepare-corpus) | — | yes | One archive, one ranking, or one media batch for the pair file. |
+| [`grammar-status`](#grammar-status) | — | yes | Report whether grammar import or example audio is still unfinished. |
 | [`learn`](#learn) | `r` | yes | Open the SRS flashcard TUI. |
 | [`nback`](#nback) | `nb` | yes | Run an adaptive dual n-back session. |
 | [`list-languages`](#list-languages) | `l` | no | Print the supported-language table. |
@@ -171,6 +173,56 @@ whichever side of a pair holds the listed language, so ingest direction is
 irrelevant. Only whole phrases match: a word list ranks single-word rows, not
 the sentences containing that word. A file that parses to no entries is an
 error rather than a silent no-op.
+
+---
+
+## `prepare-corpus`
+
+```sh
+wisecrow prepare-corpus [--config PATH]
+```
+
+Performs one step for the first unfinished pair in the config file, then
+exits. A step is one of: read one selected archive, record a missing
+archive, rank the foreign language from the stored corpus when the evidence
+checksum has changed, or prepare audio and one picture for a batch of ranked
+single-word rows. It prints `worked`, `idle`, or `retry`. All three exit 0;
+the host unit sleeps after `idle` or `retry`.
+
+The default config is `deploy/language-pairs.toml`. The initial pairs are
+English to Scottish Gaelic, French, Italian, and Spanish. French, Italian,
+and Spanish take OpenSubtitles, CCAligned, ParaCrawl, and NLLB. Scottish
+Gaelic also takes CCMatrix. An explicit `corpora` list on a pair replaces
+that policy.
+
+The first run re-reads those archives, including OpenSubtitles rows already
+in the database, because nothing recorded which file they came from. Inserts
+use `ON CONFLICT DO NOTHING` and do not increment `frequency`. Operator
+`ingest` still does. After a success or a recorded 404, that archive is not
+downloaded again.
+
+| Flag | Default | Description |
+|------|--------:|-------------|
+| `--config` | `deploy/language-pairs.toml` | Pair file. Inside the deployed container this is `/app/language-pairs.toml`. |
+
+---
+
+## `grammar-status`
+
+```sh
+wisecrow grammar-status [--config PATH] [--shelf PATH]
+```
+
+Prints `idle` and exits 0 when every configured foreign language has
+finished the `SOURCES.md` import schedule and has a live clip for every
+correct example. Prints `work` plus the unfinished language codes and exits
+10 otherwise. It does not call a model and does not synthesise audio. A
+progress row for an older file hash or importer version does not count.
+
+| Flag | Default | Description |
+|------|--------:|-------------|
+| `--config` | `deploy/language-pairs.toml` | Pair file whose foreign languages are checked. |
+| `--shelf` | `/app/grammar` | Grammar shelf whose `SOURCES.md` is the schedule. |
 
 ---
 

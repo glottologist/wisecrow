@@ -14,6 +14,7 @@ pub mod lang;
 pub mod llm;
 pub mod media;
 pub mod phrases;
+pub mod pipeline;
 pub mod presentation;
 pub mod preview;
 pub mod pruning;

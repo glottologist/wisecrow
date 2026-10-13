@@ -15,11 +15,11 @@ use wisecrow::{
         is_supported_language, CheckPdfArgs, Cli, Command, DownloadAllArgs, EnsureSyllabusArgs,
         ExportGrammarArgs, ExtractPhrasesArgs, ExtractWordsArgs, FrequencyArgs,
         GenerateExercisesArgs, GenerateItemsArgs, GlossArgs, GlossDeckArgs, GradedReaderArgs,
-        GradedReaderFormat, ImportGrammarArgs, ImportPdfArgs, IngestArgs, LanguageArgs, LearnArgs,
-        NbackArgs, PrefetchGrammarAudioArgs, PrefetchMediaArgs, PreviewArgs, PromoteItemsArgs,
-        PromoteMode, PromoteWordsArgs, PruneArgs, QuizArgs, RefreshSyllabusArgs,
-        ScoreSentencesArgs, SeedGrammarArgs, SentenceCardArgs, SyncArgs, SyncClientCmd,
-        TranslatePhrasesArgs, UserCmd, SUPPORTED_LANGUAGE_INFO,
+        GradedReaderFormat, GrammarStatusArgs, ImportGrammarArgs, ImportPdfArgs, IngestArgs,
+        LanguageArgs, LearnArgs, NbackArgs, PrefetchGrammarAudioArgs, PrefetchMediaArgs,
+        PrepareCorpusArgs, PreviewArgs, PromoteItemsArgs, PromoteMode, PromoteWordsArgs, PruneArgs,
+        QuizArgs, RefreshSyllabusArgs, ScoreSentencesArgs, SeedGrammarArgs, SentenceCardArgs,
+        SyncArgs, SyncClientCmd, TranslatePhrasesArgs, UserCmd, SUPPORTED_LANGUAGE_INFO,
     },
     config::Config,
     downloader::DownloadConfig,
@@ -1526,11 +1526,18 @@ async fn handle_prefetch_grammar_audio(args: PrefetchGrammarAudioArgs) -> Result
 /// could not answer at all, as when a usage limit is spent. A wrapper over
 /// several runs can stop on it and carry on past any other failure.
 const EXIT_LLM_UNAVAILABLE: u8 = 75;
+const EXIT_GRAMMAR_PENDING: u8 = 10;
+
+enum Finish {
+    Done,
+    GrammarPending,
+}
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
     match run().await {
-        Ok(()) => std::process::ExitCode::SUCCESS,
+        Ok(Finish::Done) => std::process::ExitCode::SUCCESS,
+        Ok(Finish::GrammarPending) => std::process::ExitCode::from(EXIT_GRAMMAR_PENDING),
         Err(error) => {
             eprintln!("Error: {error:?}");
             if matches!(
@@ -1545,7 +1552,7 @@ async fn main() -> std::process::ExitCode {
     }
 }
 
-async fn run() -> Result<(), Error> {
+async fn run() -> Result<Finish, Error> {
     tracing_subscriber::fmt::init();
     if let Err(e) = dotenvy::dotenv() {
         tracing::debug!("No .env file loaded: {e}");
@@ -1574,6 +1581,12 @@ async fn run() -> Result<(), Error> {
         }
         Command::PrefetchMedia(args) => handle_prefetch_media(args).await?,
         Command::PrefetchGrammarAudio(args) => handle_prefetch_grammar_audio(args).await?,
+        Command::PrepareCorpus(args) => handle_prepare_corpus(args).await?,
+        Command::GrammarStatus(args) => {
+            if handle_grammar_status(args).await? {
+                return Ok(Finish::GrammarPending);
+            }
+        }
         Command::ExtractPhrases(args) => handle_extract_phrases(args).await?,
         Command::TranslatePhrases(args) => handle_translate_phrases(args).await?,
         Command::ExtractWords(args) => handle_extract_words(args).await?,
@@ -1594,7 +1607,54 @@ async fn run() -> Result<(), Error> {
         Command::User { command } => handle_user(command).await?,
         Command::SyncClient { command } => handle_sync_client(command).await?,
     }
+    Ok(Finish::Done)
+}
+
+async fn handle_prepare_corpus(args: PrepareCorpusArgs) -> Result<(), Error> {
+    use wisecrow::pipeline::{prepare_one_step, CorpusStep};
+
+    let (config, pool) = load_config_and_pool().await?;
+    let pairs = wisecrow::pipeline::load_pairs(std::path::Path::new(&args.config))?;
+    match prepare_one_step(&pool, &config, &pairs).await? {
+        CorpusStep::Worked => println!("worked"),
+        CorpusStep::Idle => println!("idle"),
+        CorpusStep::Retry => println!("retry"),
+    }
     Ok(())
+}
+
+async fn handle_grammar_status(args: GrammarStatusArgs) -> Result<bool, Error> {
+    use wisecrow::media::cache::MediaCache;
+    use wisecrow::pipeline::{grammar_audio_idle, grammar_import_idle, load_pairs};
+
+    let (config, pool) = load_config_and_pool().await?;
+    let pairs = load_pairs(std::path::Path::new(&args.config))?;
+    let shelf = std::path::Path::new(&args.shelf);
+    let cache = MediaCache::open_existing(pool.clone()); // clone: PgPool is Arc-based
+    #[cfg(feature = "tts")]
+    let speaker = wisecrow::media::grammar_audio::TtsSpeaker::new(
+        wisecrow::media::cereproc::CereprocClient::from_config(&config),
+    );
+    let _ = &config;
+
+    let mut pending = Vec::new();
+    for pair in &pairs {
+        let import_idle = grammar_import_idle(&pool, &pair.foreign, shelf).await?;
+        #[cfg(feature = "tts")]
+        let audio_idle = grammar_audio_idle(&pool, &pair.foreign, &cache, Some(&speaker)).await?;
+        #[cfg(not(feature = "tts"))]
+        let audio_idle = grammar_audio_idle(&pool, &pair.foreign, &cache, None).await?;
+        if !import_idle || !audio_idle {
+            pending.push(pair.foreign.as_str());
+        }
+    }
+    if pending.is_empty() {
+        println!("idle");
+        Ok(false)
+    } else {
+        println!("work {}", pending.join(" "));
+        Ok(true)
+    }
 }
 
 /// Reads a password for account provisioning. Prefers the non-interactive

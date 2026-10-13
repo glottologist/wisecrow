@@ -198,6 +198,31 @@
   retries: 60
   delay: 3
   changed_when: false
+
+# Enabled, not started: the first corpus wake re-reads every selected archive.
+- name: Install the corpus unit
+  ansible.builtin.template:
+    src: wisecrow-corpus.service.j2
+    dest: /etc/systemd/system/wisecrow-corpus.service
+    mode: "0644"
+  become: true
+
+- name: Install the grammar unit
+  ansible.builtin.template:
+    src: wisecrow-grammar.service.j2
+    dest: /etc/systemd/system/wisecrow-grammar.service
+    mode: "0644"
+  become: true
+
+- name: Enable the corpus and grammar units
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    daemon_reload: true
+  loop:
+    - wisecrow-corpus.service
+    - wisecrow-grammar.service
+  become: true
   failed_when: false
 
 - name: Smoke test — wisecrow list-languages via the running container

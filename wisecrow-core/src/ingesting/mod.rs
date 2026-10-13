@@ -125,6 +125,32 @@ impl Ingester {
         label: &str,
         languages: &IngestLanguages,
     ) -> Result<(), WisecrowError> {
+        self.ingest_parsed(path, label, languages, false).await
+    }
+
+    /// As [`Self::ingest_from_file_with_languages`], but a pair already stored
+    /// is not inserted again and its `frequency` is not incremented.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if language setup, parsing or persistence fails, or
+    /// no pair is accepted.
+    pub async fn ingest_from_file_once(
+        &self,
+        path: &str,
+        label: &str,
+        languages: &IngestLanguages,
+    ) -> Result<(), WisecrowError> {
+        self.ingest_parsed(path, label, languages, true).await
+    }
+
+    async fn ingest_parsed(
+        &self,
+        path: &str,
+        label: &str,
+        languages: &IngestLanguages,
+        once: bool,
+    ) -> Result<(), WisecrowError> {
         let (sender, receiver) = mpsc::channel::<TranslationPair>(CHANNEL_BOUND);
         let persister = DatabasePersister::new(self.pool.clone()); // clone: PgPool is Arc-based
         let native = languages.native().canonical();
@@ -147,9 +173,17 @@ impl Ingester {
             result
         };
 
-        let (parsed, persisted) = tokio::join!(parse, persister.consume(receiver, from_id, to_id));
-        let count = parsed?;
-        persisted?;
+        let count = if once {
+            let (parsed, persisted) =
+                tokio::join!(parse, persister.consume_once(receiver, from_id, to_id));
+            persisted?;
+            parsed?
+        } else {
+            let (parsed, persisted) =
+                tokio::join!(parse, persister.consume(receiver, from_id, to_id));
+            persisted?;
+            parsed?
+        };
         if count == 0 {
             return Err(WisecrowError::InvalidInput(format!(
                 "No accepted pairs in {label} for {native}/{} to {foreign}/{}",

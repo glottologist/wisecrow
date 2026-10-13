@@ -62,9 +62,15 @@ impl MediaSubject {
     #[must_use]
     pub fn applicable_image_query(&self) -> Option<&str> {
         if self.is_phrase {
+            return None;
+        }
+        if let Some(query) = self.image_query.as_deref() {
+            return Some(query);
+        }
+        if self.to_phrase.is_empty() {
             None
         } else {
-            self.image_query.as_deref()
+            Some(self.to_phrase.as_str())
         }
     }
 
@@ -143,6 +149,67 @@ pub fn audio_cache_key(
 pub fn image_cache_key(subject: &MediaSubject, fetcher: &ImageFetcher) -> Option<MediaFingerprint> {
     let providers = fetcher.provider_ids();
     subject.image_fingerprint(&providers, images::IMAGE_FORMAT_VERSION)
+}
+
+/// A picture already on disk, or the reason the handler must not invent one.
+#[cfg(feature = "images")]
+#[derive(Debug)]
+pub enum CachedPicture {
+    /// A phrase, or a word with no search text.
+    NotApplicable,
+    /// Authoritative empty search. Do not call a provider again.
+    KnownMiss,
+    Hit {
+        path: std::path::PathBuf,
+        attribution: Option<String>,
+    },
+    /// A picture applies and nothing live matches the current fingerprint.
+    Missing,
+}
+
+/// Looks up a card picture without calling a provider.
+///
+/// `provider_ids` is `None` when no provider is configured. A live file is
+/// still returned, so a missing key is not a 503 for a picture already stored.
+///
+/// # Errors
+///
+/// Returns an error when the cache query fails.
+#[cfg(feature = "images")]
+pub async fn cached_picture(
+    cache: &cache::MediaCache,
+    translation_id: i32,
+    subject: &MediaSubject,
+    provider_ids: Option<&[&str]>,
+) -> Result<CachedPicture, WisecrowError> {
+    if subject.applicable_image_query().is_none() {
+        return Ok(CachedPicture::NotApplicable);
+    }
+    let Some(provider_ids) = provider_ids else {
+        return Ok(
+            match cache
+                .stored_published(translation_id, MediaType::Image)
+                .await?
+            {
+                Some((path, attribution)) => CachedPicture::Hit { path, attribution },
+                None => CachedPicture::Missing,
+            },
+        );
+    };
+    let Some(fingerprint) = subject.image_fingerprint(provider_ids, images::IMAGE_FORMAT_VERSION)
+    else {
+        return Ok(CachedPicture::NotApplicable);
+    };
+    if let Some((path, attribution)) = cache
+        .published(translation_id, MediaType::Image, &fingerprint)
+        .await?
+    {
+        return Ok(CachedPicture::Hit { path, attribution });
+    }
+    if cache.picture_miss_recorded(fingerprint.as_str()).await? {
+        return Ok(CachedPicture::KnownMiss);
+    }
+    Ok(CachedPicture::Missing)
 }
 
 /// Holds shared resources for media fetching (audio + images).
@@ -256,7 +323,30 @@ mod tests {
     }
 
     #[test]
-    fn abstract_word_and_phrase_have_no_image_fingerprint() {
+    fn unglossed_word_uses_the_foreign_word_as_its_picture_query() {
+        let word = MediaSubject {
+            to_phrase: "casa".to_owned(),
+            from_phrase: "house".to_owned(),
+            foreign_lang: "es".to_owned(),
+            image_query: None,
+            is_phrase: false,
+        };
+        assert_eq!(word.applicable_image_query(), Some("casa"));
+        let glossed = MediaSubject {
+            image_query: Some("house".to_owned()),
+            ..word.clone() // clone: the glossed case is an independent subject
+        };
+        assert_eq!(glossed.applicable_image_query(), Some("house"));
+        let phrase = MediaSubject {
+            is_phrase: true,
+            image_query: Some("house".to_owned()),
+            ..word
+        };
+        assert!(phrase.applicable_image_query().is_none());
+    }
+
+    #[test]
+    fn phrase_has_no_image_fingerprint_and_an_unglossed_word_does() {
         let abstract_word = MediaSubject {
             to_phrase: "en".to_owned(),
             from_phrase: "in".to_owned(),
@@ -272,7 +362,10 @@ mod tests {
             is_phrase: true,
         };
         let providers = ["unsplash"];
-        assert!(abstract_word.image_fingerprint(&providers, 1).is_none());
+        assert_eq!(
+            abstract_word.image_fingerprint(&providers, 1),
+            Some(MediaFingerprint::for_image("en", "fr", &providers, 1))
+        );
         assert!(phrase.image_fingerprint(&providers, 1).is_none());
         let audio = abstract_word.audio_fingerprint("edge", "fr-FR-HenriNeural", 1);
         assert_eq!(

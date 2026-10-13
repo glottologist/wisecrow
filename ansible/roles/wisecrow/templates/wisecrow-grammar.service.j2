@@ -1,0 +1,14 @@
+[Unit]
+Description=Wisecrow grammar import and example audio
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory={{ deploy_dir }}
+ExecStart=/bin/bash {{ deploy_dir }}/scripts/grammar-service.sh
+Restart=on-success
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

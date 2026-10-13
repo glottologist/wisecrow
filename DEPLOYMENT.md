@@ -347,6 +347,32 @@ list derived from a Wikipedia dump is the practical route. A list ranks a
 translation from whichever side of the pair its language sits on, so the
 ingest direction does not matter.
 
+### Language pipeline
+
+`deploy/language-pairs.toml` lists the pairs the two host units may touch.
+It is mounted read-only at `/app/language-pairs.toml`. The initial pairs are
+English to Scottish Gaelic, French, Italian, and Spanish. French, Italian,
+and Spanish take OpenSubtitles, CCAligned, ParaCrawl, and NLLB. Scottish
+Gaelic also takes CCMatrix, which is small enough not to dominate the count.
+
+The first corpus run re-reads those archives, including OpenSubtitles,
+because existing rows do not record which file they came from. Pipeline
+inserts use `ON CONFLICT DO NOTHING` and do not increment `frequency`.
+Operator `wisecrow ingest` still does. A recorded success or a recorded 404
+is not downloaded again.
+
+`wisecrow-corpus.service` runs `scripts/prepare-corpus.sh`, which execs
+`wisecrow prepare-corpus --config /app/language-pairs.toml` for one archive,
+one corpus ranking, or one batch of word audio and pictures, then exits.
+`wisecrow-grammar.service` runs `scripts/grammar-service.sh`, which execs
+`wisecrow grammar-status` first. Exit 0 means the `SOURCES.md` schedule and
+the example clips are finished, and the unit does not start
+`scripts/import-grammar.sh`. Exit 10 means a configured language still needs
+a model call or a clip; only then does the unit run `import-grammar.sh` and
+`scripts/prefetch-grammar-audio.sh`. Neither unit calls `wisecrow ingest`.
+
+Ansible installs and enables both units. It does not start them.
+
 ### Grammar and media (optional)
 
 Grammar rules need an LLM provider configured (step 2); media pre-fetching

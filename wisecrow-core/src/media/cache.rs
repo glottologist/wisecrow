@@ -75,6 +75,62 @@ impl MediaCache {
         }
     }
 
+    /// The live file for `fingerprint`, if one is published.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the database query fails.
+    pub async fn published(
+        &self,
+        translation_id: i32,
+        media_type: MediaType,
+        fingerprint: &MediaFingerprint,
+    ) -> Result<Option<(PathBuf, Option<String>)>, WisecrowError> {
+        self.hit_from_pool(translation_id, media_type, fingerprint)
+            .await
+    }
+
+    /// A live stored file for this translation, whatever fingerprint it used.
+    ///
+    /// Used when no provider is configured, so the current fingerprint cannot
+    /// be named, and a restart must still serve the file already on disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the database query fails.
+    pub async fn stored_published(
+        &self,
+        translation_id: i32,
+        media_type: MediaType,
+    ) -> Result<Option<(PathBuf, Option<String>)>, WisecrowError> {
+        let Some(row) = self.load_row_pool(translation_id, media_type).await? else {
+            return Ok(None);
+        };
+        if row.source_fingerprint.is_none() {
+            return Ok(None);
+        }
+        let path = PathBuf::from(&row.file_path);
+        if !self.is_contained_cache_file(&path) {
+            return Ok(None);
+        }
+        Ok(Some((path, row.attribution)))
+    }
+
+    /// Whether an authoritative empty search was stored for this fingerprint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the query fails.
+    pub async fn picture_miss_recorded(&self, fingerprint: &str) -> Result<bool, WisecrowError> {
+        let recorded = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM pipeline_picture_misses WHERE fingerprint = $1)",
+        )
+        .bind(fingerprint)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(recorded)
+    }
+
     /// Whether a live file for `fingerprint` is already published, read in a
     /// read-only transaction. Nothing is fetched or written.
     ///

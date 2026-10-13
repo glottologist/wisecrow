@@ -57,6 +57,10 @@ services:
       # because `import-pdf` only reads it. The record must travel with the
       # documents: the licence gate refuses a document it cannot find a row for.
       - ./grammar:/app/grammar:ro
+      # Pair list for prepare-corpus and grammar-status. Not baked into the
+      # image: the operator edits it without a rebuild, and the container
+      # must not write it.
+      - ./deploy/language-pairs.toml:/app/language-pairs.toml:ro
     ports:
       - "${WISECROW_WEB_BIND:-0.0.0.0}:${WISECROW_WEB_PORT:-8443}:8443"
     # Liveness, not authorization: an unauthenticated GET / is answered with the

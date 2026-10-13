@@ -195,6 +195,54 @@ impl ImageFetcher {
             WisecrowError::MediaError("No image provider returned a usable hit".to_owned())
         }))
     }
+
+    /// Distinguishes an empty search from a failure the caller must retry.
+    ///
+    /// `Empty` means every configured provider returned no hit. A provider
+    /// error or a failed download, when no earlier provider produced a hit,
+    /// is `Retryable` and must not be stored as a miss. No configured
+    /// provider is also `Retryable`: missing keys are not an empty search.
+    pub async fn search_outcome(
+        &self,
+        client: &reqwest::Client,
+        query: &ImageQuery<'_>,
+    ) -> ImageSearch {
+        if self.providers.is_empty() {
+            return ImageSearch::Retryable(WisecrowError::MediaError(
+                "No image provider is configured".to_owned(),
+            ));
+        }
+
+        let mut failure: Option<WisecrowError> = None;
+        for provider in &self.providers {
+            match provider.search(client, query).await {
+                Ok(Some(hit)) => match download_and_resize(client, &hit.download_url).await {
+                    Ok(bytes) => {
+                        return ImageSearch::Found(FetchedImage {
+                            bytes,
+                            attribution: hit.attribution,
+                        });
+                    }
+                    Err(error) => failure = Some(error),
+                },
+                Ok(None) => {}
+                Err(error) => failure = Some(error),
+            }
+        }
+
+        match failure {
+            Some(error) => ImageSearch::Retryable(error),
+            None => ImageSearch::Empty,
+        }
+    }
+}
+
+/// One picture search, separated so an empty result is not stored as a failure.
+#[derive(Debug)]
+pub enum ImageSearch {
+    Found(FetchedImage),
+    Empty,
+    Retryable(WisecrowError),
 }
 
 async fn download_and_resize(
@@ -420,6 +468,109 @@ mod tests {
         let q = ImageQuery::new("house");
         assert_eq!(q.orientation, Orientation::Squarish);
         assert!(q.lang_hint.is_none());
+    }
+
+    #[tokio::test]
+    async fn empty_search_is_not_a_retryable_error() {
+        let fetcher = ImageFetcher::new(vec![Arc::new(MockProvider {
+            id: "a",
+            hit: None,
+            fail: false,
+        })]);
+        let outcome = fetcher
+            .search_outcome(&reqwest::Client::new(), &ImageQuery::new("cat"))
+            .await;
+        assert!(matches!(outcome, ImageSearch::Empty));
+    }
+
+    #[tokio::test]
+    async fn provider_error_is_retryable_even_when_another_provider_is_empty() {
+        let fetcher = ImageFetcher::new(vec![
+            Arc::new(MockProvider {
+                id: "a",
+                hit: None,
+                fail: false,
+            }),
+            Arc::new(MockProvider {
+                id: "b",
+                hit: None,
+                fail: true,
+            }),
+        ]);
+        let outcome = fetcher
+            .search_outcome(&reqwest::Client::new(), &ImageQuery::new("cat"))
+            .await;
+        assert!(matches!(outcome, ImageSearch::Retryable(_)));
+
+        let unconfigured = ImageFetcher::new(vec![]);
+        let outcome = unconfigured
+            .search_outcome(&reqwest::Client::new(), &ImageQuery::new("cat"))
+            .await;
+        match outcome {
+            ImageSearch::Retryable(WisecrowError::MediaError(message)) => {
+                assert!(message.contains("No image provider is configured"));
+            }
+            other => panic!("expected a retryable miss, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_hit_is_found() {
+        let img = image::DynamicImage::new_rgb8(8, 8);
+        let mut png = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .expect("png");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("port").port();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept");
+            let mut received = Vec::new();
+            let mut buffer = [0u8; 256];
+            loop {
+                let count = tokio::io::AsyncReadExt::read(&mut socket, &mut buffer)
+                    .await
+                    .expect("read");
+                if count == 0 {
+                    break;
+                }
+                received.extend_from_slice(&buffer[..count]);
+                if received.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                png.len()
+            );
+            tokio::io::AsyncWriteExt::write_all(&mut socket, header.as_bytes())
+                .await
+                .expect("header");
+            tokio::io::AsyncWriteExt::write_all(&mut socket, &png)
+                .await
+                .expect("body");
+        });
+
+        let fetcher = ImageFetcher::new(vec![Arc::new(MockProvider {
+            id: "local",
+            hit: Some(ImageHit {
+                download_url: Url::parse(&format!("http://127.0.0.1:{port}/cat.png")).expect("url"),
+                attribution: Some("local".to_owned()),
+                provider_id: "local",
+            }),
+            fail: false,
+        })]);
+        let outcome = fetcher
+            .search_outcome(&reqwest::Client::new(), &ImageQuery::new("cat"))
+            .await;
+        match outcome {
+            ImageSearch::Found(image) => {
+                assert_eq!(&image.bytes[..2], &[0xFF, 0xD8]);
+                assert_eq!(image.attribution.as_deref(), Some("local"));
+            }
+            other => panic!("expected a downloaded image, got {other:?}"),
+        }
     }
 
     #[test]

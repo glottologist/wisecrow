@@ -20,7 +20,7 @@ use crate::llm::prompts::PassageExcerpt;
 use crate::llm::LlmProvider;
 
 // Increment for incompatible chunk cursors; prompt changes preserve completed imports.
-const IMPORTER_VERSION: i16 = 1;
+pub const IMPORTER_VERSION: i16 = 1;
 const LOCK_NAMESPACE: i32 = 0x4752414d;
 
 /// Content identity is independent of the file's citation name.

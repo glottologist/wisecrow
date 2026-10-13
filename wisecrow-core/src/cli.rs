@@ -475,6 +475,23 @@ pub struct PrefetchGrammarAudioArgs {
 }
 
 #[derive(Args)]
+pub struct PrepareCorpusArgs {
+    /// Language pairs and optional corpus overrides.
+    #[arg(long, default_value = "deploy/language-pairs.toml")]
+    pub config: String,
+}
+
+#[derive(Args)]
+pub struct GrammarStatusArgs {
+    /// Language pairs whose foreign languages are checked.
+    #[arg(long, default_value = "deploy/language-pairs.toml")]
+    pub config: String,
+    /// Grammar shelf. The container mounts it at `/app/grammar`.
+    #[arg(long, default_value = "/app/grammar")]
+    pub shelf: String,
+}
+
+#[derive(Args)]
 pub struct ExtractPhrasesArgs {
     /// The language whose corpus is mined for frequent phrases.
     #[arg(short, long)]
@@ -672,6 +689,10 @@ pub enum Command {
     /// Voice a language's grammar example sentences into the media cache.
     #[command(aliases = ["pga"])]
     PrefetchGrammarAudio(PrefetchGrammarAudioArgs),
+    /// Perform one restart-safe corpus step for the configured pairs.
+    PrepareCorpus(PrepareCorpusArgs),
+    /// Report whether grammar import and example audio are idle.
+    GrammarStatus(GrammarStatusArgs),
     /// Extract frequent multi-word phrases from the corpus into staging.
     ExtractPhrases(ExtractPhrasesArgs),
     /// Translate staged phrases with the LLM and promote them into decks.
@@ -748,6 +769,8 @@ mod tests {
                 | (Command::Nback(_), "Nback")
                 | (Command::PrefetchMedia(_), "PrefetchMedia")
                 | (Command::PrefetchGrammarAudio(_), "PrefetchGrammarAudio")
+                | (Command::PrepareCorpus(_), "PrepareCorpus")
+                | (Command::GrammarStatus(_), "GrammarStatus")
                 | (Command::ExtractPhrases(_), "ExtractPhrases")
                 | (Command::TranslatePhrases(_), "TranslatePhrases")
                 | (Command::ExtractWords(_), "ExtractWords")
@@ -762,6 +785,28 @@ mod tests {
                 | (Command::ExportGrammar(_), "ExportGrammar")
                 | (Command::Sync(_), "Sync")
         )
+    }
+
+    #[test]
+    fn prepare_corpus_reads_the_pair_file() -> Result<(), clap::Error> {
+        let cli = Cli::try_parse_from([
+            "wisecrow",
+            "prepare-corpus",
+            "--config",
+            "deploy/language-pairs.toml",
+        ])?;
+        let Command::PrepareCorpus(args) = cli.command else {
+            panic!("expected prepare-corpus");
+        };
+        assert_eq!(args.config, "deploy/language-pairs.toml");
+
+        let grammar = Cli::try_parse_from(["wisecrow", "grammar-status"])?;
+        let Command::GrammarStatus(args) = grammar.command else {
+            panic!("expected grammar-status");
+        };
+        assert_eq!(args.config, "deploy/language-pairs.toml");
+        assert_eq!(args.shelf, "/app/grammar");
+        Ok(())
     }
 
     #[test]
