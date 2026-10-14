@@ -38,7 +38,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-c6713f59.js";
+            window.path_to_searchindex_js = "searchindex-6fd0d76a.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-a32f9be8.js"></script>
@@ -768,8 +768,9 @@ the repository’s Kotlin 2.2.21 / Android Gradle Plugin 8.10.1 overrides.</p>
 using the Android Debug certificate. <code>aapt dump badging</code> confirmed package
 <code>org.wisecrow.mobile</code>, version <code>0.1.0</code>, ARM64, minimum API 26, target API 35
 and launcher <code>dev.dioxus.main.MainActivity</code>. The packaged manifest references
-<code>wisecrow_network_security_config</code>; its XML forbids cleartext and retains the
-intended system/user certificate trust anchors. The policy lives in the
+<code>wisecrow_network_security_config</code>; its XML forbids cleartext except the
+loopback websocket Dioxus uses to draw the interface, and retains the intended
+system/user certificate trust anchors. The policy lives in the
 platform module because Dioxus generates its own <code>network_security_config.xml</code>.</p>
 <p>On 30 September, all 743 enabled workspace tests passed (191 skipped), as did
 all 8 Kotlin unit tests. Workspace and ARM64 Android Clippy passed with warnings
