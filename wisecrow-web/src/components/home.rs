@@ -7,15 +7,40 @@ use crate::router::Route;
 
 #[component]
 pub fn Home() -> Element {
-    let languages = use_server_future(list_languages)?;
+    let mut languages = use_server_future(list_languages)?;
 
     let mut native = use_signal(|| "en".to_string());
     let mut foreign = use_signal(String::new);
 
     let lang_list = languages.read();
     let langs: &[LanguageInfo] = match lang_list.as_ref() {
-        Some(Ok(ref v)) => v,
-        _ => &[],
+        Some(Ok(langs)) if !langs.is_empty() => langs,
+        Some(Err(ServerFnError::ServerError { code: 401, .. })) => {
+            return rsx! {
+                div { class: "text-center space-y-4", role: "alert",
+                    p { "Please sign in to choose your languages." }
+                    Link {
+                        to: Route::LoginPage {},
+                        class: "inline-block bg-emerald-600 hover:bg-emerald-500 rounded-lg px-4 py-3 font-semibold transition",
+                        "Sign in"
+                    }
+                }
+            };
+        }
+        Some(_) => {
+            return rsx! {
+                div { class: "text-center space-y-4", role: "alert",
+                    p { "Could not load languages. Please try again." }
+                    button {
+                        r#type: "button",
+                        class: "bg-emerald-600 hover:bg-emerald-500 rounded-lg px-4 py-3 font-semibold transition",
+                        onclick: move |_| languages.restart(),
+                        "Retry"
+                    }
+                }
+            };
+        }
+        None => return rsx! { p { role: "status", "Loading languages…" } },
     };
 
     rsx! {
@@ -133,5 +158,22 @@ pub fn Home() -> Element {
                 }
             }
         }
+    }
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn unauthenticated_home_offers_sign_in_instead_of_empty_selectors() {
+        let mut dom = VirtualDom::new(crate::app);
+        dom.rebuild_in_place();
+        dom.wait_for_suspense().await;
+
+        let html = dioxus::ssr::render(&dom);
+        assert!(html.contains("Please sign in to choose your languages."));
+        assert!(html.contains("href=\"/login\""));
+        assert!(!html.contains("<select"));
     }
 }

@@ -341,8 +341,9 @@ the repository's Kotlin 2.2.21 / Android Gradle Plugin 8.10.1 overrides.
 using the Android Debug certificate. `aapt dump badging` confirmed package
 `org.wisecrow.mobile`, version `0.1.0`, ARM64, minimum API 26, target API 35
 and launcher `dev.dioxus.main.MainActivity`. The packaged manifest references
-`wisecrow_network_security_config`; its XML forbids cleartext and retains the
-intended system/user certificate trust anchors. The policy lives in the
+`wisecrow_network_security_config`; its XML forbids cleartext except the
+loopback websocket Dioxus uses to draw the interface, and retains the intended
+system/user certificate trust anchors. The policy lives in the
 platform module because Dioxus generates its own `network_security_config.xml`.
 
 On 30 September, all 743 enabled workspace tests passed (191 skipped), as did

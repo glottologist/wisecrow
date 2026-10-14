@@ -51,6 +51,10 @@ pub enum Command {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayError {
     Unavailable,
+    #[cfg(any(
+        target_arch = "wasm32",
+        all(feature = "native", not(feature = "server"))
+    ))]
     Rejected,
 }
 
@@ -410,11 +414,6 @@ mod tests {
         let (same, command) = reduce(&playing, Event::SourceChanged(Some("clip-1".to_owned())));
         assert_eq!(command, None);
         assert_eq!(same.status, PlayStatus::Playing);
-    }
-
-    #[test]
-    fn play_errors_are_distinct() {
-        assert_ne!(PlayError::Unavailable, PlayError::Rejected);
     }
 
     #[test]

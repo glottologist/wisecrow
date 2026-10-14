@@ -131,24 +131,41 @@ fn ranked_statement(
     phrase_filter: PhraseFilter,
     policy: SelectionPolicy,
     projection: CandidateProjection,
-    limited: bool,
 ) -> String {
     let carded = carded.predicate();
     let phrase = phrase_filter.predicate();
     let teachable = phrase_filter.teachable_predicate();
     let presentation = presentation_predicate(phrase_filter, policy);
-    let selected = selected_words_cte(
-        "selected_words",
+    // `corpus_frequency >= 1` cannot use the partial covering indexes, so the
+    // frequency-1 tail of a large corpus exceeds the interactive timeout.
+    // Take the requested rows from counts above one first. Read a count of one
+    // only when that set is smaller than the limit. `OFFSET 0` keeps an empty
+    // frequency-1 lookup from being flattened into a scan of that tail.
+    let frequent = selected_words_cte(
+        "frequent_words",
         carded,
         phrase,
         &teachable,
         &presentation,
-        limited,
-        "t.corpus_frequency >= 1",
+        "ORDER BY max_frequency DESC, norm_to\n           LIMIT $3",
+        "t.corpus_frequency > 1",
+    );
+    let rare_presentation = format!(
+        "{presentation} AND lower(btrim(t.to_phrase, '{trim}')) NOT IN (SELECT norm_to FROM frequent_words)",
+        trim = crate::frequency::MATCH_TRIM_SQL
+    );
+    let rare = selected_words_cte(
+        "rare_words",
+        carded,
+        phrase,
+        &teachable,
+        &rare_presentation,
+        "ORDER BY max_frequency DESC, norm_to\n           LIMIT GREATEST($3 - (SELECT count(*) FROM frequent_words), 0::bigint)",
+        "t.corpus_frequency = 1",
     );
     let scored = scored_candidates_ctes(carded, phrase, &presentation);
     format!(
-        "{MEMBERSHIP_CTES},\n{selected},\n{scored}\n{}\n{FINAL_SELECTION}",
+        "{MEMBERSHIP_CTES},\n{frequent},\n{rare},\n{scored}\n{}\n{FINAL_SELECTION}",
         projection.columns()
     )
 }
@@ -171,7 +188,7 @@ fn learning_word_count_statement() -> String {
         phrase,
         &teachable,
         &presentation,
-        false,
+        "",
         "t.corpus_frequency > 1",
     );
     let hapax = selected_words_cte(
@@ -180,7 +197,7 @@ fn learning_word_count_statement() -> String {
         phrase,
         &teachable,
         &presentation,
-        false,
+        "",
         "t.corpus_frequency = 1",
     );
     format!(
@@ -243,14 +260,9 @@ fn selected_words_cte(
     phrase: &str,
     teachable: &str,
     presentation: &str,
-    limited: bool,
+    order_limit: &str,
     frequency_sql: &str,
 ) -> String {
-    let order_limit = if limited {
-        "ORDER BY max_frequency DESC, norm_to\n           LIMIT $3"
-    } else {
-        ""
-    };
     format!(
         "{name} AS MATERIALIZED (
            SELECT lower(btrim(t.to_phrase, '{trim}')) AS norm_to,
@@ -285,13 +297,35 @@ fn scored_candidates_ctes(carded: &str, phrase: &str, presentation: &str) -> Str
            FROM translations t
            WHERE t.from_language_id = (SELECT id FROM languages WHERE code = $1)
              AND t.to_language_id = (SELECT id FROM languages WHERE code = $2)
-             AND t.corpus_frequency >= 1
+             AND t.corpus_frequency > 1
              AND LENGTH(t.from_phrase) BETWEEN 1 AND 200
              AND LENGTH(t.to_phrase) BETWEEN 1 AND 200
              {carded}
              {phrase}
              {presentation}
-             AND lower(btrim(t.to_phrase, '{trim}')) IN (SELECT norm_to FROM selected_words)
+             AND lower(btrim(t.to_phrase, '{trim}')) IN (SELECT norm_to FROM frequent_words)
+           UNION ALL
+           SELECT t.id, t.from_phrase, t.to_phrase, t.corpus_frequency,
+                  rare_words.norm_to,
+                  count(*) OVER (
+                    PARTITION BY rare_words.norm_to,
+                                 lower(btrim(t.from_phrase, '{trim}'))
+                  )
+           FROM rare_words
+           JOIN LATERAL (
+             SELECT t.id, t.from_phrase, t.to_phrase, t.corpus_frequency
+             FROM translations t
+             WHERE t.from_language_id = (SELECT id FROM languages WHERE code = $1)
+               AND t.to_language_id = (SELECT id FROM languages WHERE code = $2)
+               AND lower(btrim(t.to_phrase, '{trim}')) = rare_words.norm_to
+               AND t.corpus_frequency = 1
+               AND LENGTH(t.from_phrase) BETWEEN 1 AND 200
+               AND LENGTH(t.to_phrase) BETWEEN 1 AND 200
+               {carded}
+               {phrase}
+               {presentation}
+             OFFSET 0
+           ) t ON true
          ),
          best AS (
            SELECT DISTINCT ON (norm_to)
@@ -370,7 +404,6 @@ impl VocabularyQuery {
             phrase_filter,
             SelectionPolicy::Learning,
             CandidateProjection::Learning,
-            true,
         );
         let mut transaction = pool.begin().await?;
         sqlx::query("SET TRANSACTION READ ONLY")
@@ -557,7 +590,6 @@ async fn preparation_page(
         phrase_filter,
         SelectionPolicy::Preparation,
         CandidateProjection::Id,
-        true,
     );
     let ids = sqlx::query_scalar::<_, i32>(&statement)
         .bind(native_lang)
@@ -597,6 +629,20 @@ pub fn interleave_deck<T>(words: Vec<T>, phrases: Vec<T>, size: usize) -> Vec<T>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ranked_deck_keeps_frequency_one_off_the_covering_index_scan() {
+        let sql = ranked_statement(
+            IncludeCarded::Yes,
+            PhraseFilter::Exclude,
+            SelectionPolicy::Learning,
+            CandidateProjection::Learning,
+        );
+        assert!(sql.contains("t.corpus_frequency > 1"));
+        assert!(sql.contains("t.corpus_frequency = 1"));
+        assert!(sql.contains("OFFSET 0"));
+        assert!(!sql.contains("corpus_frequency >= 1"));
+    }
 
     #[test]
     fn interleave_ten_items_two_phrases() {

@@ -95,18 +95,6 @@ pub(crate) fn app_config() -> Result<wisecrow::config::Config, ServerFnError> {
         .map_err(|error| crate::server::internal_error("media configuration", &error))
 }
 
-/// The configured image providers; unavailable when none is configured.
-#[cfg(all(feature = "server", feature = "images"))]
-pub(crate) fn image_fetcher() -> Result<wisecrow::media::images::ImageFetcher, ServerFnError> {
-    let cfg = app_config()?;
-    wisecrow::media::images::ImageFetcher::from_config(&cfg).ok_or_else(|| {
-        crate::server::client_error(
-            axum::http::StatusCode::SERVICE_UNAVAILABLE,
-            "Image capability is not configured",
-        )
-    })
-}
-
 /// Reads a cached media file, refusing one larger than `maximum_bytes`.
 #[cfg(all(feature = "server", any(feature = "audio", feature = "images")))]
 pub(crate) async fn read_bounded_file(
