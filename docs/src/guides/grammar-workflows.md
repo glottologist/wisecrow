@@ -163,9 +163,10 @@ overrides `pdf` on the next upsert.
 
 ## Voice the examples
 
-Grammar practice on the web shows a point's correct examples after an answer,
-each with a play button. The clip is generated on first play if it has to be,
-but a level's worth of sentences is cheap to prepare ahead of time:
+Grammar practice on the web plays the phrase the learner just got right, and
+after a wrong answer shows the point's correct examples, each with a play
+button. A clip is generated on first play if it has to be, but a level's worth
+of example sentences is cheap to prepare ahead of time:
 
 ```sh
 wisecrow prefetch-grammar-audio --lang es --dry-run   # what is missing

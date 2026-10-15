@@ -15,6 +15,48 @@ pub use session::GrammarPage;
 use uuid::Uuid;
 use wisecrow_dto::{GrammarItemDto, MasteryBandDto, SubmissionDto};
 
+/// The phrase a learner should hear after a correct answer.
+///
+/// A multiple choice is the option they chose. A cloze is the prompt with
+/// its blank filled by what they typed. This is the label; the server
+/// resolves the same phrase from the stored item before it will speak, and
+/// refuses anything that is not the right answer.
+#[must_use]
+pub(crate) fn selected_phrase(item: &GrammarItemDto, typed: &str) -> Option<String> {
+    let typed = typed.trim();
+    if typed.is_empty() {
+        return None;
+    }
+    if item.options.is_empty() {
+        return Some(fill_blank(&item.prompt, typed));
+    }
+    item.options
+        .iter()
+        .find(|option| option.id == typed)
+        .map(|option| option.text.clone()) // clone: the caller shows the phrase after `item` is borrowed
+}
+
+fn fill_blank(prompt: &str, answer: &str) -> String {
+    if let Some((before, after)) = prompt.split_once("___") {
+        [before, answer, after].concat()
+    } else {
+        answer.to_owned()
+    }
+}
+
+/// A stored example's translation, when that example is the phrase just chosen.
+///
+/// The sample sentences of a point are a different sentence more often than
+/// not. Only an exact match is the gloss of the answer.
+#[must_use]
+pub(crate) fn gloss_for<'a>(item: &'a GrammarItemDto, phrase: &str) -> Option<&'a str> {
+    item.examples
+        .iter()
+        .find(|example| example.sentence == phrase)?
+        .translation
+        .as_deref()
+}
+
 /// Builds the report one answer sends.
 ///
 /// `chose_option` travels with the answer because an option identifier and a
@@ -104,7 +146,7 @@ pub(crate) fn accuracy_label(accuracy: Option<f32>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wisecrow_dto::GrammarOptionDto;
+    use wisecrow_dto::{GrammarOptionDto, RuleExampleDto};
 
     fn cloze() -> GrammarItemDto {
         GrammarItemDto {
@@ -164,6 +206,55 @@ mod tests {
     #[test]
     fn a_chosen_option_is_marked_as_one() {
         assert!(submission_for(&choice(), Uuid::nil(), "o2", false, 1).chose_option);
+    }
+
+    #[test]
+    fn a_correct_choice_is_the_option_that_was_chosen_not_a_sample() {
+        let mut item = choice();
+        item.prompt = "How do you ask 'Is she happy?' in Gaelic?".into();
+        item.options = vec![
+            GrammarOptionDto {
+                id: "o1".into(),
+                text: "A bheil i toilichte?".into(),
+            },
+            GrammarOptionDto {
+                id: "o2".into(),
+                text: "Tha i toilichte?".into(),
+            },
+            GrammarOptionDto {
+                id: "o3".into(),
+                text: "Chan eil i toilichte?".into(),
+            },
+        ];
+        item.examples = vec![RuleExampleDto {
+            id: 1,
+            sentence: "A bheil thu sgìth?".into(),
+            translation: Some("Are you tired?".into()),
+        }];
+
+        assert_eq!(
+            selected_phrase(&item, "o1").as_deref(),
+            Some("A bheil i toilichte?")
+        );
+        assert_ne!(
+            selected_phrase(&item, "o1").as_deref(),
+            Some(item.examples[0].sentence.as_str())
+        );
+        assert_eq!(gloss_for(&item, "A bheil i toilichte?"), None);
+        assert_eq!(
+            gloss_for(&item, "A bheil thu sgìth?"),
+            Some("Are you tired?")
+        );
+    }
+
+    #[test]
+    fn a_correct_cloze_is_the_prompt_with_the_blank_filled() {
+        assert_eq!(
+            selected_phrase(&cloze(), "  estoy ").as_deref(),
+            Some("Yo estoy cansado.")
+        );
+        assert_eq!(selected_phrase(&cloze(), "   "), None);
+        assert_eq!(selected_phrase(&choice(), "missing"), None);
     }
 
     #[test]

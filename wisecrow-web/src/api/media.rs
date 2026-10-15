@@ -48,6 +48,41 @@ pub async fn get_example_audio_data(rule_example_id: i32) -> Result<String, Serv
     ))
 }
 
+/// Returns cached or generated audio for the phrase a correct answer chose.
+///
+/// The sentence is loaded from the stored item, and only when `answer` is
+/// the right one and this learner already has a correct attempt on that
+/// revision. A wrong option, a cloze that does not match, an unknown item,
+/// and a correct answer that has not been earned yet are the same refusal,
+/// so the route will not speak a wrong form and will not say which option
+/// is right before the learner has got it right.
+///
+/// # Errors
+///
+/// Returns validation, authentication, capability, or sanitized media errors.
+#[post("/api/media/answer-audio")]
+pub async fn get_answer_audio_data(
+    item_id: i32,
+    revision: i32,
+    answer: String,
+    chose_option: bool,
+) -> Result<String, ServerFnError> {
+    let user = crate::server::auth::current_user().await?;
+    validate_answer_audio(item_id, revision, &answer)?;
+    #[cfg(feature = "audio")]
+    {
+        implementation::answer_audio(user.id, item_id, revision, &answer, chose_option).await
+    }
+    #[cfg(not(feature = "audio"))]
+    {
+        let _ = (user.id, chose_option);
+        Err(crate::server::client_error(
+            axum::http::StatusCode::NOT_IMPLEMENTED,
+            "Audio capability is unavailable",
+        ))
+    }
+}
+
 /// Returns a cached or fetched image for a learning word.
 ///
 /// Takes only the translation id — see [`get_audio_data`].
@@ -75,6 +110,22 @@ pub async fn get_image_data(
 #[cfg(feature = "server")]
 fn validate_media_request(translation_id: i32) -> Result<(), ServerFnError> {
     if translation_id <= 0 {
+        return Err(crate::server::client_error(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Invalid media request",
+        ));
+    }
+    Ok(())
+}
+
+/// Longest answer accepted when asking for the phrase a learner just chose.
+#[cfg(feature = "server")]
+const MAX_ANSWER_CHARS: usize = 200;
+
+#[cfg(feature = "server")]
+fn validate_answer_audio(item_id: i32, revision: i32, answer: &str) -> Result<(), ServerFnError> {
+    let within_limit = answer.chars().count() <= MAX_ANSWER_CHARS;
+    if item_id <= 0 || revision <= 0 || answer.trim().is_empty() || !within_limit {
         return Err(crate::server::client_error(
             axum::http::StatusCode::BAD_REQUEST,
             "Invalid media request",
@@ -203,6 +254,88 @@ mod implementation {
         let bytes = super::read_bounded_file(&path, MAX_AUDIO_BYTES, "Audio").await?;
         let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
         Ok(["data:audio/mpeg;base64,", encoded.as_str()].concat())
+    }
+
+    #[cfg(feature = "audio")]
+    pub(super) async fn answer_audio(
+        user_id: i32,
+        item_id: i32,
+        revision: i32,
+        answer: &str,
+        chose_option: bool,
+    ) -> Result<String, ServerFnError> {
+        use wisecrow::media::grammar_audio::SentenceSpeaker as _;
+
+        let db = crate::server::pool()?;
+        let pronounceable = wisecrow::grammar::items::ItemRepository::pronounceable_answer(
+            db,
+            item_id,
+            revision,
+            answer,
+            chose_option,
+        )
+        .await
+        .map_err(|error| crate::server::internal_error("answer phrase", &error))?;
+        // Reported the same way as a wrong answer. Until this learner has got
+        // the item right, every option is silent, correct ones included, and
+        // nothing is synthesised.
+        let Some(pronounceable) = pronounceable else {
+            return Err(crate::server::client_error(
+                axum::http::StatusCode::NOT_FOUND,
+                "Unknown answer",
+            ));
+        };
+        if !correct_attempt_exists(db, user_id, item_id, revision).await? {
+            return Err(crate::server::client_error(
+                axum::http::StatusCode::NOT_FOUND,
+                "Unknown answer",
+            ));
+        };
+        let cache =
+            MediaCache::new(db.clone()) // clone: MediaCache owns an Arc-backed pool handle
+                .map_err(|error| {
+                    crate::server::internal_error("audio cache initialization", &error)
+                })?;
+        let cereproc =
+            wisecrow::media::cereproc::CereprocClient::from_config(&super::app_config()?);
+        let speaker = wisecrow::media::grammar_audio::TtsSpeaker::new(cereproc);
+        let fingerprint = speaker
+            .fingerprint(&pronounceable.language, &pronounceable.sentence)
+            .map_err(|error| crate::server::internal_error("answer fingerprint", &error))?;
+        let path = cache
+            .get_or_fetch_sentence(
+                &fingerprint,
+                MediaType::Audio,
+                &pronounceable.language,
+                &pronounceable.sentence,
+                || speaker.speak(&pronounceable.language, &pronounceable.sentence),
+            )
+            .await
+            .map_err(|error| crate::server::internal_error("answer audio generation", &error))?;
+        let bytes = super::read_bounded_file(&path, MAX_AUDIO_BYTES, "Audio").await?;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        Ok(["data:audio/mpeg;base64,", encoded.as_str()].concat())
+    }
+
+    #[cfg(feature = "audio")]
+    async fn correct_attempt_exists(
+        db: &sqlx::PgPool,
+        user_id: i32,
+        item_id: i32,
+        revision: i32,
+    ) -> Result<bool, ServerFnError> {
+        sqlx::query_scalar(
+            "SELECT EXISTS(
+                 SELECT 1 FROM grammar_attempts
+                 WHERE user_id = $1 AND item_id = $2 AND item_revision = $3 AND correct
+             )",
+        )
+        .bind(user_id)
+        .bind(item_id)
+        .bind(revision)
+        .fetch_one(db)
+        .await
+        .map_err(|error| crate::server::internal_error("answer attempt", &error))
     }
 
     #[cfg(feature = "images")]

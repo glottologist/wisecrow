@@ -20,7 +20,7 @@ list.
 | [`download-all`](#download-all) | `da` | no | Fetch every language pair against one native lang. |
 | [`ingest`](#ingest) | `i` | yes | Fetch + parse + persist translations. |
 | [`frequency`](#frequency) | `fr` | yes | Rank stored translations from a word-frequency list. |
-| [`prepare-corpus`](#prepare-corpus) | — | yes | One archive, one ranking, or one media batch for the pair file. |
+| [`prepare-corpus`](#prepare-corpus) | — | yes | Unsettled archives, stale ranks, one phrase mine, then gloss, phrase speech, or word audio. |
 | [`grammar-status`](#grammar-status) | — | yes | Report whether grammar import or example audio is still unfinished. |
 | [`learn`](#learn) | `r` | yes | Open the SRS flashcard TUI. |
 | [`nback`](#nback) | `nb` | yes | Run an adaptive dual n-back session. |
@@ -182,12 +182,19 @@ error rather than a silent no-op.
 wisecrow prepare-corpus [--config PATH]
 ```
 
-Performs one step for the first unfinished pair in the config file, then
-exits. A step is one of: read one selected archive, record a missing
-archive, rank the foreign language from the stored corpus when the evidence
-checksum has changed, or prepare audio and one picture for a batch of ranked
-single-word rows. It prints `worked`, `idle`, or `retry`. All three exit 0;
-the host unit sleeps after `idle` or `retry`.
+Performs one step for the pair file, then exits. Every unsettled archive
+comes first, across every pair, including a recorded 404. Every stale rank
+comes next: the foreign language is ranked from the stored corpus when the
+evidence checksum has changed. Then one phrase mine. A language is not mined
+until every configured archive is recorded and its rank stamp matches that
+checksum. A killed mine resumes from the last committed page, and the mine
+is kept until the stamp matches. Then one turn: gloss 100 staged phrases,
+phrase speech for 100 glossed phrases, or word audio for up to 200
+single-word rows. It prints `worked`, `idle`, or `retry`. All three exit 0.
+The host sleeps after `idle` or `retry`. A retry of gloss, phrase speech, or
+word audio sleeps, and the next invocation does the next kind. Phrase
+pictures are not fetched. [`extract-phrases`](#extract-phrases) and
+[`translate-phrases`](#translate-phrases) are still the hand commands.
 
 The default config is `deploy/language-pairs.toml`. The initial pairs are
 English to Scottish Gaelic, French, Italian, and Spanish. French, Italian,

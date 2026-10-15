@@ -9,7 +9,7 @@
 
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
-use wisecrow_learning::grading::GradableItem;
+use wisecrow_learning::grading::{grade, GradableItem, Submission};
 
 use crate::errors::WisecrowError;
 
@@ -348,6 +348,54 @@ impl StoredItem {
     }
 }
 
+/// The foreign phrase a correct answer is pronounced as.
+///
+/// `None` when the submission is not that answer, so a wrong option is never
+/// voiced. A multiple choice speaks the option the learner chose. A cloze
+/// speaks the prompt with its blank filled by the stored answer, which is the
+/// form the point teaches even when an accepted alternative was typed.
+pub fn spoken_phrase(
+    item: &StoredItem,
+    answer: &str,
+    chose_option: bool,
+) -> Result<Option<String>, WisecrowError> {
+    let gradable = item.gradable()?;
+    let submission = if chose_option {
+        Submission::option(answer)
+    } else {
+        Submission::text(answer)
+    };
+    if !grade(&gradable, &submission).correct {
+        return Ok(None);
+    }
+    let phrase = match gradable {
+        GradableItem::MultipleChoice {
+            options,
+            correct_option,
+        } => options
+            .into_iter()
+            .find(|(id, _)| id == &correct_option)
+            .map(|(_, text)| text),
+        GradableItem::Cloze { answer, .. } => Some(fill_blank(&item.prompt, &answer)),
+    };
+    Ok(phrase.filter(|phrase| !phrase.trim().is_empty()))
+}
+
+fn fill_blank(prompt: &str, answer: &str) -> String {
+    if let Some((before, after)) = prompt.split_once(BLANK) {
+        [before, answer, after].concat()
+    } else {
+        answer.to_owned()
+    }
+}
+
+/// A correct answer's phrase and the language it is spoken in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PronounceableAnswer {
+    pub language: String,
+    pub sentence: String,
+}
+
 fn malformed(item_id: i32, fault: &str) -> WisecrowError {
     WisecrowError::InvalidInput(format!("Quiz item {item_id} has {fault}"))
 }
@@ -363,6 +411,49 @@ const ITEM_COLUMNS_QUALIFIED: &str = "qi.id, qi.rule_id, qi.revision, qi.kind, q
 pub struct ItemRepository;
 
 impl ItemRepository {
+    /// The phrase to pronounce for one submission, if it is the right one.
+    ///
+    /// A missing item, a revision that is not the one submitted, and a wrong
+    /// answer are all `Ok(None)`. The caller speaks nothing in those cases
+    /// and does not say which of the three it was.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the stored row cannot be read, or when a query fails.
+    pub async fn pronounceable_answer(
+        pool: &PgPool,
+        item_id: i32,
+        revision: i32,
+        answer: &str,
+        chose_option: bool,
+    ) -> Result<Option<PronounceableAnswer>, WisecrowError> {
+        let item = sqlx::query_as::<_, StoredItem>(&format!(
+            "SELECT {ITEM_COLUMNS} FROM quiz_items WHERE id = $1"
+        ))
+        .bind(item_id)
+        .fetch_optional(pool)
+        .await?;
+        let Some(item) = item else {
+            return Ok(None);
+        };
+        if item.revision != revision {
+            return Ok(None);
+        }
+        let Some(sentence) = spoken_phrase(&item, answer, chose_option)? else {
+            return Ok(None);
+        };
+        let language: Option<String> = sqlx::query_scalar(
+            "SELECT l.code
+             FROM grammar_rules gr
+             JOIN languages l ON l.id = gr.language_id
+             WHERE gr.id = $1",
+        )
+        .bind(item.rule_id)
+        .fetch_optional(pool)
+        .await?;
+        Ok(language.map(|language| PronounceableAnswer { language, sentence }))
+    }
+
     /// Stores generated drafts against a rule.
     ///
     /// A draft that fails a gate is still written, as `rejected` with its
@@ -673,6 +764,82 @@ mod tests {
             gate(&draft),
             None,
             "an out-of-level draft still passes the gates"
+        );
+    }
+
+    fn stored_choice(correct: &str) -> StoredItem {
+        StoredItem {
+            id: 7,
+            rule_id: 4,
+            revision: 1,
+            kind: "multiple_choice".into(),
+            prompt: "How do you ask 'Is she happy?' in Gaelic?".into(),
+            answer: None,
+            accepted: serde_json::json!([]),
+            options: Some(serde_json::json!([
+                ["o1", "A bheil i toilichte?"],
+                ["o2", "Tha i toilichte?"],
+                ["o3", "Chan eil i toilichte?"],
+                ["o4", "Bheil is toilichte?"],
+            ])),
+            correct_option: Some(correct.to_owned()),
+            hint: None,
+            status: "active".into(),
+            out_of_level_words: None,
+        }
+    }
+
+    #[test]
+    fn a_correct_choice_is_pronounced_as_that_option_not_another_sentence() {
+        let item = stored_choice("o1");
+        assert_eq!(
+            spoken_phrase(&item, "o1", true)
+                .expect("readable item")
+                .as_deref(),
+            Some("A bheil i toilichte?")
+        );
+    }
+
+    #[test]
+    fn a_wrong_choice_is_not_pronounced() {
+        let item = stored_choice("o1");
+        assert_eq!(
+            spoken_phrase(&item, "o2", true).expect("readable item"),
+            None
+        );
+        assert_eq!(
+            spoken_phrase(&item, "A bheil i toilichte?", false).expect("readable item"),
+            None,
+            "typing an option's text into a multiple choice is not that option"
+        );
+    }
+
+    #[test]
+    fn a_correct_cloze_is_pronounced_as_the_filled_sentence() {
+        let item = StoredItem {
+            id: 8,
+            rule_id: 4,
+            revision: 3,
+            kind: "cloze".into(),
+            prompt: "Yo ___ cansado.".into(),
+            answer: Some("estoy".into()),
+            accepted: serde_json::json!(["toy"]),
+            options: None,
+            correct_option: None,
+            hint: None,
+            status: "active".into(),
+            out_of_level_words: None,
+        };
+        assert_eq!(
+            spoken_phrase(&item, "  Estoy ", false)
+                .expect("readable item")
+                .as_deref(),
+            Some("Yo estoy cansado."),
+            "an accepted alternative is still heard as the form the point teaches"
+        );
+        assert_eq!(
+            spoken_phrase(&item, "soy", false).expect("readable item"),
+            None
         );
     }
 

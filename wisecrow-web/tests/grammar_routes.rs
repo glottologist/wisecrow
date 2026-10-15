@@ -212,6 +212,61 @@ async fn grammar_routes_serve_regrade_and_report() {
     )
     .await;
     assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
+    let unearned = post(
+        "/api/media/answer-audio",
+        json!({
+            "item_id": item.item_id,
+            "revision": item.revision,
+            "answer": ANSWER,
+            "chose_option": false
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        unearned.status(),
+        StatusCode::NOT_FOUND,
+        "the right phrase stays silent until the learner has got it right"
+    );
+    let wrong_answer = post(
+        "/api/media/answer-audio",
+        json!({
+            "item_id": item.item_id,
+            "revision": item.revision,
+            "answer": "soy",
+            "chose_option": false
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        wrong_answer.status(),
+        StatusCode::NOT_FOUND,
+        "a wrong answer is never voiced"
+    );
+    let not_an_option = post(
+        "/api/media/answer-audio",
+        json!({
+            "item_id": item.item_id,
+            "revision": item.revision,
+            "answer": ANSWER,
+            "chose_option": true
+        }),
+        &token,
+    )
+    .await;
+    assert_eq!(
+        not_an_option.status(),
+        StatusCode::NOT_FOUND,
+        "a cloze answer sent as an option id is not that answer"
+    );
+    let invalid_answer = post(
+        "/api/media/answer-audio",
+        json!({"item_id": 0, "revision": 1, "answer": ANSWER, "chose_option": false}),
+        &token,
+    )
+    .await;
+    assert_eq!(invalid_answer.status(), StatusCode::BAD_REQUEST);
     assert!(
         !session
             .items

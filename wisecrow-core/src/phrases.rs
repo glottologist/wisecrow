@@ -186,22 +186,22 @@ pub async fn translate_phrases(
         let requested: Vec<String> = batch.iter().map(|(_, phrase, _)| phrase.clone()).collect();
         let prompt =
             crate::llm::prompts::phrase_translation_prompt(&requested, lang_name, native_name);
-        // A provider or parse failure costs this batch alone. Selection keys on
-        // the absence of a `phrase_translations` row, so the next run picks the
-        // skipped phrases up; aborting instead would discard the batches still
-        // queued behind a single malformed response.
+        // A malformed answer costs this batch alone. The next run picks those
+        // phrases up. An outage stops the run; earlier batches are already
+        // committed, so they are not written again.
         let parsed: PhraseTranslationResponse =
             match provider.generate(&prompt, 2048).await.and_then(|response| {
                 crate::llm::parse_fenced_json(&response, "phrase-translation JSON")
             }) {
                 Ok(parsed) => parsed,
-                Err(e) => {
+                Err(error @ WisecrowError::LlmError(_)) => {
                     tracing::warn!(
-                        "Skipping batch of {} {lang_code} phrases: {e}",
+                        "Skipping batch of {} {lang_code} phrases: {error}",
                         requested.len()
                     );
                     continue;
                 }
+                Err(error) => return Err(error),
             };
 
         for (phrase, translation) in pair_with_requested(&requested, parsed) {
@@ -247,6 +247,114 @@ fn pair_with_requested(
         .collect()
 }
 
+/// Attaches a stored gloss to a translation row.
+///
+/// A corpus line with the same English and foreign text is reused and stays
+/// in the evidence view. A new pair is owned by the phrase and leaves the
+/// view. `corpus_frequency` becomes `sentence_count`. A reused row keeps
+/// its `from_phrase`.
+///
+/// # Errors
+///
+/// Returns an error when the language pair or gloss row cannot be linked,
+/// or when the database write fails.
+pub async fn link_phrase_translation(
+    pool: &PgPool,
+    link_id: i32,
+    phrase: &str,
+    translation: &str,
+    sentence_count: i32,
+    lang_code: &str,
+    native_code: &str,
+) -> Result<i32, WisecrowError> {
+    let mut tx = pool.begin().await?;
+    let id = link_phrase_translation_in(
+        &mut tx,
+        link_id,
+        phrase,
+        translation,
+        sentence_count,
+        lang_code,
+        native_code,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(id)
+}
+
+async fn link_phrase_translation_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    link_id: i32,
+    phrase: &str,
+    translation: &str,
+    sentence_count: i32,
+    lang_code: &str,
+    native_code: &str,
+) -> Result<i32, WisecrowError> {
+    let inserted: Option<i32> = sqlx::query_scalar(
+        "INSERT INTO translations
+             (from_language_id, from_phrase, to_language_id, to_phrase, corpus_frequency)
+         SELECT nl.id, $1, fl.id, $2, $3
+         FROM languages nl
+         JOIN languages fl ON fl.code = $5
+         WHERE nl.code = $4
+         ON CONFLICT (from_language_id, from_phrase, to_language_id, to_phrase) DO NOTHING
+         RETURNING id",
+    )
+    .bind(translation)
+    .bind(phrase)
+    .bind(sentence_count)
+    .bind(native_code)
+    .bind(lang_code)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let (translation_id, owns) = match inserted {
+        Some(id) => (id, true),
+        None => {
+            let existing: Option<i32> = sqlx::query_scalar(
+                "SELECT t.id
+                 FROM translations t
+                 JOIN languages nl ON nl.id = t.from_language_id AND nl.code = $3
+                 JOIN languages fl ON fl.id = t.to_language_id AND fl.code = $4
+                 WHERE t.from_phrase = $1 AND t.to_phrase = $2",
+            )
+            .bind(translation)
+            .bind(phrase)
+            .bind(native_code)
+            .bind(lang_code)
+            .fetch_optional(&mut **tx)
+            .await?;
+            let Some(id) = existing else {
+                return Err(WisecrowError::InvalidInput(format!(
+                    "no translation row for {native_code}/{lang_code} link {link_id}"
+                )));
+            };
+            (id, false)
+        }
+    };
+    sqlx::query("UPDATE translations SET corpus_frequency = $2 WHERE id = $1")
+        .bind(translation_id)
+        .bind(sentence_count)
+        .execute(&mut **tx)
+        .await?;
+    let updated = sqlx::query(
+        "UPDATE phrase_translations
+         SET translation_id = $1, owns_translation = $2
+         WHERE id = $3",
+    )
+    .bind(translation_id)
+    .bind(owns)
+    .bind(link_id)
+    .execute(&mut **tx)
+    .await?;
+    if updated.rows_affected() == 0 {
+        return Err(WisecrowError::InvalidInput(format!(
+            "phrase link {link_id} is not in the database"
+        )));
+    }
+    Ok(translation_id)
+}
+
 /// Writes the native side and keeps the linked `translations` row in step,
 /// inside one transaction so a refresh can never leave the pair split.
 async fn promote(
@@ -284,43 +392,62 @@ async fn promote(
         .execute(&mut *tx)
         .await?;
     } else {
-        sqlx::query(
-            "INSERT INTO translations
-                 (from_language_id, from_phrase, to_language_id, to_phrase, corpus_frequency)
-             SELECT nl.id, $1, fl.id, $2, $3
-             FROM languages nl, languages fl
-             WHERE nl.code = $4 AND fl.code = $5
-             ON CONFLICT (from_language_id, from_phrase, to_language_id, to_phrase)
-               DO UPDATE SET corpus_frequency = EXCLUDED.corpus_frequency",
+        link_phrase_translation_in(
+            &mut tx,
+            link_id,
+            phrase,
+            translation,
+            sentence_count,
+            lang_code,
+            native_code,
         )
-        .bind(translation)
-        .bind(phrase)
-        .bind(sentence_count)
-        .bind(native_code)
-        .bind(lang_code)
-        .execute(&mut *tx)
         .await?;
-        let (translation_id,): (i32,) = sqlx::query_as(
-            "SELECT t.id FROM translations t
-             WHERE t.from_phrase = $1 AND t.to_phrase = $2
-               AND t.from_language_id = (SELECT id FROM languages WHERE code = $3)
-               AND t.to_language_id = (SELECT id FROM languages WHERE code = $4)",
-        )
-        .bind(translation)
-        .bind(phrase)
-        .bind(native_code)
-        .bind(lang_code)
-        .fetch_one(&mut *tx)
-        .await?;
-        sqlx::query("UPDATE phrase_translations SET translation_id = $1 WHERE id = $2")
-            .bind(translation_id)
-            .bind(link_id)
-            .execute(&mut *tx)
-            .await?;
     }
 
     tx.commit().await?;
     Ok(())
+}
+
+/// Points a gloss whose translation row was removed back at the stored English.
+///
+/// The model is not called. A missing language or gloss row is an error.
+///
+/// # Errors
+///
+/// Returns an error when the lookup or the link write fails.
+pub(crate) async fn relink_orphans(
+    pool: &PgPool,
+    foreign: &str,
+    native: &str,
+) -> Result<usize, WisecrowError> {
+    let orphans: Vec<(i32, String, String, i32)> = sqlx::query_as(
+        "SELECT pt.id, p.phrase, pt.translation, p.sentence_count
+         FROM phrase_translations pt
+         JOIN phrases p ON p.id = pt.phrase_id
+         JOIN languages fl ON fl.id = p.language_id
+         JOIN languages nl ON nl.id = pt.native_language_id
+         WHERE fl.code = $1 AND nl.code = $2 AND pt.translation_id IS NULL",
+    )
+    .bind(foreign)
+    .bind(native)
+    .fetch_all(pool)
+    .await?;
+
+    let mut relinked = 0usize;
+    for (link_id, phrase, translation, sentence_count) in orphans {
+        link_phrase_translation(
+            pool,
+            link_id,
+            &phrase,
+            &translation,
+            sentence_count,
+            foreign,
+            native,
+        )
+        .await?;
+        relinked = relinked.saturating_add(1);
+    }
+    Ok(relinked)
 }
 
 #[cfg(test)]

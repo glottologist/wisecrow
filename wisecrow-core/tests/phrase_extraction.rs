@@ -473,3 +473,54 @@ async fn a_failed_batch_does_not_abandon_the_batches_behind_it() {
         "the batch queued behind it still runs"
     );
 }
+
+struct OutageOnSecondBatch {
+    calls: std::sync::atomic::AtomicUsize,
+    first_response: String,
+}
+
+#[async_trait]
+impl LlmProvider for OutageOnSecondBatch {
+    async fn generate(&self, _prompt: &str, _max_tokens: u32) -> Result<String, WisecrowError> {
+        if self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+            return Ok(self.first_response.clone()); // clone: the stub may be polled again
+        }
+        Err(WisecrowError::LlmUnavailable("down".into()))
+    }
+    fn name(&self) -> &str {
+        "outage-on-second"
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn an_outage_keeps_the_glosses_already_written() {
+    let pool = test_pool().await;
+    cleanup(&pool).await;
+    for i in 0..26 {
+        seed_phrase(&pool, &format!("o{i:02}"), 200 - i).await;
+    }
+    let first: String = (0..25)
+        .map(|i| format!(r#"{{"phrase":"o{i:02}","translation":"e{i:02}"}}"#))
+        .collect::<Vec<_>>()
+        .join(",");
+    let provider = OutageOnSecondBatch {
+        calls: std::sync::atomic::AtomicUsize::new(0),
+        first_response: format!(r#"{{"translations":[{first}]}}"#),
+    };
+
+    let error = translate_phrases(&pool, &provider, "gd", "en", 26, Refresh::No)
+        .await
+        .expect_err("outage");
+
+    assert!(matches!(error, WisecrowError::LlmUnavailable(_)));
+    let (_, from, _) = linked_translation(&pool, "o00")
+        .await
+        .expect("first gloss kept");
+    assert_eq!(from, "e00");
+    let (_, from, _) = linked_translation(&pool, "o24")
+        .await
+        .expect("end of the first batch kept");
+    assert_eq!(from, "e24");
+    assert!(linked_translation(&pool, "o25").await.is_none());
+}

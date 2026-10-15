@@ -2,9 +2,9 @@ use dioxus::prelude::*;
 use uuid::Uuid;
 use wisecrow_dto::GrammarItemDto;
 
-use super::submission_for;
+use super::{gloss_for, selected_phrase, submission_for};
 use crate::api::grammar::{complete_grammar_session, start_grammar_session, submit_grammar_answer};
-use crate::api::media::get_example_audio_data;
+use crate::api::media::{get_answer_audio_data, get_example_audio_data};
 
 /// What the learner is doing with the item in front of them.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -205,11 +205,34 @@ pub fn GrammarPage(native: String, foreign: String) -> Element {
                             }
                         }
                     },
-                    Answered::Right => rsx! {
-                        div { class: "text-center space-y-3",
-                            p { class: "text-xl text-emerald-400 font-bold", "Correct" }
-                            p { class: "text-gray-400", "{item.rule_explanation}" }
-                            Examples { examples: item.examples.clone(), playing, audio_failed } // clone: the component takes owned props
+                    Answered::Right => {
+                        let phrase = selected_phrase(&item, &typed());
+                        let gloss = phrase
+                            .as_deref()
+                            .and_then(|phrase| gloss_for(&item, phrase))
+                            .map(ToOwned::to_owned); // clone: the player keeps the gloss
+                        let answer = typed().trim().to_owned();
+                        rsx! {
+                            div { class: "text-center space-y-3",
+                                p { class: "text-xl text-emerald-400 font-bold", "Correct" }
+                                p { class: "text-gray-400", "{item.rule_explanation}" }
+                                if let Some(phrase) = phrase {
+                                    AnswerAudio {
+                                        phrase,
+                                        gloss,
+                                        request: AnswerRequest {
+                                            item_id: item.item_id,
+                                            revision: item.revision,
+                                            answer,
+                                            chose_option: !item.options.is_empty(),
+                                            card: position,
+                                        },
+                                        index,
+                                        playing,
+                                        audio_failed,
+                                    }
+                                }
+                            }
                         }
                     },
                     Answered::Wrong => rsx! {
@@ -252,6 +275,103 @@ pub fn GrammarPage(native: String, foreign: String) -> Element {
             if let Some(message) = error_msg() {
                 div { class: "text-red-400 text-center", "{message}" }
             }
+        }
+    }
+}
+
+/// What the server needs in order to speak the phrase just chosen.
+#[derive(Clone, PartialEq, Eq)]
+struct AnswerRequest {
+    item_id: i32,
+    revision: i32,
+    answer: String,
+    chose_option: bool,
+    card: usize,
+}
+
+/// The phrase the learner just got right, played as soon as its clip is ready.
+///
+/// The clip is the option they chose, or the cloze with their answer filled
+/// in. A sample sentence of the grammar point is a different sentence and is
+/// not what this plays. The server refuses the request unless that phrase is
+/// the stored answer, so a wrong form is never spoken.
+#[component]
+fn AnswerAudio(
+    phrase: String,
+    gloss: Option<String>,
+    request: AnswerRequest,
+    index: Signal<usize>,
+    playing: Signal<Option<(i32, String)>>,
+    audio_failed: Signal<Option<i32>>,
+) -> Element {
+    let request_for_mount = request.clone(); // clone: the mount effect owns its request
+    use_effect(move || {
+        let request = request_for_mount.clone(); // clone: a rerun must keep a copy to send
+        spawn(async move {
+            publish_answer_clip(request, index, playing, audio_failed).await;
+        });
+    });
+
+    let item_id = request.item_id;
+    let src = playing()
+        .filter(|(id, _)| *id == item_id)
+        .map(|(_, src)| src);
+    rsx! {
+        div { class: "text-left bg-gray-800 rounded-lg px-4 py-2 flex items-center gap-3 mt-4",
+            button {
+                class: "rounded bg-emerald-600 hover:bg-emerald-500 px-3 py-1 font-bold transition",
+                aria_label: "Play answer",
+                onclick: {
+                    let request = request.clone(); // clone: each tap owns its request
+                    move |_| {
+                        let request = request.clone(); // clone: the handler may fire again
+                        async move {
+                            publish_answer_clip(request, index, playing, audio_failed).await;
+                        }
+                    }
+                },
+                "▶"
+            }
+            div { class: "space-y-1",
+                p { class: "text-gray-300", "{phrase}" }
+                if let Some(gloss) = gloss {
+                    p { class: "text-sm text-gray-500", "{gloss}" }
+                }
+                if let Some(src) = src {
+                    audio { src: "{src}", autoplay: true, controls: true, class: "mt-1" }
+                }
+                if audio_failed() == Some(item_id) {
+                    p { class: "text-sm text-red-400", "Audio unavailable" }
+                }
+            }
+        }
+    }
+}
+
+async fn publish_answer_clip(
+    request: AnswerRequest,
+    index: Signal<usize>,
+    mut playing: Signal<Option<(i32, String)>>,
+    mut audio_failed: Signal<Option<i32>>,
+) {
+    let result = get_answer_audio_data(
+        request.item_id,
+        request.revision,
+        request.answer,
+        request.chose_option,
+    )
+    .await;
+    if index() != request.card {
+        return;
+    }
+    match result {
+        Ok(url) => {
+            audio_failed.set(None);
+            playing.set(Some((request.item_id, url)));
+        }
+        Err(_) => {
+            playing.set(None);
+            audio_failed.set(Some(request.item_id));
         }
     }
 }

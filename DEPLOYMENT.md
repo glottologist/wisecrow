@@ -362,8 +362,15 @@ Operator `wisecrow ingest` still does. A recorded success or a recorded 404
 is not downloaded again.
 
 `wisecrow-corpus.service` runs `scripts/prepare-corpus.sh`, which execs
-`wisecrow prepare-corpus --config /app/language-pairs.toml` for one archive,
-one corpus ranking, or one batch of word audio and pictures, then exits.
+`wisecrow prepare-corpus --config /app/language-pairs.toml` for one step,
+then exits. The order is every unsettled archive, every stale rank, one
+phrase mine kept until its stamp matches the evidence checksum, then a turn:
+gloss 100 phrases, phrase speech for 100 glossed phrases, or word audio for
+up to 200 single-word rows. A killed mine resumes from the last committed
+page. A retry sleeps, and the next invocation does the next kind of turn.
+Phrase pictures are not fetched. `extract-phrases` and `translate-phrases`
+are still the hand commands.
+
 `wisecrow-grammar.service` runs `scripts/grammar-service.sh`, which execs
 `wisecrow grammar-status` first. Exit 0 means the `SOURCES.md` schedule and
 the example clips are finished, and the unit does not start

@@ -1303,7 +1303,7 @@ async fn handle_translate_phrases(args: TranslatePhrasesArgs) -> Result<(), Erro
     } else {
         wisecrow::phrases::Refresh::No
     };
-    let written = wisecrow::phrases::translate_phrases(
+    match wisecrow::phrases::translate_phrases(
         &pool,
         provider.as_ref(),
         &args.lang,
@@ -1311,9 +1311,18 @@ async fn handle_translate_phrases(args: TranslatePhrasesArgs) -> Result<(), Erro
         args.limit,
         refresh,
     )
-    .await?;
-    info!("Translated and promoted {written} {} phrases", args.lang);
-    Ok(())
+    .await
+    {
+        Ok(written) => {
+            info!("Translated and promoted {written} {} phrases", args.lang);
+            Ok(())
+        }
+        Err(error @ (WisecrowError::LlmUnavailable(_) | WisecrowError::ConfigurationError(_))) => {
+            warn!("Phrase translation stopped: {error}");
+            Ok(())
+        }
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// PostgreSQL's code for a relation that does not exist.

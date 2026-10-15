@@ -101,6 +101,11 @@ async fn stamp_matches(
     Ok(stored.as_deref() == Some(checksum.as_slice()))
 }
 
+pub(crate) async fn rank_is_current(pool: &PgPool, foreign: &str) -> Result<bool, WisecrowError> {
+    let checksum = evidence_checksum(pool, foreign).await?;
+    stamp_matches(pool, foreign, &checksum).await
+}
+
 async fn store_stamp(
     pool: &PgPool,
     foreign: &str,
