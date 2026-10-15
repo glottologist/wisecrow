@@ -38,7 +38,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-6fd0d76a.js";
+            window.path_to_searchindex_js = "searchindex-3e17b29a.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-a32f9be8.js"></script>
@@ -1753,9 +1753,10 @@ Dry runs and legacy top-up imports do not use these caches.</p>
 <code>export-grammar</code>, correct it, and re-import via <code>import-grammar</code> – <code>manual</code>
 overrides <code>pdf</code> on the next upsert.</p>
 <h2 id="voice-the-examples"><a class="header" href="#voice-the-examples">Voice the examples</a></h2>
-<p>Grammar practice on the web shows a point’s correct examples after an answer,
-each with a play button. The clip is generated on first play if it has to be,
-but a level’s worth of sentences is cheap to prepare ahead of time:</p>
+<p>Grammar practice on the web plays the phrase the learner just got right, and
+after a wrong answer shows the point’s correct examples, each with a play
+button. A clip is generated on first play if it has to be, but a level’s worth
+of example sentences is cheap to prepare ahead of time:</p>
 <pre><code class="language-sh">wisecrow prefetch-grammar-audio --lang es --dry-run   # what is missing
 wisecrow prefetch-grammar-audio --lang es             # voice it
 </code></pre>
@@ -2305,7 +2306,7 @@ list.</p>
 <tr><td><a href="#download-all"><code>download-all</code></a></td><td><code>da</code></td><td style="text-align: center">no</td><td>Fetch every language pair against one native lang.</td></tr>
 <tr><td><a href="#ingest"><code>ingest</code></a></td><td><code>i</code></td><td style="text-align: center">yes</td><td>Fetch + parse + persist translations.</td></tr>
 <tr><td><a href="#frequency"><code>frequency</code></a></td><td><code>fr</code></td><td style="text-align: center">yes</td><td>Rank stored translations from a word-frequency list.</td></tr>
-<tr><td><a href="#prepare-corpus"><code>prepare-corpus</code></a></td><td>—</td><td style="text-align: center">yes</td><td>One archive, one ranking, or one media batch for the pair file.</td></tr>
+<tr><td><a href="#prepare-corpus"><code>prepare-corpus</code></a></td><td>—</td><td style="text-align: center">yes</td><td>Unsettled archives, stale ranks, one phrase mine, then gloss, phrase speech, or word audio.</td></tr>
 <tr><td><a href="#grammar-status"><code>grammar-status</code></a></td><td>—</td><td style="text-align: center">yes</td><td>Report whether grammar import or example audio is still unfinished.</td></tr>
 <tr><td><a href="#learn"><code>learn</code></a></td><td><code>r</code></td><td style="text-align: center">yes</td><td>Open the SRS flashcard TUI.</td></tr>
 <tr><td><a href="#nback"><code>nback</code></a></td><td><code>nb</code></td><td style="text-align: center">yes</td><td>Run an adaptive dual n-back session.</td></tr>
@@ -2469,12 +2470,19 @@ error rather than a silent no-op.</p>
 <h2 id="prepare-corpus"><a class="header" href="#prepare-corpus"><code>prepare-corpus</code></a></h2>
 <pre><code class="language-sh">wisecrow prepare-corpus [--config PATH]
 </code></pre>
-<p>Performs one step for the first unfinished pair in the config file, then
-exits. A step is one of: read one selected archive, record a missing
-archive, rank the foreign language from the stored corpus when the evidence
-checksum has changed, or prepare audio and one picture for a batch of ranked
-single-word rows. It prints <code>worked</code>, <code>idle</code>, or <code>retry</code>. All three exit 0;
-the host unit sleeps after <code>idle</code> or <code>retry</code>.</p>
+<p>Performs one step for the pair file, then exits. Every unsettled archive
+comes first, across every pair, including a recorded 404. Every stale rank
+comes next: the foreign language is ranked from the stored corpus when the
+evidence checksum has changed. Then one phrase mine. A language is not mined
+until every configured archive is recorded and its rank stamp matches that
+checksum. A killed mine resumes from the last committed page, and the mine
+is kept until the stamp matches. Then one turn: gloss 100 staged phrases,
+phrase speech for 100 glossed phrases, or word audio for up to 200
+single-word rows. It prints <code>worked</code>, <code>idle</code>, or <code>retry</code>. All three exit 0.
+The host sleeps after <code>idle</code> or <code>retry</code>. A retry of gloss, phrase speech, or
+word audio sleeps, and the next invocation does the next kind. Phrase
+pictures are not fetched. <a href="#extract-phrases"><code>extract-phrases</code></a> and
+<a href="#translate-phrases"><code>translate-phrases</code></a> are still the hand commands.</p>
 <p>The default config is <code>deploy/language-pairs.toml</code>. The initial pairs are
 English to Scottish Gaelic, French, Italian, and Spanish. French, Italian,
 and Spanish take OpenSubtitles, CCAligned, ParaCrawl, and NLLB. Scottish

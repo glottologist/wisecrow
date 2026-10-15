@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-6fd0d76a.js";
+            window.path_to_searchindex_js = "../searchindex-3e17b29a.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-a32f9be8.js"></script>
@@ -319,9 +319,10 @@ Dry runs and legacy top-up imports do not use these caches.</p>
 <code>export-grammar</code>, correct it, and re-import via <code>import-grammar</code> – <code>manual</code>
 overrides <code>pdf</code> on the next upsert.</p>
 <h2 id="voice-the-examples"><a class="header" href="#voice-the-examples">Voice the examples</a></h2>
-<p>Grammar practice on the web shows a point’s correct examples after an answer,
-each with a play button. The clip is generated on first play if it has to be,
-but a level’s worth of sentences is cheap to prepare ahead of time:</p>
+<p>Grammar practice on the web plays the phrase the learner just got right, and
+after a wrong answer shows the point’s correct examples, each with a play
+button. A clip is generated on first play if it has to be, but a level’s worth
+of example sentences is cheap to prepare ahead of time:</p>
 <pre><code class="language-sh">wisecrow prefetch-grammar-audio --lang es --dry-run   # what is missing
 wisecrow prefetch-grammar-audio --lang es             # voice it
 </code></pre>
