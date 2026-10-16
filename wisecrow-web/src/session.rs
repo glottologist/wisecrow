@@ -74,5 +74,7 @@ mod tests {
         assert!(html.contains("Sign in"));
         assert!(html.contains("type=\"password\""));
         assert!(!html.contains("Start a session"));
+        assert!(!html.contains("Frequency-based flashcards"));
+        assert!(!html.contains(crate::components::home::HOME_TITLE));
     }
 }

@@ -263,6 +263,7 @@ input, select, textarea {
 
 /* Borders */
 .border { border-width: 1px; border-style: solid; }
+.border-t { border-top-width: 1px; border-top-style: solid; }
 .border-b { border-bottom-width: 1px; border-bottom-style: solid; }
 .border-gray-600 { border-color: var(--border-strong); }
 .border-gray-700 { border-color: var(--border-default); }

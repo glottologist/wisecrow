@@ -26,10 +26,13 @@ pub enum PhraseFilter {
     Exclude,
 }
 
-const RANKED_QUERY_TIMEOUT: &str = "2s";
-/// A fast page counts every admitted word, so it cannot share the two-second
-/// budget of a limited deck fetch. Thirty seconds covers a cold index-only
-/// scan that still has to consult the heap, and frees the connection after that.
+/// A cold covering-index read of a large pair measured 2.7s, and the previous
+/// two-second budget cancelled the first Fast start. Eight seconds still
+/// releases the connection when the plan is wrong.
+const RANKED_QUERY_TIMEOUT: &str = "8s";
+/// The fast page counts every admitted word, including the once-only tail, so
+/// it cannot share the deck-fetch budget. Thirty seconds covers a cold scan
+/// that still consults the heap, and frees the connection after that.
 const WORD_COUNT_TIMEOUT: &str = "30s";
 const PREPARATION_QUERY_TIMEOUT: &str = "60s";
 const PREPARATION_DEADLINE: std::time::Duration = std::time::Duration::from_secs(60);
@@ -58,6 +61,18 @@ enum CandidateProjection {
     Learning,
     /// Translation IDs only.
     Id,
+}
+
+/// Which corpus counts a ranked statement reads.
+///
+/// Counts above one can use the partial covering indexes. A count of one
+/// cannot, and on a large corpus that tail takes long enough to cancel the
+/// deck statement. Callers run it only when the higher counts did not fill
+/// the limit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FrequencyBand {
+    AboveOne,
+    One,
 }
 
 /// Tie order that picks one representative row for a normalised word: the
@@ -89,8 +104,19 @@ const FINAL_SELECTION: &str = "FROM best
 impl CandidateProjection {
     const fn columns(self) -> &'static str {
         match self {
-            Self::Learning => "SELECT p.translation_id, p.from_phrase, p.to_phrase, best.frequency",
-            Self::Id => "SELECT p.translation_id",
+            Self::Learning => {
+                "SELECT p.translation_id, p.from_phrase, p.to_phrase, best.frequency, best.norm_to"
+            }
+            Self::Id => "SELECT p.translation_id, best.norm_to",
+        }
+    }
+}
+
+impl FrequencyBand {
+    const fn sql(self) -> &'static str {
+        match self {
+            Self::AboveOne => "t.corpus_frequency > 1",
+            Self::One => "t.corpus_frequency = 1",
         }
     }
 }
@@ -131,41 +157,36 @@ fn ranked_statement(
     phrase_filter: PhraseFilter,
     policy: SelectionPolicy,
     projection: CandidateProjection,
+    band: FrequencyBand,
 ) -> String {
-    let carded = carded.predicate();
+    let carded_sql = carded.predicate();
     let phrase = phrase_filter.predicate();
     let teachable = phrase_filter.teachable_predicate();
     let presentation = presentation_predicate(phrase_filter, policy);
-    // `corpus_frequency >= 1` cannot use the partial covering indexes, so the
-    // frequency-1 tail of a large corpus exceeds the interactive timeout.
-    // Take the requested rows from counts above one first. Read a count of one
-    // only when that set is smaller than the limit. `OFFSET 0` keeps an empty
-    // frequency-1 lookup from being flattened into a scan of that tail.
-    let frequent = selected_words_cte(
-        "frequent_words",
-        carded,
+    let frequency_sql = band.sql();
+    // `$4` is the normalised forms already returned from counts above one.
+    // Keeping this out of the higher-count statement means a filled deck
+    // never plans the once-only tail. `>= 1` cannot use the covering indexes.
+    let exclusion = match band {
+        FrequencyBand::AboveOne => String::new(),
+        FrequencyBand::One => format!(
+            " AND lower(btrim(t.to_phrase, '{trim}')) <> ALL($4::text[])",
+            trim = crate::frequency::MATCH_TRIM_SQL
+        ),
+    };
+    let selected_presentation = format!("{presentation}{exclusion}");
+    let chosen = selected_words_cte(
+        "chosen_words",
+        carded_sql,
         phrase,
         &teachable,
-        &presentation,
+        &selected_presentation,
         "ORDER BY max_frequency DESC, norm_to\n           LIMIT $3",
-        "t.corpus_frequency > 1",
+        frequency_sql,
     );
-    let rare_presentation = format!(
-        "{presentation} AND lower(btrim(t.to_phrase, '{trim}')) NOT IN (SELECT norm_to FROM frequent_words)",
-        trim = crate::frequency::MATCH_TRIM_SQL
-    );
-    let rare = selected_words_cte(
-        "rare_words",
-        carded,
-        phrase,
-        &teachable,
-        &rare_presentation,
-        "ORDER BY max_frequency DESC, norm_to\n           LIMIT GREATEST($3 - (SELECT count(*) FROM frequent_words), 0::bigint)",
-        "t.corpus_frequency = 1",
-    );
-    let scored = scored_candidates_ctes(carded, phrase, &presentation);
+    let scored = scored_candidates_ctes(carded_sql, phrase, &presentation, frequency_sql);
     format!(
-        "{MEMBERSHIP_CTES},\n{frequent},\n{rare},\n{scored}\n{}\n{FINAL_SELECTION}",
+        "{MEMBERSHIP_CTES},\n{chosen},\n{scored}\n{}\n{FINAL_SELECTION}",
         projection.columns()
     )
 }
@@ -284,7 +305,12 @@ fn selected_words_cte(
     )
 }
 
-fn scored_candidates_ctes(carded: &str, phrase: &str, presentation: &str) -> String {
+fn scored_candidates_ctes(
+    carded: &str,
+    phrase: &str,
+    presentation: &str,
+    frequency_sql: &str,
+) -> String {
     format!(
         "scored AS (
            SELECT t.id, t.from_phrase, t.to_phrase,
@@ -297,35 +323,13 @@ fn scored_candidates_ctes(carded: &str, phrase: &str, presentation: &str) -> Str
            FROM translations t
            WHERE t.from_language_id = (SELECT id FROM languages WHERE code = $1)
              AND t.to_language_id = (SELECT id FROM languages WHERE code = $2)
-             AND t.corpus_frequency > 1
+             AND {frequency_sql}
              AND LENGTH(t.from_phrase) BETWEEN 1 AND 200
              AND LENGTH(t.to_phrase) BETWEEN 1 AND 200
              {carded}
              {phrase}
              {presentation}
-             AND lower(btrim(t.to_phrase, '{trim}')) IN (SELECT norm_to FROM frequent_words)
-           UNION ALL
-           SELECT t.id, t.from_phrase, t.to_phrase, t.corpus_frequency,
-                  rare_words.norm_to,
-                  count(*) OVER (
-                    PARTITION BY rare_words.norm_to,
-                                 lower(btrim(t.from_phrase, '{trim}'))
-                  )
-           FROM rare_words
-           JOIN LATERAL (
-             SELECT t.id, t.from_phrase, t.to_phrase, t.corpus_frequency
-             FROM translations t
-             WHERE t.from_language_id = (SELECT id FROM languages WHERE code = $1)
-               AND t.to_language_id = (SELECT id FROM languages WHERE code = $2)
-               AND lower(btrim(t.to_phrase, '{trim}')) = rare_words.norm_to
-               AND t.corpus_frequency = 1
-               AND LENGTH(t.from_phrase) BETWEEN 1 AND 200
-               AND LENGTH(t.to_phrase) BETWEEN 1 AND 200
-               {carded}
-               {phrase}
-               {presentation}
-             OFFSET 0
-           ) t ON true
+             AND lower(btrim(t.to_phrase, '{trim}')) IN (SELECT norm_to FROM chosen_words)
          ),
          best AS (
            SELECT DISTINCT ON (norm_to)
@@ -399,12 +403,9 @@ impl VocabularyQuery {
         carded: IncludeCarded,
         phrase_filter: PhraseFilter,
     ) -> Result<Vec<VocabularyEntry>, WisecrowError> {
-        let statement = ranked_statement(
-            carded,
-            phrase_filter,
-            SelectionPolicy::Learning,
-            CandidateProjection::Learning,
-        );
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
         let mut transaction = pool.begin().await?;
         sqlx::query("SET TRANSACTION READ ONLY")
             .execute(&mut *transaction)
@@ -413,22 +414,32 @@ impl VocabularyQuery {
             .bind(RANKED_QUERY_TIMEOUT)
             .execute(&mut *transaction)
             .await?;
-        let rows = sqlx::query_as::<_, (i32, String, String, i32)>(&statement)
-            .bind(native_lang)
-            .bind(foreign_lang)
-            .bind(i64::from(limit))
-            .fetch_all(&mut *transaction)
-            .await?;
+        let mut request = BandRequest {
+            native_lang,
+            foreign_lang,
+            limit,
+            carded,
+            phrase_filter,
+            policy: SelectionPolicy::Learning,
+            band: FrequencyBand::AboveOne,
+            excluded: &[],
+        };
+        let (mut entries, norms) = fetch_learning_band(&mut transaction, &request).await?;
+        if let Some(remaining) = shortfall(entries.len(), limit)? {
+            // The once-only tail is a different statement, so a deck already
+            // filled from counts above one never waits on it.
+            sqlx::query("SELECT set_config('statement_timeout', $1, true)")
+                .bind(WORD_COUNT_TIMEOUT)
+                .execute(&mut *transaction)
+                .await?;
+            request.limit = remaining;
+            request.band = FrequencyBand::One;
+            request.excluded = &norms;
+            let (rest, _) = fetch_learning_band(&mut transaction, &request).await?;
+            entries.extend(rest);
+        }
         transaction.commit().await?;
-        Ok(rows
-            .into_iter()
-            .map(|(id, from, to, frequency)| VocabularyEntry {
-                translation_id: id,
-                from_phrase: from,
-                to_phrase: to,
-                frequency,
-            })
-            .collect())
+        Ok(entries)
     }
 
     /// Returns the fixed preparation deck for a pair: the first 10,000 ranked
@@ -578,6 +589,27 @@ impl VocabularyQuery {
     }
 }
 
+struct BandRequest<'a> {
+    native_lang: &'a str,
+    foreign_lang: &'a str,
+    limit: u32,
+    carded: IncludeCarded,
+    phrase_filter: PhraseFilter,
+    policy: SelectionPolicy,
+    band: FrequencyBand,
+    excluded: &'a [String],
+}
+
+fn shortfall(fetched: usize, limit: u32) -> Result<Option<u32>, WisecrowError> {
+    let fetched = u32::try_from(fetched)
+        .map_err(|_| WisecrowError::InvalidInput("ranked page exceeds bounds".into()))?;
+    Ok(if fetched >= limit {
+        None
+    } else {
+        Some(limit - fetched)
+    })
+}
+
 async fn preparation_page(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     native_lang: &str,
@@ -585,19 +617,111 @@ async fn preparation_page(
     phrase_filter: PhraseFilter,
     limit: u32,
 ) -> Result<Vec<i32>, WisecrowError> {
-    let statement = ranked_statement(
-        IncludeCarded::Yes,
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    let mut request = BandRequest {
+        native_lang,
+        foreign_lang,
+        limit,
+        carded: IncludeCarded::Yes,
         phrase_filter,
-        SelectionPolicy::Preparation,
-        CandidateProjection::Id,
-    );
-    let ids = sqlx::query_scalar::<_, i32>(&statement)
-        .bind(native_lang)
-        .bind(foreign_lang)
-        .bind(i64::from(limit))
-        .fetch_all(&mut **transaction)
-        .await?;
+        policy: SelectionPolicy::Preparation,
+        band: FrequencyBand::AboveOne,
+        excluded: &[],
+    };
+    let (mut ids, norms) = fetch_id_band(transaction, &request).await?;
+    if let Some(remaining) = shortfall(ids.len(), limit)? {
+        request.limit = remaining;
+        request.band = FrequencyBand::One;
+        request.excluded = &norms;
+        let (rest, _) = fetch_id_band(transaction, &request).await?;
+        ids.extend(rest);
+    }
     Ok(ids)
+}
+
+async fn fetch_learning_band(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    request: &BandRequest<'_>,
+) -> Result<(Vec<VocabularyEntry>, Vec<String>), WisecrowError> {
+    let statement = ranked_statement(
+        request.carded,
+        request.phrase_filter,
+        request.policy,
+        CandidateProjection::Learning,
+        request.band,
+    );
+    let rows = match request.band {
+        FrequencyBand::AboveOne => {
+            sqlx::query_as::<_, (i32, String, String, i32, String)>(&statement)
+                .bind(request.native_lang)
+                .bind(request.foreign_lang)
+                .bind(i64::from(request.limit))
+                .fetch_all(&mut **transaction)
+                .await?
+        }
+        FrequencyBand::One => {
+            sqlx::query_as::<_, (i32, String, String, i32, String)>(&statement)
+                .bind(request.native_lang)
+                .bind(request.foreign_lang)
+                .bind(i64::from(request.limit))
+                .bind(request.excluded)
+                .fetch_all(&mut **transaction)
+                .await?
+        }
+    };
+    let mut entries = Vec::with_capacity(rows.len());
+    let mut norms = Vec::with_capacity(rows.len());
+    for (id, from_phrase, to_phrase, frequency, norm) in rows {
+        entries.push(VocabularyEntry {
+            translation_id: id,
+            from_phrase,
+            to_phrase,
+            frequency,
+        });
+        norms.push(norm);
+    }
+    Ok((entries, norms))
+}
+
+async fn fetch_id_band(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    request: &BandRequest<'_>,
+) -> Result<(Vec<i32>, Vec<String>), WisecrowError> {
+    let statement = ranked_statement(
+        request.carded,
+        request.phrase_filter,
+        request.policy,
+        CandidateProjection::Id,
+        request.band,
+    );
+    let rows = match request.band {
+        FrequencyBand::AboveOne => {
+            sqlx::query_as::<_, (i32, String)>(&statement)
+                .bind(request.native_lang)
+                .bind(request.foreign_lang)
+                .bind(i64::from(request.limit))
+                .fetch_all(&mut **transaction)
+                .await?
+        }
+        FrequencyBand::One => {
+            sqlx::query_as::<_, (i32, String)>(&statement)
+                .bind(request.native_lang)
+                .bind(request.foreign_lang)
+                .bind(i64::from(request.limit))
+                .bind(request.excluded)
+                .fetch_all(&mut **transaction)
+                .await?
+        }
+    };
+    let mut ids = Vec::with_capacity(rows.len());
+    let mut norms = Vec::with_capacity(rows.len());
+    for (id, norm) in rows {
+        ids.push(id);
+        norms.push(norm);
+    }
+    Ok((ids, norms))
 }
 
 /// Interleaves ranked words and phrases into one deck of at most `size`:
@@ -632,16 +756,29 @@ mod tests {
 
     #[test]
     fn ranked_deck_keeps_frequency_one_off_the_covering_index_scan() {
-        let sql = ranked_statement(
+        let frequent = ranked_statement(
             IncludeCarded::Yes,
             PhraseFilter::Exclude,
             SelectionPolicy::Learning,
             CandidateProjection::Learning,
+            FrequencyBand::AboveOne,
         );
-        assert!(sql.contains("t.corpus_frequency > 1"));
-        assert!(sql.contains("t.corpus_frequency = 1"));
-        assert!(sql.contains("OFFSET 0"));
-        assert!(!sql.contains("corpus_frequency >= 1"));
+        assert!(frequent.contains("t.corpus_frequency > 1"));
+        assert!(!frequent.contains("t.corpus_frequency = 1"));
+        assert!(!frequent.contains("corpus_frequency >= 1"));
+        assert!(!frequent.contains("$4"));
+
+        let once = ranked_statement(
+            IncludeCarded::Yes,
+            PhraseFilter::Exclude,
+            SelectionPolicy::Learning,
+            CandidateProjection::Learning,
+            FrequencyBand::One,
+        );
+        assert!(once.contains("t.corpus_frequency = 1"));
+        assert!(!once.contains("t.corpus_frequency > 1"));
+        assert!(once.contains("<> ALL($4::text[])"));
+        assert!(!once.contains("corpus_frequency >= 1"));
     }
 
     #[test]

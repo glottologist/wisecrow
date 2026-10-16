@@ -198,16 +198,6 @@ pub async fn create_fast_deck(
         ));
     }
     let pool = crate::server::pool()?;
-    let available = VocabularyQuery::available_word_count(pool, &native, &foreign)
-        .await
-        .map_err(|error| crate::server::internal_error("fast deck word count", &error))?;
-    if size > available {
-        return Err(crate::server::client_error(
-            axum::http::StatusCode::BAD_REQUEST,
-            "Choose between 1 and the number of available words",
-        ));
-    }
-
     let words = VocabularyQuery::ranked_candidates(
         pool,
         &native,
@@ -218,6 +208,20 @@ pub async fn create_fast_deck(
     )
     .await
     .map_err(|error| crate::server::internal_error("fast deck words", &error))?;
+    // A filled page is enough evidence that `size` words exist. Counting the
+    // once-only tail here scanned the whole corpus and cancelled the start.
+    let requested = usize::try_from(size).map_err(|_| {
+        crate::server::client_error(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Choose between 1 and the number of available words",
+        )
+    })?;
+    if words.len() < requested {
+        return Err(crate::server::client_error(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Choose between 1 and the number of available words",
+        ));
+    }
     let phrases = VocabularyQuery::ranked_candidates(
         pool,
         &native,

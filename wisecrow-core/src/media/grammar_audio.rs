@@ -65,6 +65,7 @@ impl TtsSpeaker {
         crate::media::MediaSubject {
             to_phrase: sentence.to_owned(),
             from_phrase: String::new(),
+            native_lang: String::new(),
             foreign_lang: language.to_owned(),
             image_query: None,
             is_phrase: true,

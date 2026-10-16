@@ -10,12 +10,21 @@ use crate::media::MediaType;
 
 const LOAD_ROW_SQL: &str = "SELECT file_path, attribution, source_fingerprint FROM media_cache
          WHERE translation_id = $1 AND media_type = $2";
+const LOAD_SHARED_IMAGE_SQL: &str = "SELECT file_path, attribution FROM media_cache
+         WHERE media_type = $1 AND source_fingerprint = $2
+         LIMIT $3";
+/// Published copies tried before a provider call. One missing file must not
+/// hide a later copy of the same picture.
+const SHARED_IMAGE_CANDIDATES: i64 = 8;
 const NON_UTF8_CACHE_PATH: &str = "Non-UTF8 cache path";
 const LOAD_SENTENCE_SQL: &str =
     "SELECT file_path FROM sentence_media WHERE fingerprint = $1 AND media_type = $2";
 /// File-name prefix of a sentence clip. No translation id begins with a
 /// letter, so the two families of files never collide in one directory.
 const SENTENCE_FILE_PREFIX: &str = "sentence-";
+/// One card picture for an English query. Every language that teaches that
+/// query stores this path; none of them stores a second copy.
+const SHARED_IMAGE_PREFIX: &str = "shared-";
 
 pub struct MediaCache {
     cache_dir: PathBuf,
@@ -319,6 +328,9 @@ impl MediaCache {
     /// As [`Self::get_or_fetch`], carrying the credit string a stock provider
     /// returns alongside the bytes.
     ///
+    /// An image is one file per fingerprint. A later language records the same
+    /// path and does not download or write a second copy. Audio stays per card.
+    ///
     /// # Errors
     ///
     /// Returns an error if the fetch, atomic publish, or stale-file cleanup fails.
@@ -338,6 +350,11 @@ impl MediaCache {
             .await?
         {
             return Ok(hit);
+        }
+        if media_type == MediaType::Image {
+            return self
+                .publish_shared_image(translation_id, fingerprint, fetcher)
+                .await;
         }
 
         let mut tx = self.begin_locked(translation_id, media_type).await?;
@@ -419,6 +436,185 @@ impl MediaCache {
             .execute(&mut *tx)
             .await?;
         Ok(tx)
+    }
+
+    /// Points `translation_id` at the picture already stored for `fingerprint`.
+    ///
+    /// Returns `false` when nothing live uses that fingerprint, so the caller
+    /// still has to download it. A download is not started here.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the cache query or the row update fails.
+    #[cfg(feature = "images")]
+    pub(crate) async fn attach_shared_image(
+        &self,
+        translation_id: i32,
+        fingerprint: &MediaFingerprint,
+    ) -> Result<bool, WisecrowError> {
+        if self
+            .hit_from_pool(translation_id, MediaType::Image, fingerprint)
+            .await?
+            .is_some()
+        {
+            return Ok(true);
+        }
+        let mut tx = self.begin_locked_sentence(fingerprint).await?;
+        let (previous, already) = self
+            .image_row_state(&mut tx, translation_id, fingerprint)
+            .await?;
+        if already.is_some() {
+            tx.commit().await?;
+            return Ok(true);
+        }
+        let Some((path, attribution)) = self.published_image(&mut tx, fingerprint).await? else {
+            return Ok(false);
+        };
+        self.remember_image(
+            tx,
+            translation_id,
+            fingerprint,
+            &path,
+            attribution,
+            previous,
+        )
+        .await?;
+        Ok(true)
+    }
+
+    async fn publish_shared_image<F, Fut>(
+        &self,
+        translation_id: i32,
+        fingerprint: &MediaFingerprint,
+        fetcher: F,
+    ) -> Result<(PathBuf, Option<String>), WisecrowError>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<(Vec<u8>, Option<String>), WisecrowError>>,
+    {
+        let mut tx = self.begin_locked_sentence(fingerprint).await?;
+        let (previous, already) = self
+            .image_row_state(&mut tx, translation_id, fingerprint)
+            .await?;
+        if let Some(hit) = already {
+            tx.commit().await?;
+            return Ok(hit);
+        }
+        if let Some((path, attribution)) = self.published_image(&mut tx, fingerprint).await? {
+            return self
+                .remember_image(
+                    tx,
+                    translation_id,
+                    fingerprint,
+                    &path,
+                    attribution,
+                    previous,
+                )
+                .await;
+        }
+        let (data, attribution) = fetcher().await?;
+        let final_path = self.shared_image_path(fingerprint);
+        Self::write_atomic(&final_path, &data).await?;
+        if let Err(error) = self.remove_shared_tmp_orphans().await {
+            tracing::error!(
+                error = %error,
+                "failed to remove shared image temp orphans"
+            );
+        }
+        self.remember_image(
+            tx,
+            translation_id,
+            fingerprint,
+            &final_path,
+            attribution,
+            previous,
+        )
+        .await
+    }
+
+    async fn image_row_state(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        translation_id: i32,
+        fingerprint: &MediaFingerprint,
+    ) -> Result<(Option<PathBuf>, Option<(PathBuf, Option<String>)>), WisecrowError> {
+        let Some(row) = Self::load_row_tx(tx, translation_id, MediaType::Image).await? else {
+            return Ok((None, None));
+        };
+        let previous = PathBuf::from(&row.file_path);
+        let live = self
+            .matching_live_file(&row, fingerprint)
+            .map(|path| (path, row.attribution));
+        Ok((Some(previous), live))
+    }
+
+    async fn published_image(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        fingerprint: &MediaFingerprint,
+    ) -> Result<Option<(PathBuf, Option<String>)>, WisecrowError> {
+        let rows = sqlx::query_as::<_, (String, Option<String>)>(LOAD_SHARED_IMAGE_SQL)
+            .bind(MediaType::Image.as_str())
+            .bind(fingerprint.as_str())
+            .bind(SHARED_IMAGE_CANDIDATES)
+            .fetch_all(&mut **tx)
+            .await?;
+        Ok(rows.into_iter().find_map(|(file_path, attribution)| {
+            let path = PathBuf::from(&file_path);
+            self.is_contained_cache_file(&path)
+                .then_some((path, attribution))
+        }))
+    }
+
+    async fn remember_image(
+        &self,
+        mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
+        translation_id: i32,
+        fingerprint: &MediaFingerprint,
+        path: &Path,
+        attribution: Option<String>,
+        previous: Option<PathBuf>,
+    ) -> Result<(PathBuf, Option<String>), WisecrowError> {
+        let path_str = utf8_path(path)?;
+        Self::upsert_row(
+            &mut tx,
+            translation_id,
+            MediaType::Image,
+            path_str,
+            fingerprint,
+            attribution.as_deref(),
+        )
+        .await?;
+        tx.commit().await?;
+        self.remove_previous(previous.as_deref(), path).await?;
+        Ok((path.to_path_buf(), attribution))
+    }
+
+    fn shared_image_path(&self, fingerprint: &MediaFingerprint) -> PathBuf {
+        self.cache_dir.join(MediaType::Image.as_str()).join(format!(
+            "{SHARED_IMAGE_PREFIX}{}.{}",
+            fingerprint.as_str(),
+            MediaType::Image.extension()
+        ))
+    }
+
+    async fn remove_shared_tmp_orphans(&self) -> Result<(), std::io::Error> {
+        let dir = self.cache_dir.join(MediaType::Image.as_str());
+        let mut entries = match tokio::fs::read_dir(&dir).await {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if name.starts_with(SHARED_IMAGE_PREFIX) && name.ends_with(".tmp") {
+                tokio::fs::remove_file(&path).await?;
+            }
+        }
+        Ok(())
     }
 
     fn matching_live_file(
@@ -534,7 +730,7 @@ impl MediaCache {
         let Some(previous) = previous else {
             return Ok(());
         };
-        if previous == published {
+        if previous == published || self.cache_path_referenced(previous).await? {
             return Ok(());
         }
         let Some(contained) = self.contained_cache_path(previous) else {
@@ -561,6 +757,23 @@ impl MediaCache {
                 )))
             }
         }
+    }
+
+    async fn cache_path_referenced(&self, path: &Path) -> Result<bool, WisecrowError> {
+        let Some(path) = path.to_str() else {
+            return Ok(false);
+        };
+        let referenced: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                 SELECT 1 FROM media_cache WHERE file_path = $1
+                 UNION ALL
+                 SELECT 1 FROM sentence_media WHERE file_path = $1
+             )",
+        )
+        .bind(path)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(referenced)
     }
 
     async fn remove_tmp_orphans(

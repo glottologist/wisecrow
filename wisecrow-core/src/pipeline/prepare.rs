@@ -875,6 +875,12 @@ async fn ensure_image(
     {
         return Ok(());
     }
+    if cache
+        .attach_shared_image(translation_id, &fingerprint)
+        .await?
+    {
+        return Ok(());
+    }
     let fetcher = ImageFetcher::from_config(config)
         .ok_or_else(|| WisecrowError::MediaError("No image provider is configured".to_owned()))?;
     let client = reqwest::Client::new();

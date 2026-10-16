@@ -5,6 +5,8 @@ use wisecrow_dto::LanguageInfo;
 use crate::api::learn::list_languages;
 use crate::router::Route;
 
+pub(crate) const HOME_TITLE: &str = "Language Learning";
+
 #[component]
 pub fn Home() -> Element {
     let mut languages = use_server_future(list_languages)?;
@@ -45,11 +47,8 @@ pub fn Home() -> Element {
 
     rsx! {
         div { class: "flex flex-col items-center",
-            p { class: "text-sm text-gray-500 uppercase tracking-wide mb-2",
-                "Frequency-based flashcards"
-            }
             h1 { class: "text-3xl font-bold mb-6",
-                "Start a session"
+                "{HOME_TITLE}"
             }
 
             div { class: "bg-gray-800 rounded-xl p-8 w-full max-w-md space-y-4 border border-gray-700",
@@ -109,51 +108,85 @@ pub fn Home() -> Element {
                         "Choose a language to learn"
                     }
                 } else {
+                    LearningStages { native: native(), foreign: foreign() }
+                }
+            }
+        }
+    }
+}
+
+/// Fast download, then flashcards, then grammar. Each route stores the pair.
+#[component]
+fn LearningStages(native: String, foreign: String) -> Element {
+    // clone: each route owns the language pair it opens.
+    let fast = Route::FastPage {
+        native: native.clone(),
+        foreign: foreign.clone(),
+    };
+    let cards = Route::LearnPage {
+        native: native.clone(),
+        foreign: foreign.clone(),
+    };
+    let practice = Route::GrammarPage {
+        native: native.clone(),
+        foreign: foreign.clone(),
+    };
+    let placement = Route::PlacementPage {
+        native: native.clone(),
+        foreign: foreign.clone(),
+    };
+    let map = Route::BrainmapPage { native, foreign };
+
+    rsx! {
+        div { class: "space-y-6",
+            section { class: "space-y-2",
+                h2 { class: "text-sm font-semibold uppercase tracking-wide text-gray-500",
+                    "1. Learn words and sounds"
+                }
+                p { class: "text-sm text-gray-400",
+                    "Fast download teaches the words and how they sound."
+                }
+                Link {
+                    to: fast,
+                    class: "block w-full text-center bg-cyan-700 hover:bg-cyan-600 rounded-lg px-4 py-3 font-semibold transition",
+                    "Fast download"
+                }
+            }
+            section { class: "space-y-2 border-t border-gray-700 pt-2",
+                h2 { class: "text-sm font-semibold uppercase tracking-wide text-gray-500",
+                    "2. Flashcards"
+                }
+                p { class: "text-sm text-gray-400",
+                    "Solidify the words and sounds."
+                }
+                Link {
+                    to: cards,
+                    class: "block w-full text-center bg-emerald-600 hover:bg-emerald-500 rounded-lg px-4 py-3 font-semibold transition",
+                    "Flashcards"
+                }
+            }
+            section { class: "space-y-2 border-t border-gray-700 pt-2",
+                h2 { class: "text-sm font-semibold uppercase tracking-wide text-gray-500",
+                    "3. Grammar"
+                }
+                p { class: "text-sm text-gray-400",
+                    "Understand the rules for using words and phrases."
+                }
+                Link {
+                    to: practice,
+                    class: "block w-full text-center bg-blue-600 hover:bg-blue-500 rounded-lg px-4 py-3 font-semibold transition",
+                    "Grammar practice"
+                }
+                div { class: "flex gap-2",
                     Link {
-                        to: Route::LearnPage {
-                            native: native(),
-                            foreign: foreign(),
-                        },
-                        class: "block w-full text-center bg-emerald-600 hover:bg-emerald-500 rounded-lg px-4 py-3 font-semibold transition",
-                        "Start session"
+                        to: placement,
+                        class: "flex-1 text-center bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-2 text-sm transition",
+                        "Find my level"
                     }
                     Link {
-                        to: Route::FastPage {
-                            native: native(),
-                            foreign: foreign(),
-                        },
-                        class: "block w-full text-center bg-cyan-700 hover:bg-cyan-600 rounded-lg px-4 py-3 font-semibold transition mt-2",
-                        "Fast download"
-                    }
-                    Link {
-                        to: Route::GrammarPage {
-                            native: native(),
-                            foreign: foreign(),
-                        },
-                        class: "block w-full text-center bg-blue-600 hover:bg-blue-500 rounded-lg px-4 py-3 font-semibold transition mt-2",
-                        "Grammar practice"
-                    }
-                    div { class: "flex gap-2 mt-2",
-                        Link {
-                            to: Route::PlacementPage {
-                                native: native(),
-                                foreign: foreign(),
-                            },
-                            class: "flex-1 text-center bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-2 text-sm transition",
-                            "Find my level"
-                        }
-                        Link {
-                            to: Route::BrainmapPage {
-                                native: native(),
-                                foreign: foreign(),
-                            },
-                            class: "flex-1 text-center bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-2 text-sm transition",
-                            "Grammar map"
-                        }
-                    }
-                    p { class: "text-xs text-gray-500 text-center mt-2",
-                        "Session rates cards. Fast plays both sides on a timer. "
-                        "Grammar drills the points you keep missing."
+                        to: map,
+                        class: "flex-1 text-center bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-2 text-sm transition",
+                        "Grammar map"
                     }
                 }
             }
@@ -163,6 +196,7 @@ pub fn Home() -> Element {
 
 #[cfg(all(test, feature = "server"))]
 mod tests {
+    use super::LearningStages;
     use super::*;
 
     #[tokio::test]
@@ -175,5 +209,70 @@ mod tests {
         assert!(html.contains("Please sign in to choose your languages."));
         assert!(html.contains("href=\"/login\""));
         assert!(!html.contains("<select"));
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq, Routable)]
+    enum StageRoute {
+        #[route("/")]
+        Stages {},
+    }
+
+    #[component]
+    fn Stages() -> Element {
+        rsx! {
+            h1 { "{HOME_TITLE}" }
+            LearningStages {
+                native: "en".to_string(),
+                foreign: "gd".to_string(),
+            }
+        }
+    }
+
+    fn stages_fixture() -> Element {
+        rsx! { Router::<StageRoute> {} }
+    }
+
+    fn at(html: &str, needle: &str) -> usize {
+        html.find(needle)
+            .unwrap_or_else(|| panic!("missing {needle} in {html}"))
+    }
+
+    #[test]
+    fn learning_stages_run_fast_then_flashcards_then_grammar() {
+        let mut dom = VirtualDom::new(stages_fixture);
+        dom.rebuild_in_place();
+        let html = dioxus::ssr::render(&dom);
+
+        assert_eq!(HOME_TITLE, "Language Learning");
+        let words = at(&html, "1. Learn words and sounds");
+        let cards = at(&html, "2. Flashcards");
+        let grammar = at(&html, "3. Grammar");
+        assert!(words < cards && cards < grammar);
+
+        let fast = at(&html, "href=\"/fast/en/gd\"");
+        let flashcards = at(&html, "href=\"/learn/en/gd\"");
+        let practice = at(&html, "href=\"/grammar/en/gd\"");
+        let level = at(&html, "href=\"/grammar/placement/en/gd\"");
+        let map = at(&html, "href=\"/grammar/brainmap/en/gd\"");
+        assert!(words < fast);
+        assert!(fast < cards);
+        assert!(cards < flashcards);
+        assert!(flashcards < grammar);
+        assert!(grammar < practice);
+        assert!(practice < level);
+        assert!(level < map);
+
+        assert!(html.contains("Fast download teaches the words and how they sound."));
+        assert!(html.contains("Solidify the words and sounds."));
+        assert!(html.contains("Understand the rules for using words and phrases."));
+        assert!(html.contains(">Fast download<"));
+        assert!(html.contains(">Flashcards<"));
+        assert!(html.contains(">Grammar practice<"));
+        assert!(html.contains(">Find my level<"));
+        assert!(html.contains(">Grammar map<"));
+        assert!(!html.contains("Frequency-based flashcards"));
+        assert!(!html.contains("Start a session"));
+        assert!(!html.contains("Start session"));
+        assert!(!html.contains("Session rates cards"));
     }
 }

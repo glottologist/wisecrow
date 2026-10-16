@@ -40,6 +40,7 @@ pub enum MediaType {
 pub struct MediaSubject {
     pub to_phrase: String,
     pub from_phrase: String,
+    pub native_lang: String,
     pub foreign_lang: String,
     pub image_query: Option<String>,
     pub is_phrase: bool,
@@ -50,6 +51,7 @@ impl From<PresentedTranslation> for MediaSubject {
         Self {
             to_phrase: presented.to_phrase,
             from_phrase: presented.from_phrase,
+            native_lang: presented.native_lang,
             foreign_lang: presented.foreign_lang,
             image_query: presented.image_query,
             is_phrase: presented.is_phrase,
@@ -58,20 +60,25 @@ impl From<PresentedTranslation> for MediaSubject {
 }
 
 impl MediaSubject {
-    /// Concrete image search text, or `None` when no image should be fetched.
+    /// English picture search, or `None` for a phrase or a word with no native text.
+    ///
+    /// A stored stock-photo query wins. Otherwise the search is the native
+    /// meaning, never the foreign word, so one picture serves every language
+    /// taught from the same native wording.
     #[must_use]
     pub fn applicable_image_query(&self) -> Option<&str> {
         if self.is_phrase {
             return None;
         }
-        if let Some(query) = self.image_query.as_deref() {
+        if let Some(query) = self
+            .image_query
+            .as_deref()
+            .map(str::trim)
+            .filter(|query| !query.is_empty() && !same_word(query, &self.to_phrase))
+        {
             return Some(query);
         }
-        if self.to_phrase.is_empty() {
-            None
-        } else {
-            Some(self.to_phrase.as_str())
-        }
+        native_picture_subject(&self.from_phrase)
     }
 
     /// Fingerprint of the canonical speech text and selected synthesis profile.
@@ -99,8 +106,28 @@ impl MediaSubject {
         format_version: u32,
     ) -> Option<MediaFingerprint> {
         self.applicable_image_query().map(|query| {
-            MediaFingerprint::for_image(query, &self.foreign_lang, provider_ids, format_version)
+            MediaFingerprint::for_image(query, &self.native_lang, provider_ids, format_version)
         })
+    }
+}
+
+/// A stored query that is only the foreign word is not an English picture search.
+fn same_word(query: &str, foreign: &str) -> bool {
+    query.trim().eq_ignore_ascii_case(foreign.trim())
+}
+
+/// Native meaning with a trailing teaching note removed.
+///
+/// "the (plural)" is the picture subject "the". An empty meaning is not a search.
+fn native_picture_subject(native: &str) -> Option<&str> {
+    let subject = native
+        .split_once('(')
+        .map_or(native, |(head, _note)| head)
+        .trim();
+    if subject.is_empty() {
+        None
+    } else {
+        Some(subject)
     }
 }
 
@@ -295,14 +322,28 @@ impl MediaType {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     fn dog() -> MediaSubject {
         MediaSubject {
             to_phrase: "chien".to_owned(),
             from_phrase: "dog".to_owned(),
+            native_lang: "en".to_owned(),
             foreign_lang: "fr".to_owned(),
             image_query: Some("friendly dog".to_owned()),
+            is_phrase: false,
+        }
+    }
+
+    fn word(foreign: &str, native: &str, image_query: Option<&str>) -> MediaSubject {
+        MediaSubject {
+            to_phrase: foreign.to_owned(),
+            from_phrase: native.to_owned(),
+            native_lang: "en".to_owned(),
+            foreign_lang: "gd".to_owned(),
+            image_query: image_query.map(str::to_owned),
             is_phrase: false,
         }
     }
@@ -322,56 +363,74 @@ mod tests {
         assert_eq!(subject.applicable_image_query(), Some("friendly dog"));
     }
 
-    #[test]
-    fn unglossed_word_uses_the_foreign_word_as_its_picture_query() {
-        let word = MediaSubject {
-            to_phrase: "casa".to_owned(),
-            from_phrase: "house".to_owned(),
-            foreign_lang: "es".to_owned(),
-            image_query: None,
-            is_phrase: false,
-        };
-        assert_eq!(word.applicable_image_query(), Some("casa"));
-        let glossed = MediaSubject {
-            image_query: Some("house".to_owned()),
-            ..word.clone() // clone: the glossed case is an independent subject
-        };
-        assert_eq!(glossed.applicable_image_query(), Some("house"));
-        let phrase = MediaSubject {
-            is_phrase: true,
-            image_query: Some("house".to_owned()),
-            ..word
-        };
-        assert!(phrase.applicable_image_query().is_none());
+    #[rstest]
+    #[case("sinn", "we / us", None, Some("we / us"))]
+    #[case("sinn", "we / us", Some("sinn"), Some("we / us"))]
+    #[case("sinn", "we / us", Some("Sinn"), Some("we / us"))]
+    #[case("sinn", "we / us", Some("  "), Some("we / us"))]
+    #[case("na", "the (plural)", None, Some("the"))]
+    #[case("thu", "you (singular)", None, Some("you"))]
+    #[case("ann", "in it / existing (particle)", None, Some("in it / existing"))]
+    #[case("casa", "house", None, Some("house"))]
+    #[case("chien", "dog", Some("friendly dog"), Some("friendly dog"))]
+    #[case("x", "   ", None, None)]
+    #[case("x", "(particle)", None, None)]
+    fn picture_query_uses_the_native_meaning(
+        #[case] foreign: &str,
+        #[case] native: &str,
+        #[case] stored_query: Option<&str>,
+        #[case] expected: Option<&str>,
+    ) {
+        let subject = word(foreign, native, stored_query);
+        assert_eq!(subject.applicable_image_query(), expected);
     }
 
     #[test]
-    fn phrase_has_no_image_fingerprint_and_an_unglossed_word_does() {
-        let abstract_word = MediaSubject {
-            to_phrase: "en".to_owned(),
-            from_phrase: "in".to_owned(),
+    fn the_same_native_wording_shares_one_picture_across_foreign_languages() {
+        let providers = ["unsplash", "pexels", "pixabay"];
+        let gaelic = word("sinn", "we / us", None);
+        let french = MediaSubject {
+            to_phrase: "nous".to_owned(),
             foreign_lang: "fr".to_owned(),
-            image_query: None,
-            is_phrase: false,
+            ..gaelic.clone() // clone: the French card is an independent subject
         };
+        assert_eq!(gaelic.applicable_image_query(), Some("we / us"));
+        assert_eq!(
+            gaelic.image_fingerprint(&providers, 1),
+            french.image_fingerprint(&providers, 1)
+        );
+        assert_ne!(
+            gaelic.audio_fingerprint("edge", "voice", 1),
+            french.audio_fingerprint("edge", "voice", 1),
+            "speech stays in the foreign language"
+        );
+    }
+
+    #[test]
+    fn phrase_has_no_image_and_an_unglossed_word_uses_its_native_meaning() {
+        let native_word = word("en", "in", None);
+        let mut french = native_word.clone(); // clone: the fingerprint case names its language
+        french.foreign_lang = "fr".to_owned();
         let phrase = MediaSubject {
             to_phrase: "comment allez vous".to_owned(),
             from_phrase: "canonical phrase translation".to_owned(),
+            native_lang: "en".to_owned(),
             foreign_lang: "fr".to_owned(),
             image_query: Some("wrong image".to_owned()),
             is_phrase: true,
         };
         let providers = ["unsplash"];
         assert_eq!(
-            abstract_word.image_fingerprint(&providers, 1),
-            Some(MediaFingerprint::for_image("en", "fr", &providers, 1))
+            french.image_fingerprint(&providers, 1),
+            Some(MediaFingerprint::for_image("in", "en", &providers, 1))
         );
+        assert!(phrase.applicable_image_query().is_none());
         assert!(phrase.image_fingerprint(&providers, 1).is_none());
-        let audio = abstract_word.audio_fingerprint("edge", "fr-FR-HenriNeural", 1);
+        let audio = french.audio_fingerprint("edge", "fr-FR-HenriNeural", 1);
         assert_eq!(
             audio.as_str().len(),
             64,
-            "abstract words still produce speech fingerprints"
+            "function words still produce speech fingerprints"
         );
     }
 }

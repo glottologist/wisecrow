@@ -77,6 +77,23 @@ async fn seed_named_translation(pool: &PgPool, from_phrase: &str, to_phrase: &st
     id
 }
 
+async fn image_files_for(fixture: &Fixture, fingerprint: &str) -> usize {
+    let mut count = 0usize;
+    let mut entries = tokio::fs::read_dir(fixture.dir.path().join("image"))
+        .await
+        .expect("image dir");
+    while let Some(entry) = entries.next_entry().await.expect("image entry") {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if name.contains(fingerprint) && !name.ends_with(".tmp") {
+            count += 1;
+        }
+    }
+    count
+}
+
 fn fingerprint_for(media_type: MediaType, tag: &str) -> MediaFingerprint {
     match media_type {
         MediaType::Audio => MediaFingerprint::for_audio(tag, "gd", "edge", "voice-a", 1),
@@ -200,6 +217,95 @@ async fn legacy_or_changed_fingerprint_misses_and_fetches() {
             );
         }
     }
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn one_english_picture_is_shared_and_audio_is_not() {
+    let first = Fixture::new("we / us", "sinn").await;
+    let second = seed_named_translation(&first.pool, "we / us", "nous").await;
+    let third = seed_named_translation(&first.pool, "we / us", "noi").await;
+    let image = MediaFingerprint::for_image("we / us", "en", &["unsplash"], 1);
+    let audio = MediaFingerprint::for_audio("sinn", "gd", "edge", "voice-a", 1);
+    let calls = AtomicUsize::new(0);
+
+    let (gaelic_image, credit) = first
+        .cache
+        .get_or_fetch_attributed(first.translation_id, MediaType::Image, &image, || async {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok((b"group-photo".to_vec(), Some("Photo by A".to_owned())))
+        })
+        .await
+        .expect("first image");
+    let (shared, shared_credit) = first
+        .cache
+        .get_or_fetch_attributed(second, MediaType::Image, &image, || async {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok((b"should-not-fetch".to_vec(), None))
+        })
+        .await
+        .expect("shared image");
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "image provider");
+    assert_eq!(shared, gaelic_image, "French and Gaelic must use one file");
+    assert!(
+        gaelic_image
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("shared-")),
+        "the picture is not named after one language: {}",
+        gaelic_image.display()
+    );
+    assert_eq!(
+        tokio::fs::read(&shared).await.expect("shared bytes"),
+        b"group-photo"
+    );
+    assert_eq!(shared_credit.as_deref(), Some("Photo by A"));
+    assert_eq!(credit.as_deref(), Some("Photo by A"));
+    assert_eq!(image_files_for(&first, image.as_str()).await, 1);
+
+    tokio::fs::remove_file(&gaelic_image)
+        .await
+        .expect("remove shared image");
+    let (refetched, _) = first
+        .cache
+        .get_or_fetch_attributed(third, MediaType::Image, &image, || async {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok((b"fresh-photo".to_vec(), None))
+        })
+        .await
+        .expect("missing shared file fetches");
+    assert_eq!(calls.load(Ordering::SeqCst), 2, "dangling image refetches");
+    assert_eq!(refetched, gaelic_image);
+    assert_eq!(
+        tokio::fs::read(&refetched).await.expect("refetched bytes"),
+        b"fresh-photo"
+    );
+    assert_eq!(image_files_for(&first, image.as_str()).await, 1);
+
+    let (first_audio, _) = first
+        .cache
+        .get_or_fetch_attributed(first.translation_id, MediaType::Audio, &audio, || async {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok((b"gaelic-speech".to_vec(), None))
+        })
+        .await
+        .expect("first audio");
+    let (second_audio, _) = first
+        .cache
+        .get_or_fetch_attributed(second, MediaType::Audio, &audio, || async {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok((b"not-copied".to_vec(), None))
+        })
+        .await
+        .expect("second audio");
+    assert_eq!(calls.load(Ordering::SeqCst), 4, "audio is fetched per card");
+    assert_ne!(first_audio, second_audio);
+    assert_eq!(
+        tokio::fs::read(&second_audio)
+            .await
+            .expect("second audio bytes"),
+        b"not-copied"
+    );
 }
 
 #[tokio::test]
