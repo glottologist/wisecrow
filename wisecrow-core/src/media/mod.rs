@@ -60,11 +60,12 @@ impl From<PresentedTranslation> for MediaSubject {
 }
 
 impl MediaSubject {
-    /// English picture search, or `None` for a phrase or a word with no native text.
+    /// English picture search, or `None` for a phrase or a grammatical word.
     ///
-    /// A stored stock-photo query wins. Otherwise the search is the native
-    /// meaning, never the foreign word, so one picture serves every language
-    /// taught from the same native wording.
+    /// A stored stock-photo query wins when it names something a photograph
+    /// can show. Otherwise the search is the native meaning, never the
+    /// foreign word. Grammar has no photo: articles, pronouns, prepositions,
+    /// conjunctions, demonstratives, question words and the same kind of adverb.
     #[must_use]
     pub fn applicable_image_query(&self) -> Option<&str> {
         if self.is_phrase {
@@ -76,9 +77,11 @@ impl MediaSubject {
             .map(str::trim)
             .filter(|query| !query.is_empty() && !same_word(query, &self.to_phrase))
         {
-            return Some(query);
+            if let Some(scene) = concrete_picture_subject(query) {
+                return Some(scene);
+            }
         }
-        native_picture_subject(&self.from_phrase)
+        concrete_picture_subject(&self.from_phrase)
     }
 
     /// Fingerprint of the canonical speech text and selected synthesis profile.
@@ -116,19 +119,219 @@ fn same_word(query: &str, foreign: &str) -> bool {
     query.trim().eq_ignore_ascii_case(foreign.trim())
 }
 
-/// Native meaning with a trailing teaching note removed.
+/// A photographable English subject, or `None` when the gloss is only grammar.
 ///
-/// "the (plural)" is the picture subject "the". An empty meaning is not a search.
-fn native_picture_subject(native: &str) -> Option<&str> {
-    let subject = native
-        .split_once('(')
-        .map_or(native, |(head, _note)| head)
-        .trim();
-    if subject.is_empty() {
+/// "we / us" and "over" have no photo. "bread / loaf" and "house" do, because
+/// a word that is not grammar is something a picture can show.
+fn concrete_picture_subject(native: &str) -> Option<&str> {
+    let (head, note) = match native.split_once('(') {
+        Some((head, note)) => (head.trim(), Some(note)),
+        None => (native.trim(), None),
+    };
+    if head.is_empty() || note.is_some_and(is_closed_class_note) || is_grammar_gloss(head) {
         None
     } else {
-        Some(subject)
+        Some(head)
     }
+}
+
+fn is_closed_class_note(note: &str) -> bool {
+    let note = note.to_ascii_lowercase();
+    [
+        "particle",
+        "preposition",
+        "article",
+        "conjunction",
+        "determiner",
+        "pronoun",
+        "adverb",
+        "possessive",
+        "demonstrative",
+        "auxiliary",
+        "relative",
+        "interjection",
+        "quantifier",
+    ]
+    .iter()
+    .any(|label| note.contains(label))
+}
+
+fn is_grammar_gloss(head: &str) -> bool {
+    let mut saw_word = false;
+    for word in head.split(|c: char| !c.is_ascii_alphabetic()) {
+        if word.is_empty() {
+            continue;
+        }
+        saw_word = true;
+        if !is_grammar_word(word) {
+            return false;
+        }
+    }
+    saw_word
+}
+
+fn is_grammar_word(word: &str) -> bool {
+    const GRAMMAR: &[&str] = &[
+        "a",
+        "about",
+        "above",
+        "across",
+        "after",
+        "again",
+        "against",
+        "all",
+        "already",
+        "also",
+        "although",
+        "always",
+        "am",
+        "among",
+        "amongst",
+        "an",
+        "and",
+        "another",
+        "any",
+        "are",
+        "around",
+        "as",
+        "at",
+        "be",
+        "because",
+        "been",
+        "before",
+        "behind",
+        "being",
+        "below",
+        "beside",
+        "between",
+        "both",
+        "but",
+        "by",
+        "can",
+        "could",
+        "did",
+        "do",
+        "does",
+        "down",
+        "during",
+        "each",
+        "either",
+        "else",
+        "even",
+        "ever",
+        "every",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "he",
+        "her",
+        "here",
+        "hers",
+        "him",
+        "his",
+        "how",
+        "i",
+        "if",
+        "in",
+        "inside",
+        "into",
+        "is",
+        "it",
+        "its",
+        "just",
+        "like",
+        "may",
+        "me",
+        "might",
+        "mine",
+        "must",
+        "my",
+        "near",
+        "neither",
+        "never",
+        "no",
+        "none",
+        "nor",
+        "not",
+        "now",
+        "of",
+        "off",
+        "often",
+        "on",
+        "once",
+        "only",
+        "onto",
+        "or",
+        "our",
+        "ours",
+        "out",
+        "outside",
+        "over",
+        "per",
+        "shall",
+        "she",
+        "should",
+        "since",
+        "so",
+        "some",
+        "sometimes",
+        "still",
+        "such",
+        "than",
+        "that",
+        "the",
+        "their",
+        "theirs",
+        "them",
+        "then",
+        "there",
+        "these",
+        "they",
+        "this",
+        "those",
+        "though",
+        "through",
+        "till",
+        "to",
+        "too",
+        "toward",
+        "towards",
+        "under",
+        "unless",
+        "until",
+        "up",
+        "upon",
+        "us",
+        "very",
+        "via",
+        "was",
+        "we",
+        "were",
+        "what",
+        "when",
+        "where",
+        "whereas",
+        "whether",
+        "which",
+        "while",
+        "who",
+        "whom",
+        "whose",
+        "why",
+        "will",
+        "with",
+        "within",
+        "without",
+        "would",
+        "yes",
+        "yet",
+        "you",
+        "your",
+        "yours",
+    ];
+    GRAMMAR.iter().any(|label| same_word(word, label))
 }
 
 /// Loads the media subject for a translation from the presentation contract.
@@ -364,15 +567,23 @@ mod tests {
     }
 
     #[rstest]
-    #[case("sinn", "we / us", None, Some("we / us"))]
-    #[case("sinn", "we / us", Some("sinn"), Some("we / us"))]
-    #[case("sinn", "we / us", Some("Sinn"), Some("we / us"))]
-    #[case("sinn", "we / us", Some("  "), Some("we / us"))]
-    #[case("na", "the (plural)", None, Some("the"))]
-    #[case("thu", "you (singular)", None, Some("you"))]
-    #[case("ann", "in it / existing (particle)", None, Some("in it / existing"))]
+    #[case("sinn", "we / us", None, None)]
+    #[case("sinn", "we / us", Some("sinn"), None)]
+    #[case("thu", "you (singular)", None, None)]
+    #[case("na", "the (plural)", None, None)]
+    #[case("ann", "in it / existing (particle)", None, None)]
+    #[case("iad", "they / them", None, None)]
+    #[case("a", "his / her", None, None)]
+    #[case("air", "over", None, None)]
+    #[case("mo", "my", None, None)]
+    #[case("seo", "this", None, None)]
+    #[case("caite", "where", None, None)]
+    #[case("a-rithist", "again", None, None)]
     #[case("casa", "house", None, Some("house"))]
+    #[case("aran", "bread / loaf", None, Some("bread / loaf"))]
     #[case("chien", "dog", Some("friendly dog"), Some("friendly dog"))]
+    #[case("mor", "big (lenited form of mòr)", None, Some("big"))]
+    #[case("en", "in", None, None)]
     #[case("x", "   ", None, None)]
     #[case("x", "(particle)", None, None)]
     fn picture_query_uses_the_native_meaning(
@@ -388,13 +599,16 @@ mod tests {
     #[test]
     fn the_same_native_wording_shares_one_picture_across_foreign_languages() {
         let providers = ["unsplash", "pexels", "pixabay"];
-        let gaelic = word("sinn", "we / us", None);
+        let gaelic = word("taigh", "house", None);
         let french = MediaSubject {
-            to_phrase: "nous".to_owned(),
+            to_phrase: "maison".to_owned(),
             foreign_lang: "fr".to_owned(),
             ..gaelic.clone() // clone: the French card is an independent subject
         };
-        assert_eq!(gaelic.applicable_image_query(), Some("we / us"));
+        assert_eq!(gaelic.applicable_image_query(), Some("house"));
+        assert!(word("sinn", "we / us", None)
+            .applicable_image_query()
+            .is_none());
         assert_eq!(
             gaelic.image_fingerprint(&providers, 1),
             french.image_fingerprint(&providers, 1)
@@ -407,10 +621,9 @@ mod tests {
     }
 
     #[test]
-    fn phrase_has_no_image_and_an_unglossed_word_uses_its_native_meaning() {
-        let native_word = word("en", "in", None);
-        let mut french = native_word.clone(); // clone: the fingerprint case names its language
-        french.foreign_lang = "fr".to_owned();
+    fn phrase_and_function_word_have_no_image_and_a_concrete_word_does() {
+        let function_word = word("en", "in", None);
+        let house = word("casa", "house", None);
         let phrase = MediaSubject {
             to_phrase: "comment allez vous".to_owned(),
             from_phrase: "canonical phrase translation".to_owned(),
@@ -420,13 +633,15 @@ mod tests {
             is_phrase: true,
         };
         let providers = ["unsplash"];
+        assert!(function_word.applicable_image_query().is_none());
+        assert!(function_word.image_fingerprint(&providers, 1).is_none());
         assert_eq!(
-            french.image_fingerprint(&providers, 1),
-            Some(MediaFingerprint::for_image("in", "en", &providers, 1))
+            house.image_fingerprint(&providers, 1),
+            Some(MediaFingerprint::for_image("house", "en", &providers, 1))
         );
         assert!(phrase.applicable_image_query().is_none());
         assert!(phrase.image_fingerprint(&providers, 1).is_none());
-        let audio = french.audio_fingerprint("edge", "fr-FR-HenriNeural", 1);
+        let audio = function_word.audio_fingerprint("edge", "fr-FR-HenriNeural", 1);
         assert_eq!(
             audio.as_str().len(),
             64,

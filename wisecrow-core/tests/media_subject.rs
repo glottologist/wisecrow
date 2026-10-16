@@ -132,7 +132,7 @@ async fn concrete_word_yields_canonical_tts_text_and_image_query() {
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL"]
-async fn unglossed_word_searches_its_native_meaning() {
+async fn function_word_has_no_picture() {
     let pool = test_pool().await;
     let id = seed_pair(&pool, "China?", "En...").await;
     seed_presentation(&pool, "en", "in", "en", true, None).await;
@@ -140,8 +140,8 @@ async fn unglossed_word_searches_its_native_meaning() {
     assert_eq!(subject.to_phrase, "en");
     assert_eq!(subject.from_phrase, "in");
     assert_eq!(subject.native_lang, "en");
-    assert_eq!(subject.applicable_image_query(), Some("in"));
-    assert!(image_cache_key(&subject, &stock_fetcher()).is_some());
+    assert!(subject.applicable_image_query().is_none());
+    assert!(image_cache_key(&subject, &stock_fetcher()).is_none());
 }
 
 #[tokio::test]
