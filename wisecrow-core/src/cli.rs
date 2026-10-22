@@ -475,10 +475,63 @@ pub struct PrefetchGrammarAudioArgs {
 }
 
 #[derive(Args)]
+pub struct ClassifyRulesArgs {
+    #[arg(short, long)]
+    pub lang: String,
+}
+
+#[derive(Args)]
+pub struct ClassifyWordsArgs {
+    /// The language the learner already speaks.
+    #[arg(long)]
+    pub native: String,
+    /// The language being classified.
+    #[arg(long)]
+    pub foreign: String,
+}
+
+#[derive(Args)]
+pub struct GenerateParadigmsArgs {
+    /// The language the faces are written in.
+    #[arg(long)]
+    pub native: String,
+    /// The language whose verbs are conjugated.
+    #[arg(long)]
+    pub foreign: String,
+}
+
+#[derive(Args)]
 pub struct PrepareCorpusArgs {
     /// Language pairs and optional corpus overrides.
     #[arg(long, default_value = "deploy/language-pairs.toml")]
     pub config: String,
+}
+
+#[derive(Args)]
+pub struct PrepareReadersArgs {
+    /// Language pairs.
+    #[arg(long, default_value = "deploy/language-pairs.toml")]
+    pub config: String,
+    /// Reader shelf. The container mounts it at `/app/readers`.
+    #[arg(long, default_value = "/app/readers")]
+    pub shelf: String,
+}
+
+#[derive(Args)]
+pub struct ReaderStatusArgs {
+    /// Language pairs whose books are checked.
+    #[arg(long, default_value = "deploy/language-pairs.toml")]
+    pub config: String,
+    /// Reader shelf. The container mounts it at `/app/readers`.
+    #[arg(long, default_value = "/app/readers")]
+    pub shelf: String,
+}
+
+#[derive(Args)]
+pub struct CheckReaderPdfArgs {
+    /// PDF to measure. Repeat the flag for several files.
+    #[arg(long, required = true)]
+    pub file: Vec<String>,
 }
 
 #[derive(Args)]
@@ -678,6 +731,8 @@ pub enum Command {
     /// Report whether a PDF can supply grammar material before importing it.
     #[command(aliases = ["cp"])]
     CheckPdf(CheckPdfArgs),
+    /// Report characters per page for a reader PDF. Does not open the database.
+    CheckReaderPdf(CheckReaderPdfArgs),
     #[command(aliases = ["r"])]
     Learn(LearnArgs),
     #[command(aliases = ["nb"])]
@@ -691,8 +746,18 @@ pub enum Command {
     PrefetchGrammarAudio(PrefetchGrammarAudioArgs),
     /// Perform one restart-safe corpus step for the configured pairs.
     PrepareCorpus(PrepareCorpusArgs),
+    /// Perform one restart-safe reader step for the configured pairs.
+    PrepareReaders(PrepareReadersArgs),
     /// Report whether grammar import and example audio are idle.
     GrammarStatus(GrammarStatusArgs),
+    /// Report failed reader runs, then whether a reader step has work.
+    ReaderStatus(ReaderStatusArgs),
+    /// Store an area on grammar rules that do not have one yet.
+    ClassifyRules(ClassifyRulesArgs),
+    /// Store a word class for the most frequent unclassified forms.
+    ClassifyWords(ClassifyWordsArgs),
+    /// Store one verb paradigm at a time. Refuses Gaelic until its slots are confirmed.
+    GenerateParadigms(GenerateParadigmsArgs),
     /// Extract frequent multi-word phrases from the corpus into staging.
     ExtractPhrases(ExtractPhrasesArgs),
     /// Translate staged phrases with the LLM and promote them into decks.
@@ -770,7 +835,13 @@ mod tests {
                 | (Command::PrefetchMedia(_), "PrefetchMedia")
                 | (Command::PrefetchGrammarAudio(_), "PrefetchGrammarAudio")
                 | (Command::PrepareCorpus(_), "PrepareCorpus")
+                | (Command::PrepareReaders(_), "PrepareReaders")
                 | (Command::GrammarStatus(_), "GrammarStatus")
+                | (Command::ReaderStatus(_), "ReaderStatus")
+                | (Command::CheckReaderPdf(_), "CheckReaderPdf")
+                | (Command::ClassifyRules(_), "ClassifyRules")
+                | (Command::ClassifyWords(_), "ClassifyWords")
+                | (Command::GenerateParadigms(_), "GenerateParadigms")
                 | (Command::ExtractPhrases(_), "ExtractPhrases")
                 | (Command::TranslatePhrases(_), "TranslatePhrases")
                 | (Command::ExtractWords(_), "ExtractWords")
@@ -931,6 +1002,9 @@ mod tests {
     #[case(&["wisecrow", "nback", "-n", "en", "-f", "es"], "Nback")]
     #[case(&["wisecrow", "nb", "-n", "en", "-f", "de", "--mode", "word_translation"], "Nback")]
     #[case(&["wisecrow", "prefetch-media", "-n", "en", "-f", "es"], "PrefetchMedia")]
+    #[case(&["wisecrow", "classify-rules", "--lang", "fr"], "ClassifyRules")]
+    #[case(&["wisecrow", "classify-words", "--native", "en", "--foreign", "fr"], "ClassifyWords")]
+    #[case(&["wisecrow", "generate-paradigms", "--native", "en", "--foreign", "fr"], "GenerateParadigms")]
     #[case(&["wisecrow", "extract-phrases", "-l", "gd"], "ExtractPhrases")]
     #[case(
         &["wisecrow", "extract-words", "-n", "en", "-f", "gd", "--limit", "500", "--min-occurrences", "5"],
@@ -958,12 +1032,35 @@ mod tests {
     #[case(&["wisecrow", "gr", "-n", "en", "-f", "es", "--cefr", "A2", "--seed-states", "2,3"], "GradedReader")]
     #[case(&["wisecrow", "preview", "--file", "ep.srt", "-n", "en", "-f", "es"], "Preview")]
     #[case(&["wisecrow", "pv", "--file", "ep.vtt", "-n", "en", "-f", "es", "--unknown-only"], "Preview")]
+    #[case(&["wisecrow", "prepare-readers"], "PrepareReaders")]
+    #[case(&["wisecrow", "reader-status"], "ReaderStatus")]
+    #[case(&["wisecrow", "check-reader-pdf", "--file", "a.pdf"], "CheckReaderPdf")]
     fn command_and_alias_parses(#[case] args: &[&str], #[case] expected_variant: &str) {
         let cli = Cli::parse_from(args);
         assert!(
             is_variant(&cli.command, expected_variant),
             "Expected {expected_variant} variant"
         );
+    }
+
+    #[test]
+    fn prepare_readers_has_no_force_flag() {
+        let parsed = Cli::try_parse_from(["wisecrow", "prepare-readers", "--force"]);
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn generate_paradigms_has_no_force_flag() {
+        let parsed = Cli::try_parse_from([
+            "wisecrow",
+            "generate-paradigms",
+            "--native",
+            "en",
+            "--foreign",
+            "fr",
+            "--force",
+        ]);
+        assert!(parsed.is_err());
     }
 
     #[rstest]

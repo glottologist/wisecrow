@@ -41,6 +41,18 @@ class PipelineUnits(unittest.TestCase):
         self.assertNotIn("wisecrow ingest", unit)
         self.assertNotIn("wisecrow ingest", script)
 
+    def test_import_grammar_reads_pairs_and_skips_unconfirmed_gaelic(self):
+        script = (ROOT / "scripts" / "import-grammar.sh").read_text()
+        self.assertIn("deploy/language-pairs.toml", script)
+        self.assertIn("classify-rules", script)
+        self.assertIn("classify-words", script)
+        self.assertIn("generate-paradigms", script)
+        self.assertNotIn("languages=(gd fr it ga cy es)", script)
+        self.assertIn(
+            "Skipping Gaelic paradigms until the slot table is confirmed",
+            script,
+        )
+
     def test_compose_mounts_the_pair_file_read_only(self):
         compose = (ROOT / "docker-compose.deploy.yml").read_text()
         self.assertIn(
@@ -55,6 +67,19 @@ class PipelineUnits(unittest.TestCase):
         enabled = tasks.split("Enable the corpus and grammar units", 1)[1]
         self.assertIn("enabled: true", enabled)
         self.assertNotIn("state: started", enabled)
+
+    def test_reader_unit_prepares_one_step_from_the_shelf(self):
+        script = (ROOT / "scripts" / "prepare-readers.sh").read_text()
+        compose = (ROOT / "docker-compose.deploy.yml").read_text()
+        tasks = (ROOT / "ansible" / "roles" / "wisecrow" / "tasks" / "main.yml").read_text()
+        self.assertIn("reader-status", script)
+        self.assertIn("prepare-readers", script)
+        self.assertIn("/app/readers", script)
+        self.assertIn("language-pairs.toml", script)
+        self.assertIn("75", script)
+        self.assertNotIn("--force", script)
+        self.assertIn("./readers:/app/readers:ro", compose)
+        self.assertIn("wisecrow-reader.service", tasks)
 
 
 if __name__ == "__main__":

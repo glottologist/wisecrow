@@ -78,6 +78,24 @@ pub async fn select_practice(
     level_code: Option<&str>,
     limit: i64,
 ) -> Result<Vec<PracticeItem>, WisecrowError> {
+    select_area_practice(pool, user_id, lang_code, level_code, None, limit).await
+}
+
+/// Picks the next items, optionally restricted to one rule area.
+///
+/// The area predicate is applied before ordering and `LIMIT`.
+///
+/// # Errors
+///
+/// Returns an error when the query fails.
+pub async fn select_area_practice(
+    pool: &PgPool,
+    user_id: i32,
+    lang_code: &str,
+    level_code: Option<&str>,
+    area: Option<crate::grammar::areas::Area>,
+    limit: i64,
+) -> Result<Vec<PracticeItem>, WisecrowError> {
     let items = sqlx::query_as::<_, PracticeItem>(&format!(
         "SELECT gr.id AS rule_id, gr.slug, gr.title AS rule_title, gr.explanation,
                 cl.code AS level, item.id AS item_id, item.revision, item.kind,
@@ -89,6 +107,7 @@ pub async fn select_practice(
          LEFT JOIN grammar_mastery gm ON gm.rule_id = gr.id AND gm.user_id = $1
          {LEAST_RECENTLY_SERVED}
          WHERE l.code = $2 AND ($3::TEXT IS NULL OR cl.code = $3)
+           AND ($5::TEXT IS NULL OR gr.area = $5)
          ORDER BY {SELECTION_ORDER}
          LIMIT $4"
     ))
@@ -96,6 +115,7 @@ pub async fn select_practice(
     .bind(lang_code)
     .bind(level_code)
     .bind(limit)
+    .bind(area.map(crate::grammar::areas::Area::as_str))
     .fetch_all(pool)
     .await?;
     Ok(items)

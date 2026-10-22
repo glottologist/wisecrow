@@ -194,7 +194,15 @@ pub async fn prefetch_grammar_audio(
         )));
     }
     let examples = correct_examples(pool, &options.language, options.level.as_deref()).await?;
-    let (jobs, unsupported) = distinct_jobs(speaker.as_ref(), &examples);
+    let (mut jobs, mut unsupported) = distinct_jobs(speaker.as_ref(), &examples);
+    append_verb_form_jobs(
+        pool,
+        speaker.as_ref(),
+        &options.language,
+        &mut jobs,
+        &mut unsupported,
+    )
+    .await?;
     info!(
         "Voicing {} distinct sentences from {} {} examples",
         jobs.len(),
@@ -334,6 +342,196 @@ async fn prune(
         let examples = correct_examples(pool, &language, None).await?;
         let (jobs, _) = distinct_jobs(speaker, &examples);
         keep.extend(jobs.into_iter().map(|job| job.fingerprint));
+        keep.extend(verb_form_fingerprints(pool, speaker, &language).await?);
+        keep.extend(book_audio_fingerprints(pool, speaker, &language).await?);
     }
     cache.prune_sentences(&keep).await
+}
+
+/// Clips a translated sentence or a gloss names.
+///
+/// The keep-list is built from `speaker.fingerprint`, which is also how
+/// example and verb-form clips are named. `MediaFingerprint` cannot be
+/// rebuilt from the stored hex, so a form this speaker refuses is omitted.
+async fn book_audio_fingerprints(
+    pool: &PgPool,
+    speaker: &dyn SentenceSpeaker,
+    language: &str,
+) -> Result<Vec<MediaFingerprint>, WisecrowError> {
+    let sentences: Vec<String> = sqlx::query_scalar(
+        "SELECT bt.text
+         FROM book_translations bt
+         JOIN languages l ON l.id = bt.language_id
+         WHERE l.code = $1 AND bt.audio_fingerprint IS NOT NULL",
+    )
+    .bind(language)
+    .fetch_all(pool)
+    .await?;
+    let words: Vec<String> = sqlx::query_scalar(
+        "SELECT bg.normalised
+         FROM book_glosses bg
+         JOIN languages l ON l.id = bg.language_id
+         WHERE l.code = $1 AND bg.audio_fingerprint IS NOT NULL",
+    )
+    .bind(language)
+    .fetch_all(pool)
+    .await?;
+    let mut keep = Vec::new();
+    for text in sentences.iter().chain(&words) {
+        if let Ok(fingerprint) = speaker.fingerprint(language, text) {
+            keep.push(fingerprint);
+        }
+    }
+    Ok(keep)
+}
+
+/// One page of verb-form spellings, in `verb_forms.id` order.
+///
+/// `after_id` is exclusive. There is no deck cap. Two slots that share a
+/// spelling are both returned; the caller voices the distinct text once.
+///
+/// # Errors
+///
+/// Returns an error when the query fails.
+pub async fn verb_form_sentences(
+    pool: &PgPool,
+    foreign_lang: &str,
+    after_id: i32,
+    limit: i64,
+) -> Result<Vec<(i32, String)>, WisecrowError> {
+    if limit < 1 {
+        return Ok(Vec::new());
+    }
+    sqlx::query_as(
+        "SELECT vf.id, vf.form
+         FROM verb_forms vf
+         JOIN languages l ON l.id = vf.language_id
+         WHERE l.code = $1 AND vf.id > $2
+         ORDER BY vf.id
+         LIMIT $3",
+    )
+    .bind(foreign_lang)
+    .bind(after_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(WisecrowError::from)
+}
+
+/// `true` when every stored form of `foreign_lang` has a clip row.
+///
+/// The clip is the fingerprint `speaker` names for the form. A language with
+/// no forms is voiced. A form the speaker refuses is not required. This does
+/// not synthesise.
+///
+/// # Errors
+///
+/// Returns an error when the query fails.
+pub async fn verb_forms_voiced(
+    pool: &PgPool,
+    foreign_lang: &str,
+    speaker: &dyn SentenceSpeaker,
+) -> Result<bool, WisecrowError> {
+    let mut after = 0i32;
+    loop {
+        let page = verb_form_sentences(pool, foreign_lang, after, 1_000).await?;
+        if page.is_empty() {
+            return Ok(true);
+        }
+        for (id, form) in &page {
+            after = *id;
+            let Ok(fingerprint) = speaker.fingerprint(foreign_lang, form) else {
+                continue;
+            };
+            let stored: bool = sqlx::query_scalar(
+                "SELECT EXISTS (
+                     SELECT 1 FROM sentence_media
+                     WHERE fingerprint = $1 AND media_type = 'audio'
+                 )",
+            )
+            .bind(fingerprint.as_str())
+            .fetch_one(pool)
+            .await?;
+            if !stored {
+                return Ok(false);
+            }
+        }
+        if page_is_short(&page)? {
+            return Ok(true);
+        }
+    }
+}
+
+const VERB_FORM_PAGE: i64 = 1_000;
+
+fn page_is_short(page: &[(i32, String)]) -> Result<bool, WisecrowError> {
+    let page_len = i64::try_from(page.len())
+        .map_err(|_| WisecrowError::InvalidInput("verb-form page is too large".into()))?;
+    Ok(page_len < VERB_FORM_PAGE)
+}
+
+async fn append_verb_form_jobs(
+    pool: &PgPool,
+    speaker: &dyn SentenceSpeaker,
+    language: &str,
+    jobs: &mut Vec<Job>,
+    unsupported: &mut Vec<String>,
+) -> Result<(), WisecrowError> {
+    let mut seen: HashSet<String> = jobs
+        .iter()
+        .map(|job| job.fingerprint.as_str().to_owned())
+        .collect();
+    let mut after = 0i32;
+    loop {
+        let page = verb_form_sentences(pool, language, after, VERB_FORM_PAGE).await?;
+        if page.is_empty() {
+            return Ok(());
+        }
+        for (id, form) in &page {
+            after = *id;
+            match speaker.fingerprint(language, form) {
+                Ok(fingerprint) => {
+                    if seen.insert(fingerprint.as_str().to_owned()) {
+                        jobs.push(Job {
+                            fingerprint,
+                            language: language.to_owned(), // clone: the job owns its language
+                            sentence: form.clone(),        // clone: the job owns its sentence
+                        });
+                    }
+                }
+                Err(_) => {
+                    if !unsupported.contains(form) {
+                        unsupported.push(form.clone()); // clone: reported by sentence
+                    }
+                }
+            }
+        }
+        if page_is_short(&page)? {
+            return Ok(());
+        }
+    }
+}
+
+async fn verb_form_fingerprints(
+    pool: &PgPool,
+    speaker: &dyn SentenceSpeaker,
+    language: &str,
+) -> Result<Vec<MediaFingerprint>, WisecrowError> {
+    let mut after = 0i32;
+    let mut keep = Vec::new();
+    loop {
+        let page = verb_form_sentences(pool, language, after, VERB_FORM_PAGE).await?;
+        if page.is_empty() {
+            return Ok(keep);
+        }
+        for (id, form) in &page {
+            after = *id;
+            if let Ok(fingerprint) = speaker.fingerprint(language, form) {
+                keep.push(fingerprint);
+            }
+        }
+        if page_is_short(&page)? {
+            return Ok(keep);
+        }
+    }
 }

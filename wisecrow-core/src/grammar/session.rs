@@ -16,9 +16,10 @@ use uuid::Uuid;
 use wisecrow_learning::grading::{grade, Submission, Verdict};
 
 use crate::errors::WisecrowError;
+use crate::grammar::areas::Area;
 use crate::grammar::items::{StoredItem, ITEM_COLUMNS};
 use crate::grammar::mastery::{AttemptRecord, AttemptSource, MasteryRepository};
-use crate::grammar::selection::{record_exposure, select_practice, PracticeItem};
+use crate::grammar::selection::{record_exposure, select_area_practice, PracticeItem};
 
 /// Interactions a practice session offers by default.
 ///
@@ -81,8 +82,9 @@ impl GrammarSessionManager {
         level_code: Option<&str>,
         kind: SessionKind,
         limit: i64,
+        area: Option<Area>,
     ) -> Result<Option<GrammarSession>, WisecrowError> {
-        let items = select_practice(pool, user_id, lang_code, level_code, limit).await?;
+        let items = select_area_practice(pool, user_id, lang_code, level_code, area, limit).await?;
         if items.is_empty() {
             return Ok(None);
         }

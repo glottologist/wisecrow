@@ -255,6 +255,7 @@ async fn a_session_serves_items_records_answers_and_closes() -> TestResult {
         None,
         SessionKind::Practice,
         SESSION_LENGTH,
+        None,
     )
     .await?
     .expect("a bank with active items yields a session");
@@ -316,7 +317,7 @@ async fn a_completed_session_accepts_nothing_further() -> TestResult {
     seed_item(&pool, rule_id, "aone", "active").await?;
 
     let session =
-        GrammarSessionManager::create(&pool, user_id, "es", None, SessionKind::Practice, 12)
+        GrammarSessionManager::create(&pool, user_id, "es", None, SessionKind::Practice, 12, None)
             .await?
             .expect("session");
     let item = &session.items[0];
@@ -353,7 +354,7 @@ async fn a_submission_naming_another_revision_is_refused() -> TestResult {
     seed_item(&pool, rule_id, "aone", "active").await?;
 
     let session =
-        GrammarSessionManager::create(&pool, user_id, "es", None, SessionKind::Practice, 12)
+        GrammarSessionManager::create(&pool, user_id, "es", None, SessionKind::Practice, 12, None)
             .await?
             .expect("session");
     let item = &session.items[0];
@@ -389,7 +390,7 @@ async fn a_language_without_promoted_items_yields_no_session() -> TestResult {
     seed_item(&pool, rule_id, "aone", "candidate").await?;
 
     let session =
-        GrammarSessionManager::create(&pool, user_id, "es", None, SessionKind::Practice, 12)
+        GrammarSessionManager::create(&pool, user_id, "es", None, SessionKind::Practice, 12, None)
             .await?;
     assert!(session.is_none(), "an empty bank is a state, not a failure");
 

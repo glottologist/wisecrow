@@ -1,11 +1,12 @@
 pub mod ai_exercises;
+pub mod areas;
 pub mod gloss;
 pub mod graded_reader;
 pub mod items;
 pub mod library;
 pub mod mastery;
+pub mod paradigms;
 pub mod pdf;
-mod pdf_cache;
 pub mod pdf_check;
 pub mod pdf_import;
 pub mod pdf_incremental;

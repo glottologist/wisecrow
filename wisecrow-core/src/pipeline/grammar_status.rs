@@ -10,13 +10,14 @@ use std::path::{Path, PathBuf};
 use sqlx::PgPool;
 
 use crate::errors::WisecrowError;
+use crate::frequency::MATCH_TRIM_SQL;
 use crate::grammar::library::{self, documents};
 use crate::grammar::pdf_import::ImportTarget;
 use crate::grammar::pdf_incremental::{self, is_complete};
 use crate::grammar::sources::{self, import_schedule, Clearance, LevelCoverage};
 use crate::lang;
 use crate::media::cache::MediaCache;
-use crate::media::grammar_audio::{correct_examples, SentenceSpeaker};
+use crate::media::grammar_audio::{correct_examples, verb_forms_voiced, SentenceSpeaker};
 use crate::media::MediaType;
 
 /// `true` when every scheduled document and level for `lang` is already imported.
@@ -109,10 +110,6 @@ pub async fn grammar_audio_idle(
     }
 
     let examples = correct_examples(pool, lang, None).await?;
-    if examples.is_empty() {
-        return Ok(true);
-    }
-
     for example in &examples {
         let fingerprint = match speaker.fingerprint(&example.language, &example.sentence) {
             Ok(fingerprint) => fingerprint,
@@ -122,5 +119,93 @@ pub async fn grammar_audio_idle(
             return Ok(false);
         }
     }
-    Ok(true)
+    verb_forms_voiced(pool, lang, speaker).await
+}
+
+/// `true` when this pair has no area, class, paradigm or verb-form clip left to do.
+///
+/// Audio idleness stays in [`grammar_audio_idle`]. This function does not open a cache.
+///
+/// # Errors
+///
+/// Returns an error when a language code is malformed or a query fails.
+pub async fn grammar_areas_idle(
+    pool: &PgPool,
+    native_lang: &str,
+    foreign_lang: &str,
+) -> Result<bool, WisecrowError> {
+    if !lang::is_valid_code(native_lang) || !lang::is_valid_code(foreign_lang) {
+        return Err(WisecrowError::InvalidInput(format!(
+            "Invalid language code: {native_lang}/{foreign_lang}"
+        )));
+    }
+    let untagged: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM grammar_rules gr
+         JOIN languages l ON l.id = gr.language_id
+         WHERE l.code = $1 AND gr.area IS NULL",
+    )
+    .bind(foreign_lang)
+    .fetch_one(pool)
+    .await?;
+    if untagged > 0 {
+        return Ok(false);
+    }
+    if unclassified_window(pool, native_lang, foreign_lang).await? > 0 {
+        return Ok(false);
+    }
+    // A language with no slot table has no paradigm to generate. `paradigm_work`
+    // reports that as invalid input; status must treat it as idle, not as work.
+    if crate::grammar::paradigms::slots_for(foreign_lang).is_err() {
+        return Ok(true);
+    }
+    let paradigm = crate::grammar::paradigms::paradigm_work(
+        pool,
+        native_lang,
+        foreign_lang,
+        crate::grammar::paradigms::PARADIGM_VERSION,
+        1,
+    )
+    .await?;
+    Ok(paradigm.is_empty())
+}
+
+async fn unclassified_window(
+    pool: &PgPool,
+    native_lang: &str,
+    foreign_lang: &str,
+) -> Result<i64, WisecrowError> {
+    let sql = format!(
+        "WITH ranked AS (
+             SELECT lower(btrim(t.to_phrase, '{trim}')) AS word,
+                    max(t.corpus_frequency) AS freq
+             FROM corpus_evidence_translations t
+             JOIN languages native ON native.id = t.from_language_id
+             JOIN languages \"foreign\" ON \"foreign\".id = t.to_language_id
+             WHERE native.code = $1 AND \"foreign\".code = $2
+             GROUP BY 1
+         ),
+         windowed AS (
+             SELECT word, freq
+             FROM ranked
+             WHERE char_length(word) BETWEEN 1 AND 64
+               AND word !~ '[[:space:]]'
+             ORDER BY freq DESC NULLS LAST, word
+             LIMIT $3
+         )
+         SELECT count(*)
+         FROM windowed
+         WHERE NOT EXISTS (
+             SELECT 1
+             FROM word_classes wc
+             JOIN languages l ON l.id = wc.language_id
+             WHERE l.code = $2 AND wc.word = windowed.word
+         )",
+        trim = MATCH_TRIM_SQL
+    );
+    Ok(sqlx::query_scalar(&sql)
+        .bind(native_lang)
+        .bind(foreign_lang)
+        .bind(crate::words::classes::WORD_CLASS_WINDOW)
+        .fetch_one(pool)
+        .await?)
 }

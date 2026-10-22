@@ -9,13 +9,13 @@ use sqlx::{PgPool, Postgres, Transaction};
 use tracing::{info, warn};
 
 use super::pdf::GrammarPassage;
-use super::pdf_cache::PdfLlm;
 use super::pdf_import::{
     synthesise_excerpts, Coverage, ImportTarget, PASSAGE_BUDGET_CHARS, SYNTHESIS_BATCH,
 };
 use super::pdf_matching::{distinct_rules, ExistingRule};
 use super::rules::{NewGrammarRule, RuleRepository};
 use crate::errors::WisecrowError;
+use crate::llm::cache::CachedLlm;
 use crate::llm::prompts::PassageExcerpt;
 use crate::llm::LlmProvider;
 
@@ -113,7 +113,7 @@ pub async fn import_passages(
         ));
     }
     let level_id = RuleRepository::ensure_cefr_level(pool, target.cefr_level).await?;
-    let model = PdfLlm::new(provider, Some(pool));
+    let model = CachedLlm::new(provider, Some(pool));
     let mut outcome = IncrementalOutcome::default();
     let mut source_cursor = None;
     let mut source_titles = Vec::<String>::new();

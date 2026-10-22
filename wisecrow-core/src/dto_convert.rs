@@ -1,11 +1,13 @@
 use num_traits::ToPrimitive;
 use wisecrow_dto::{
-    AnnotatedTokenDto, BrainmapCellDto, CardDto, CardStatusDto, ClozeQuizDto, DnbAdaptationDto,
-    DnbModeDto, DnbSessionResultsDto, DnbTrialDto, GlossaryEntryDto, GradedReaderDto,
-    GrammarItemDto, GrammarMasteryStateDto, GrammarOptionDto, LanguageInfo, MasteryBandDto,
-    MultipleChoiceQuizDto, OfflineGrammarItemDto, OfflineRuleExampleDto, PlacementLevelDto,
-    PlacementResultDto, PlacementStateDto, PlacementStepDto, QuizItemDto, ReviewRatingDto,
-    RuleExampleDto, ScriptDirection, SessionDto, SubmissionDto, TokenStatusDto, UserDto,
+    AnnotatedTokenDto, BrainmapCellDto, CardDto, CardStatusDto, ClozeQuizDto, DailyCountDto,
+    DashboardDto, DnbAdaptationDto, DnbModeDto, DnbSessionResultsDto, DnbTrialDto,
+    GlossaryEntryDto, GradedReaderDto, GrammarItemDto, GrammarMasteryStateDto, GrammarOptionDto,
+    LanguageInfo, LanguageProgressDto, LevelBandsDto, MasteryBandDto, MultipleChoiceQuizDto,
+    OfflineGrammarItemDto, OfflineRuleExampleDto, PairNbackDto, PairVocabularyDto,
+    PlacementLevelDto, PlacementResultDto, PlacementStateDto, PlacementStepDto,
+    PlacementSummaryDto, QuizItemDto, ReviewRatingDto, RuleExampleDto, ScriptDirection, SessionDto,
+    SubmissionDto, TokenStatusDto, UserDto, VocabularyCountsDto,
 };
 use wisecrow_learning::grading::{Answer, Submission};
 use wisecrow_learning::mastery::{band_from, Band};
@@ -20,6 +22,7 @@ use crate::grammar::rules::CorrectExample;
 use crate::grammar::selection::PracticeItem;
 use crate::grammar::sync::{BankItem, MasteryState};
 use crate::preview::annotate::{AnnotatedToken, Status};
+use crate::progress::LanguageProgress;
 use crate::srs::scheduler::{CardState, CardStatus, ReviewRating};
 use crate::srs::session::Session;
 use crate::users::User;
@@ -75,6 +78,7 @@ impl From<&Session> for SessionDto {
             deck_size: session.deck_size,
             speed_ms: session.speed_ms,
             current_index: session.current_index,
+            deck_id: session.deck_id,
             cards: session.cards.iter().map(CardDto::from).collect(),
         }
     }
@@ -478,5 +482,196 @@ pub fn submission(dto: &SubmissionDto) -> Submission {
         answer,
         hint_shown: dto.hint_shown,
         ordinal: dto.ordinal,
+    }
+}
+
+/// Reports a learner's progress for the dashboard.
+#[must_use]
+pub fn dashboard(languages: &[LanguageProgress]) -> DashboardDto {
+    DashboardDto {
+        languages: languages.iter().map(language_progress).collect(),
+    }
+}
+
+fn language_progress(language: &LanguageProgress) -> LanguageProgressDto {
+    LanguageProgressDto {
+        foreign: language.foreign.clone(), // clone: building owned DTO
+        foreign_name: language.foreign_name.clone(), // clone: building owned DTO
+        vocabulary: language
+            .vocabulary
+            .iter()
+            .map(|pair| PairVocabularyDto {
+                native: pair.native.clone(), // clone: building owned DTO
+                counts: VocabularyCountsDto {
+                    new: pair.counts.new,
+                    learning: pair.counts.learning,
+                    review: pair.counts.review,
+                    relearning: pair.counts.relearning,
+                    due_today: pair.counts.due_today,
+                },
+                reviews: pair
+                    .reviews
+                    .iter()
+                    .map(|entry| DailyCountDto {
+                        day: entry.day,
+                        count: entry.count,
+                    })
+                    .collect(),
+                verb_forms: pair.verb_forms,
+            })
+            .collect(),
+        grammar: language
+            .grammar
+            .iter()
+            .map(|level| LevelBandsDto {
+                level: level.level.clone(), // clone: building owned DTO
+                unseen: level.unseen,
+                red: level.red,
+                amber: level.amber,
+                green: level.green,
+                provisional_red: level.provisional_red,
+                provisional_amber: level.provisional_amber,
+                provisional_green: level.provisional_green,
+            })
+            .collect(),
+        placement: language
+            .placement
+            .as_ref()
+            .map(|placement| PlacementSummaryDto {
+                completed_at: placement.completed_at,
+                level_reached: placement.outcome.level_reached.clone(), // clone: building owned DTO
+                tested: placement
+                    .outcome
+                    .tested
+                    .iter()
+                    .map(|score| score.level.clone()) // clone: building owned DTO
+                    .collect(),
+                skipped: placement.outcome.skipped.clone(), // clone: building owned DTO
+            }),
+        nback: language
+            .nback
+            .iter()
+            .map(|summary| PairNbackDto {
+                native: summary.native.clone(), // clone: building owned DTO
+                highest_n: summary.highest_n,
+                sessions: summary.sessions,
+            })
+            .collect(),
+        books: Some(language.books),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{NaiveDate, TimeZone, Utc};
+    use uuid::Uuid;
+    use wisecrow_dto::{
+        DailyCountDto, LevelBandsDto, PairNbackDto, PlacementSummaryDto, VocabularyCountsDto,
+    };
+
+    use super::dashboard;
+    use crate::grammar::placement::{CompletedPlacement, LevelScore, PlacementOutcome};
+    use crate::progress::{
+        DailyCount, LanguageProgress, LevelBands, NbackSummary, PairVocabulary, VocabularyCounts,
+    };
+
+    #[test]
+    fn every_dashboard_figure_crosses_to_the_dto_and_placement_keeps_only_levels() {
+        let completed_at = Utc
+            .with_ymd_and_hms(2026, 10, 19, 0, 0, 0)
+            .single()
+            .expect("time");
+        let day = NaiveDate::from_ymd_opt(2026, 10, 20).expect("date");
+        let progress = LanguageProgress {
+            foreign: "es".into(),
+            foreign_name: "Spanish".into(),
+            vocabulary: vec![PairVocabulary {
+                native: "en".into(),
+                counts: VocabularyCounts {
+                    new: 1,
+                    learning: 2,
+                    review: 3,
+                    relearning: 4,
+                    due_today: 5,
+                },
+                reviews: vec![DailyCount { day, count: 6 }],
+                verb_forms: wisecrow_dto::VerbFormProgressDto::default(),
+            }],
+            grammar: vec![LevelBands {
+                level: "A1".into(),
+                green: 2,
+                ..LevelBands::default()
+            }],
+            placement: Some(CompletedPlacement {
+                completed_at,
+                outcome: PlacementOutcome {
+                    attempt_id: Uuid::nil(),
+                    level_reached: None,
+                    tested: vec![LevelScore {
+                        level: "A1".into(),
+                        correct: 1,
+                        asked: 6,
+                        passed: false,
+                    }],
+                    skipped: vec!["A2".into()],
+                },
+            }),
+            nback: vec![NbackSummary {
+                native: "en".into(),
+                highest_n: 4,
+                sessions: 2,
+            }],
+            books: wisecrow_dto::BookProgressDto {
+                started: 2,
+                finished: 1,
+            },
+        };
+
+        let dto = dashboard(&[progress]);
+        let [spanish] = dto.languages.as_slice() else {
+            panic!("one language expected, got {:?}", dto.languages);
+        };
+        assert_eq!(spanish.foreign, "es");
+        assert_eq!(spanish.foreign_name, "Spanish");
+        assert_eq!(spanish.vocabulary[0].native, "en");
+        assert_eq!(
+            spanish.vocabulary[0].counts,
+            VocabularyCountsDto {
+                new: 1,
+                learning: 2,
+                review: 3,
+                relearning: 4,
+                due_today: 5,
+            }
+        );
+        assert_eq!(
+            spanish.vocabulary[0].reviews,
+            vec![DailyCountDto { day, count: 6 }]
+        );
+        assert_eq!(
+            spanish.grammar,
+            vec![LevelBandsDto {
+                level: "A1".into(),
+                green: 2,
+                ..LevelBandsDto::default()
+            }]
+        );
+        assert_eq!(
+            spanish.placement,
+            Some(PlacementSummaryDto {
+                completed_at,
+                level_reached: None,
+                tested: vec!["A1".into()],
+                skipped: vec!["A2".into()],
+            })
+        );
+        assert_eq!(
+            spanish.nback,
+            vec![PairNbackDto {
+                native: "en".into(),
+                highest_n: 4,
+                sessions: 2,
+            }]
+        );
     }
 }

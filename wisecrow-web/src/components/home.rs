@@ -115,7 +115,7 @@ pub fn Home() -> Element {
     }
 }
 
-/// Fast download, then flashcards, then grammar. Each route stores the pair.
+/// Fast download, then flashcards, then grammar, then a story. Each route stores the pair.
 #[component]
 fn LearningStages(native: String, foreign: String) -> Element {
     // clone: each route owns the language pair it opens.
@@ -135,7 +135,11 @@ fn LearningStages(native: String, foreign: String) -> Element {
         native: native.clone(),
         foreign: foreign.clone(),
     };
-    let map = Route::BrainmapPage { native, foreign };
+    let map = Route::BrainmapPage {
+        native: native.clone(),   // clone: the Read link owns the pair as well
+        foreign: foreign.clone(), // clone: the Read link owns the pair as well
+    };
+    let read = Route::LibraryPage { native, foreign };
 
     rsx! {
         div { class: "space-y-6",
@@ -189,6 +193,24 @@ fn LearningStages(native: String, foreign: String) -> Element {
                         "Grammar map"
                     }
                 }
+            }
+            section { class: "space-y-2 border-t border-gray-700 pt-2",
+                h2 { class: "text-sm font-semibold uppercase tracking-wide text-gray-500",
+                    "4. Read"
+                }
+                p { class: "text-sm text-gray-400",
+                    "Read a story in the language you are learning."
+                }
+                Link {
+                    to: read,
+                    class: "block w-full text-center bg-blue-600 hover:bg-blue-500 rounded-lg px-4 py-3 font-semibold transition",
+                    "Read"
+                }
+            }
+            Link {
+                to: Route::DashboardPage {},
+                class: "block text-center text-sm text-emerald-400",
+                "See your progress"
             }
         }
     }
@@ -247,13 +269,15 @@ mod tests {
         let words = at(&html, "1. Learn words and sounds");
         let cards = at(&html, "2. Flashcards");
         let grammar = at(&html, "3. Grammar");
-        assert!(words < cards && cards < grammar);
+        let read = at(&html, "4. Read");
+        assert!(words < cards && cards < grammar && grammar < read);
 
         let fast = at(&html, "href=\"/fast/en/gd\"");
         let flashcards = at(&html, "href=\"/learn/en/gd\"");
         let practice = at(&html, "href=\"/grammar/en/gd\"");
         let level = at(&html, "href=\"/grammar/placement/en/gd\"");
         let map = at(&html, "href=\"/grammar/brainmap/en/gd\"");
+        let read_href = at(&html, "href=\"/read/en/gd\"");
         assert!(words < fast);
         assert!(fast < cards);
         assert!(cards < flashcards);
@@ -261,10 +285,12 @@ mod tests {
         assert!(grammar < practice);
         assert!(practice < level);
         assert!(level < map);
+        assert!(map < read_href);
 
         assert!(html.contains("Fast download teaches the words and how they sound."));
         assert!(html.contains("Solidify the words and sounds."));
         assert!(html.contains("Understand the rules for using words and phrases."));
+        assert!(html.contains("Read a story in the language you are learning."));
         assert!(html.contains(">Fast download<"));
         assert!(html.contains(">Flashcards<"));
         assert!(html.contains(">Grammar practice<"));
@@ -274,5 +300,8 @@ mod tests {
         assert!(!html.contains("Start a session"));
         assert!(!html.contains("Start session"));
         assert!(!html.contains("Session rates cards"));
+        let progress = at(&html, "href=\"/dashboard\"");
+        assert!(map < progress, "the progress link sits under the stages");
+        assert!(html.contains(">See your progress<"));
     }
 }

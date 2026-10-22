@@ -14,6 +14,7 @@
 //! submits through the ordinary path, so placement answers are graded, rated
 //! and recorded exactly as practice answers are.
 
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 use wisecrow_learning::grading::Submission;
@@ -71,6 +72,85 @@ pub struct PlacementOutcome {
 pub enum PlacementState {
     Testing(PlacementStep),
     Finished(PlacementOutcome),
+}
+
+/// A finished run, as the dashboard reports it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompletedPlacement {
+    pub completed_at: DateTime<Utc>,
+    pub outcome: PlacementOutcome,
+}
+
+/// The verdict of a run over the levels walked so far.
+///
+/// The live ladder and the replay of a finished run both fold levels through
+/// this, so the dashboard reads a past run exactly as the run itself decided.
+#[derive(Debug, Default)]
+struct Ladder {
+    level_reached: Option<String>,
+    tested: Vec<LevelScore>,
+    skipped: Vec<String>,
+    failures: usize,
+}
+
+impl Ladder {
+    /// Folds in one answered level, reporting whether the ladder ends there.
+    fn record(&mut self, score: &LevelScore) -> bool {
+        if score.passed {
+            self.level_reached = Some(score.level.clone()); // clone: the outcome keeps the level after the loop moves on
+            self.failures = 0;
+        } else {
+            self.failures = self.failures.saturating_add(1);
+        }
+        self.tested.push(score.clone()); // clone: the scores are read again on the next call
+        self.failures >= PLACEMENT_MAX_FAILURES
+    }
+
+    fn into_outcome(self, attempt_id: Uuid) -> PlacementOutcome {
+        PlacementOutcome {
+            attempt_id,
+            level_reached: self.level_reached,
+            tested: self.tested,
+            skipped: self.skipped,
+        }
+    }
+}
+
+/// The learner's most recent finished run for a language, if there is one.
+///
+/// Only the level reached is stored, so the tested and skipped levels are
+/// replayed from the run's answers through the same fold the run used.
+///
+/// # Errors
+///
+/// Returns an error when a query fails.
+pub async fn latest_completed(
+    pool: &PgPool,
+    user_id: i32,
+    lang_code: &str,
+) -> Result<Option<CompletedPlacement>, WisecrowError> {
+    let row: Option<(Uuid, Uuid, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT pa.id, pa.session_id, pa.completed_at
+         FROM placement_attempts pa
+         JOIN languages l ON l.id = pa.language_id
+         WHERE pa.user_id = $1 AND l.code = $2 AND pa.completed_at IS NOT NULL
+         ORDER BY pa.completed_at DESC, pa.started_at DESC
+         LIMIT 1",
+    )
+    .bind(user_id)
+    .bind(lang_code)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some((attempt_id, session_id, completed_at)) = row else {
+        return Ok(None);
+    };
+    let levels = level_codes(pool).await?;
+    let answered = level_scores(pool, session_id).await?;
+    Ok(Some(CompletedPlacement {
+        completed_at,
+        outcome: replay_finished(levels, &answered).into_outcome(attempt_id),
+    }))
 }
 
 /// Opens a run and draws the first level worth testing.
@@ -197,27 +277,13 @@ async fn advance(
     session_id: Uuid,
     lang_code: &str,
 ) -> Result<PlacementState, WisecrowError> {
-    let levels: Vec<String> =
-        sqlx::query_scalar("SELECT code FROM cefr_levels ORDER BY sort_order")
-            .fetch_all(pool)
-            .await?;
+    let levels = level_codes(pool).await?;
     let answered = level_scores(pool, session_id).await?;
-
-    let mut tested: Vec<LevelScore> = Vec::new();
-    let mut skipped: Vec<String> = Vec::new();
-    let mut level_reached: Option<String> = None;
-    let mut failures = 0usize;
+    let mut ladder = Ladder::default();
 
     for level in levels {
         if let Some(score) = answered.iter().find(|score| score.level == level) {
-            if score.passed {
-                level_reached = Some(level.clone()); // clone: the outcome keeps the level after the loop moves on
-                failures = 0;
-            } else {
-                failures = failures.saturating_add(1);
-            }
-            tested.push(score.clone()); // clone: the scores are read again on the next call
-            if failures >= PLACEMENT_MAX_FAILURES {
+            if ladder.record(score) {
                 break;
             }
             continue;
@@ -226,7 +292,7 @@ async fn advance(
         let items =
             select_practice(pool, user_id, lang_code, Some(&level), PLACEMENT_SAMPLE).await?;
         if items.len() < PLACEMENT_MIN_ITEMS {
-            skipped.push(level);
+            ladder.skipped.push(level);
             continue;
         }
 
@@ -246,15 +312,37 @@ async fn advance(
         user_id,
         attempt_id,
         session_id,
-        level_reached.as_deref(),
+        ladder.level_reached.as_deref(),
     )
     .await?;
-    Ok(PlacementState::Finished(PlacementOutcome {
-        attempt_id,
-        level_reached,
-        tested,
-        skipped,
-    }))
+    Ok(PlacementState::Finished(ladder.into_outcome(attempt_id)))
+}
+
+/// Rebuilds the verdict of a finished run from its answers alone.
+///
+/// A run finishes only once no level it reached could still be tested, so a
+/// level it reached without answering was one whose bank was too thin.
+fn replay_finished(levels: Vec<String>, answered: &[LevelScore]) -> Ladder {
+    let mut ladder = Ladder::default();
+    for level in levels {
+        match answered.iter().find(|score| score.level == level) {
+            Some(score) => {
+                if ladder.record(score) {
+                    break;
+                }
+            }
+            None => ladder.skipped.push(level),
+        }
+    }
+    ladder
+}
+
+async fn level_codes(pool: &PgPool) -> Result<Vec<String>, WisecrowError> {
+    Ok(
+        sqlx::query_scalar::<_, String>("SELECT code FROM cefr_levels ORDER BY sort_order")
+            .fetch_all(pool)
+            .await?,
+    )
 }
 
 async fn level_scores(pool: &PgPool, session_id: Uuid) -> Result<Vec<LevelScore>, WisecrowError> {
@@ -304,4 +392,68 @@ async fn finish(
     .execute(pool)
     .await?;
     GrammarSessionManager::complete(pool, user_id, session_id).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn score(level: &str, passed: bool) -> LevelScore {
+        LevelScore {
+            level: level.to_owned(),
+            correct: if passed { 6 } else { 0 },
+            asked: 6,
+            passed,
+        }
+    }
+
+    fn levels() -> Vec<String> {
+        Vec::from(["A1", "A2", "B1", "B2", "C1", "C2"].map(String::from))
+    }
+
+    #[test]
+    fn a_finished_run_that_passed_nothing_keeps_its_tested_and_skipped_levels() {
+        let outcome = replay_finished(levels(), &[score("A1", false), score("B1", false)])
+            .into_outcome(Uuid::nil());
+
+        assert_eq!(outcome.level_reached, None);
+        assert_eq!(outcome.tested, vec![score("A1", false), score("B1", false)]);
+        assert_eq!(
+            outcome.skipped,
+            vec![String::from("A2")],
+            "the ladder stopped at B1, so nothing above it was skipped"
+        );
+    }
+
+    #[test]
+    fn levels_reached_after_the_last_answer_were_skipped_as_thin() {
+        let outcome = replay_finished(levels(), &[score("A1", true), score("A2", true)])
+            .into_outcome(Uuid::nil());
+
+        assert_eq!(outcome.level_reached.as_deref(), Some("A2"));
+        assert_eq!(outcome.skipped, ["B1", "B2", "C1", "C2"]);
+    }
+
+    #[test]
+    fn a_pass_resets_the_run_of_failures() {
+        let outcome = replay_finished(
+            levels(),
+            &[
+                score("A1", false),
+                score("A2", true),
+                score("B1", false),
+                score("B2", false),
+                score("C1", true),
+            ],
+        )
+        .into_outcome(Uuid::nil());
+
+        assert_eq!(outcome.level_reached.as_deref(), Some("A2"));
+        assert_eq!(
+            outcome.tested.len(),
+            4,
+            "two failures after A2 end the ladder before C1"
+        );
+        assert!(outcome.skipped.is_empty());
+    }
 }

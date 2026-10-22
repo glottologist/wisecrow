@@ -161,6 +161,20 @@ A point that reads badly is edited like any other: export the level with
 `export-grammar`, correct it, and re-import via `import-grammar` -- `manual`
 overrides `pdf` on the next upsert.
 
+## Classify areas and conjugate verbs
+
+After a language's PDF import, three commands prepare practice by area. Each stores one batch, prints how many rows that call wrote, and stops when a call stores nothing.
+
+```sh
+wisecrow classify-rules --lang fr
+wisecrow classify-words --native en --foreign fr
+wisecrow generate-paradigms --native en --foreign fr
+```
+
+`classify-rules` labels a rule `verb`, `preposition`, `pronoun`, `adjective`, `adverb` or `other`. `classify-words` labels frequent forms with those classes. A practice session offers All, Verbs, Prepositions, Pronouns, Adjectives and Adverbs. `other` is kept on the rule and is not one of those choices.
+
+`generate-paradigms` writes one verb at a time. `generate-paradigms --foreign gd` exits with `confirm the Gaelic slot table before generating forms` and writes nothing. Gaelic forms are not generated.
+
 ## Voice the examples
 
 Grammar practice on the web plays the phrase the learner just got right, and

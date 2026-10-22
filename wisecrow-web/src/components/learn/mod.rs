@@ -5,12 +5,14 @@ mod timer;
 
 use dioxus::prelude::*;
 
-use wisecrow_dto::{ReviewRatingDto, SessionDto, SpeedController};
+use wisecrow_dto::{DeckDto, ReviewRatingDto, SessionDto, SpeedController};
 
+use crate::api::decks::list_decks;
 use crate::api::learn::{
     answer_card, complete_session, create_session, pause_session, resume_session,
 };
 use crate::api::media::{get_audio_data, get_image_data};
+use crate::components::area::{requested_area, AreaSelect};
 
 const DEFAULT_DECK_SIZE: u32 = 50;
 const DEFAULT_SPEED_MS: u32 = 3000;
@@ -38,6 +40,42 @@ async fn async_sleep(ms: u64) {
     std::thread::sleep(std::time::Duration::from_millis(ms));
 }
 
+fn chosen_deck(value: &str) -> Option<i32> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        trimmed.parse().ok()
+    }
+}
+
+#[component]
+fn DeckSelect(
+    decks: Vec<DeckDto>,
+    value: Signal<String>,
+    on_pick: EventHandler<Option<i32>>,
+) -> Element {
+    rsx! {
+        label { class: "block space-y-2",
+            span { class: "block text-sm text-gray-400", "Deck" }
+            select {
+                class: "w-full bg-gray-700 rounded-lg px-3 py-3 text-white",
+                value: "{value}",
+                onchange: move |event| {
+                    let chosen = event.value();
+                    let deck_id = chosen_deck(&chosen);
+                    value.set(chosen);
+                    on_pick.call(deck_id);
+                },
+                option { value: "", "All words" }
+                for deck in decks {
+                    option { value: "{deck.id}", "{deck.name}" }
+                }
+            }
+        }
+    }
+}
+
 #[component]
 pub fn LearnPage(native: String, foreign: String) -> Element {
     let mut session: Signal<Option<SessionDto>> = use_signal(|| None);
@@ -47,19 +85,28 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
     let mut speed = use_signal(|| SpeedController::new(DEFAULT_SPEED_MS));
     let mut loading = use_signal(|| true);
     let mut error_msg: Signal<Option<String>> = use_signal(|| None);
+    let area = use_signal(|| String::from("all"));
+    let deck_choice = use_signal(String::new);
+    let mut decks: Signal<Vec<DeckDto>> = use_signal(Vec::new);
     let mut media: Signal<std::collections::HashMap<usize, preload::CardChannels>> =
         use_signal(std::collections::HashMap::new);
 
-    let native_clone = native.clone(); // clone: need owned copies for async closure
-    let foreign_clone = foreign.clone(); // clone: need owned copies for async closure
+    let native_clone = native.clone(); // clone: resume runs while the chooser still owns the props
+    let foreign_clone = foreign.clone(); // clone: resume runs while the chooser still owns the props
+    let pick_native = native.clone(); // clone: a deck change resumes while the page still owns the props
+    let pick_foreign = foreign.clone(); // clone: a deck change resumes while the page still owns the props
 
     use_future(move || {
-        let native = native_clone.clone(); // clone: moving into async block
-        let foreign = foreign_clone.clone(); // clone: moving into async block
+        let native = native_clone.clone(); // clone: the future closure may run again
+        let foreign = foreign_clone.clone(); // clone: the future closure may run again
         async move {
-            let resume_native = native.clone(); // clone: create fallback retains original
-            let resume_foreign = foreign.clone(); // clone: create fallback retains original
-            match resume_session(resume_native, resume_foreign).await {
+            match resume_session(
+                native.clone(),  // clone: the deck list still needs the code
+                foreign.clone(), // clone: the deck list still needs the code
+                None,
+            )
+            .await
+            {
                 Ok(Some(s)) => {
                     let idx = usize::try_from(s.current_index).unwrap_or(0);
                     current_index.set(idx);
@@ -68,18 +115,66 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
                     ));
                     session.set(Some(s));
                 }
-                Ok(None) => {
-                    match create_session(native, foreign, DEFAULT_DECK_SIZE, DEFAULT_SPEED_MS).await
-                    {
-                        Ok(s) => session.set(Some(s)),
-                        Err(e) => error_msg.set(Some(format!("Failed to create session: {e}"))),
-                    }
-                }
+                Ok(None) => {}
                 Err(e) => error_msg.set(Some(format!("Failed to load session: {e}"))),
+            }
+            match list_decks(native, foreign).await {
+                Ok(rows) => decks.set(rows),
+                Err(error) => tracing::error!("Failed to list decks: {error}"),
             }
             loading.set(false);
         }
     });
+
+    let on_pick = move |deck_id: Option<i32>| {
+        let native_code = pick_native.clone(); // clone: each change needs its own copy
+        let foreign_code = pick_foreign.clone(); // clone: each change needs its own copy
+        loading.set(true);
+        error_msg.set(None);
+        spawn(async move {
+            match resume_session(
+                native_code.clone(),  // clone: create still needs the code when nothing is paused
+                foreign_code.clone(), // clone: create still needs the code when nothing is paused
+                deck_id,
+            )
+            .await
+            {
+                Ok(Some(loaded)) => {
+                    let idx = usize::try_from(loaded.current_index).unwrap_or(0);
+                    current_index.set(idx);
+                    speed.set(SpeedController::new(
+                        u32::try_from(loaded.speed_ms).unwrap_or(DEFAULT_SPEED_MS),
+                    ));
+                    flipped.set(false);
+                    session.set(Some(loaded));
+                }
+                Ok(None) => {
+                    match create_session(
+                        native_code,
+                        foreign_code,
+                        DEFAULT_DECK_SIZE,
+                        DEFAULT_SPEED_MS,
+                        None,
+                        deck_id,
+                    )
+                    .await
+                    {
+                        Ok(created) => {
+                            current_index.set(0);
+                            speed.set(SpeedController::new(DEFAULT_SPEED_MS));
+                            flipped.set(false);
+                            session.set(Some(created));
+                        }
+                        Err(error) => {
+                            error_msg.set(Some(format!("Failed to create session: {error}")));
+                        }
+                    }
+                }
+                Err(error) => error_msg.set(Some(format!("Failed to load session: {error}"))),
+            }
+            loading.set(false);
+        });
+    };
 
     use_effect(move || {
         let sess = session();
@@ -146,8 +241,52 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
     }
 
     let Some(sess) = session() else {
+        let native_code = native.clone(); // clone: moved into the async start handler
+        let foreign_code = foreign.clone(); // clone: moved into the async start handler
         return rsx! {
-            div { class: "text-center text-gray-400 text-xl py-20", "No cards available." }
+            div { class: "max-w-lg mx-auto space-y-6",
+                h1 { class: "text-3xl font-bold text-center", "Learn" }
+                AreaSelect { value: area }
+                DeckSelect {
+                    decks: decks(), // clone: the picker takes the list for this render
+                    value: deck_choice,
+                    on_pick,
+                }
+                button {
+                    class: "w-full bg-emerald-600 hover:bg-emerald-500 rounded-xl px-6 py-3 font-semibold transition",
+                    onclick: move |_| {
+                        let native_code = native_code.clone(); // clone: each click needs its own copy
+                        let foreign_code = foreign_code.clone(); // clone: each click needs its own copy
+                        let deck_id = chosen_deck(&deck_choice());
+                        let chosen = if deck_id.is_some() {
+                            None
+                        } else {
+                            requested_area(&area())
+                        };
+                        loading.set(true);
+                        error_msg.set(None);
+                        spawn(async move {
+                            match create_session(
+                                native_code,
+                                foreign_code,
+                                DEFAULT_DECK_SIZE,
+                                DEFAULT_SPEED_MS,
+                                chosen,
+                                deck_id,
+                            )
+                            .await
+                            {
+                                Ok(s) => session.set(Some(s)),
+                                Err(e) => {
+                                    error_msg.set(Some(format!("Failed to create session: {e}")));
+                                }
+                            }
+                            loading.set(false);
+                        });
+                    },
+                    "Start"
+                }
+            }
         };
     };
 
@@ -197,7 +336,15 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
     let retry_index = idx;
 
     rsx! {
-        div { class: "grid grid-cols-1 lg:grid-cols-4 gap-6",
+        div {
+            div { class: "max-w-lg mx-auto mb-6",
+                DeckSelect {
+                    decks: decks(), // clone: the picker takes the list for this render
+                    value: deck_choice,
+                    on_pick,
+                }
+            }
+            div { class: "grid grid-cols-1 lg:grid-cols-4 gap-6",
             div { class: "lg:col-span-3 space-y-4",
                 timer::TimerBar { fraction: timer_fraction }
                 card::CardDisplay {
@@ -275,5 +422,52 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
                 }
             }
         }
+        }
+    }
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::*;
+    use wisecrow_dto::DeckDto;
+
+    #[component]
+    fn picker_fixture() -> Element {
+        let value = use_signal(String::new);
+        let decks = vec![
+            DeckDto {
+                id: 1,
+                name: "Keeper".to_owned(),
+                cards: 0,
+            },
+            DeckDto {
+                id: 2,
+                name: "Sea".to_owned(),
+                cards: 1,
+            },
+        ];
+        rsx! {
+            DeckSelect {
+                decks,
+                value,
+                on_pick: move |_| {},
+            }
+        }
+    }
+
+    fn at(html: &str, needle: &str) -> usize {
+        html.find(needle)
+            .unwrap_or_else(|| panic!("missing {needle} in {html}"))
+    }
+
+    #[test]
+    fn deck_picker_lists_all_words_then_the_users_decks() {
+        let mut dom = VirtualDom::new(picker_fixture);
+        dom.rebuild_in_place();
+        let html = dioxus::ssr::render(&dom);
+        let all = at(&html, "All words");
+        let keeper = at(&html, "Keeper");
+        let sea = at(&html, "Sea");
+        assert!(all < keeper && keeper < sea);
     }
 }

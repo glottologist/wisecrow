@@ -6,7 +6,6 @@ use wisecrow_dto::{ReviewEventDto, ReviewRatingDto};
 use crate::errors::WisecrowError;
 use crate::srs::reviews::{ReviewLedger, ReviewSource};
 use crate::srs::scheduler::{CardManager, CardState, ReviewRating};
-use crate::vocabulary::VocabularyQuery;
 
 /// Largest deck accepted by normal and passive learning sessions.
 pub use wisecrow_dto::MAX_DECK_SIZE;
@@ -34,7 +33,36 @@ pub struct Session {
     pub deck_size: i32,
     pub speed_ms: i32,
     pub current_index: i32,
+    pub deck_id: Option<i32>,
     pub cards: Vec<CardState>,
+}
+
+fn practice_area(
+    area: Option<crate::grammar::areas::Area>,
+) -> Result<Option<&'static str>, WisecrowError> {
+    match area {
+        None => Ok(None),
+        Some(crate::grammar::areas::Area::Other) => Err(WisecrowError::InvalidInput(
+            "other is not a practice area".into(),
+        )),
+        Some(area) => Ok(Some(area.as_str())),
+    }
+}
+
+/// Area practice and a named deck. Setting both is rejected.
+pub struct SessionChoice {
+    pub area: Option<crate::grammar::areas::Area>,
+    pub deck_id: Option<i32>,
+}
+
+struct NewSession<'a> {
+    user_id: i32,
+    native_lang: &'a str,
+    foreign_lang: &'a str,
+    deck_size: i32,
+    speed_ms: i32,
+    area: Option<&'a str>,
+    deck_id: Option<i32>,
 }
 
 pub struct SessionManager;
@@ -42,10 +70,12 @@ pub struct SessionManager;
 impl SessionManager {
     /// Creates a new learning session. Selects due cards first, then fills
     /// remaining slots with new unlearned vocabulary ordered by frequency.
+    /// A deck draws only from that deck and does not rank the corpus.
     ///
     /// # Errors
     ///
-    /// Returns an error if the database operations fail.
+    /// Returns an error if the database operations fail, the deck belongs to
+    /// someone else, or both a deck and an area are set.
     pub async fn create(
         pool: &PgPool,
         user_id: i32,
@@ -53,19 +83,43 @@ impl SessionManager {
         foreign_lang: &str,
         deck_size: u32,
         speed_ms: u32,
+        choice: SessionChoice,
     ) -> Result<Session, WisecrowError> {
         validate_deck_size(deck_size)?;
-        let cards = Self::build_cards(pool, user_id, native_lang, foreign_lang, deck_size).await?;
+        let SessionChoice { area, deck_id } = choice;
+        if area.is_some() && deck_id.is_some() {
+            return Err(WisecrowError::InvalidInput(
+                "a session cannot be both a deck and an area".into(),
+            ));
+        }
+        if let Some(deck_id) = deck_id {
+            Self::require_deck_owner(pool, user_id, deck_id).await?;
+        }
+        let stored_area = practice_area(area)?;
+        let cards = Self::build_cards(
+            pool,
+            user_id,
+            native_lang,
+            foreign_lang,
+            deck_size,
+            area,
+            deck_id,
+        )
+        .await?;
         let stored_deck_size = i32::try_from(cards.len())
             .map_err(|_| WisecrowError::InvalidInput("session deck is too large".into()))?;
         let stored_speed = i32::try_from(speed_ms).unwrap_or(i32::MAX);
         let session_id = Self::insert_session(
             pool,
-            user_id,
-            native_lang,
-            foreign_lang,
-            stored_deck_size,
-            stored_speed,
+            NewSession {
+                user_id,
+                native_lang,
+                foreign_lang,
+                deck_size: stored_deck_size,
+                speed_ms: stored_speed,
+                area: stored_area,
+                deck_id,
+            },
         )
         .await?;
         Self::insert_session_cards(pool, session_id, &cards).await?;
@@ -77,6 +131,7 @@ impl SessionManager {
             deck_size: stored_deck_size,
             speed_ms: stored_speed,
             current_index: 0,
+            deck_id,
             cards,
         })
     }
@@ -87,21 +142,39 @@ impl SessionManager {
         native_lang: &str,
         foreign_lang: &str,
         deck_size: u32,
+        area: Option<crate::grammar::areas::Area>,
+        deck_id: Option<i32>,
     ) -> Result<Vec<CardState>, WisecrowError> {
-        let mut cards =
-            CardManager::due_cards(pool, native_lang, foreign_lang, user_id, deck_size).await?;
+        let filter = match deck_id {
+            Some(id) => crate::decks::DeckFilter::Only(id),
+            None => crate::decks::DeckFilter::All,
+        };
+        let mut cards = CardManager::due_cards(
+            pool,
+            native_lang,
+            foreign_lang,
+            user_id,
+            deck_size,
+            area.map(crate::grammar::areas::Area::as_str),
+            filter,
+        )
+        .await?;
         let due_count = u32::try_from(cards.len())
             .map_err(|_| WisecrowError::InvalidInput("too many due cards".into()))?;
         if due_count >= deck_size {
             return Ok(cards);
         }
         let remaining = deck_size - due_count;
-        let unlearned = Self::select_unlearned(pool, native_lang, foreign_lang, remaining).await?;
-        if unlearned.is_empty() {
+        let translation_ids = if let Some(deck_id) = deck_id {
+            Self::unlearned_deck_cards(pool, deck_id, user_id, remaining).await?
+        } else {
+            let unlearned =
+                Self::select_unlearned(pool, native_lang, foreign_lang, remaining, area).await?;
+            unlearned.iter().map(|entry| entry.translation_id).collect()
+        };
+        if translation_ids.is_empty() {
             return Ok(cards);
         }
-        let translation_ids: Vec<i32> =
-            unlearned.iter().map(|entry| entry.translation_id).collect();
         CardManager::ensure_cards(pool, &translation_ids, user_id).await?;
         let new_cards =
             CardManager::cards_for_translation_ids(pool, user_id, &translation_ids).await?;
@@ -114,47 +187,90 @@ impl SessionManager {
         native_lang: &str,
         foreign_lang: &str,
         remaining: u32,
+        area: Option<crate::grammar::areas::Area>,
     ) -> Result<Vec<crate::vocabulary::VocabularyEntry>, WisecrowError> {
-        let words = VocabularyQuery::ranked_candidates(
-            pool,
-            native_lang,
-            foreign_lang,
-            remaining,
-            crate::vocabulary::IncludeCarded::No,
-            crate::vocabulary::PhraseFilter::Exclude,
-        )
-        .await?;
-        let phrases = VocabularyQuery::ranked_candidates(
-            pool,
-            native_lang,
-            foreign_lang,
-            remaining / 5,
-            crate::vocabulary::IncludeCarded::No,
-            crate::vocabulary::PhraseFilter::Only,
-        )
-        .await?;
-        let size = usize::try_from(remaining)
-            .map_err(|_| WisecrowError::InvalidInput("remaining deck is too large".into()))?;
-        Ok(crate::vocabulary::interleave_deck(words, phrases, size))
+        use crate::grammar::areas::Area;
+        use crate::vocabulary::{AreaFilter, IncludeCarded, PhraseFilter, VocabularyQuery};
+        match area {
+            Some(Area::Verb) => {
+                let slots = crate::grammar::paradigms::slots_for(foreign_lang)?;
+                let order: Vec<&str> = slots.iter().map(|slot| slot.id).collect();
+                VocabularyQuery::verb_form_candidates(
+                    pool,
+                    native_lang,
+                    foreign_lang,
+                    remaining,
+                    IncludeCarded::No,
+                    &order,
+                )
+                .await
+            }
+            Some(Area::Other) => Err(WisecrowError::InvalidInput(
+                "other is not a practice area".into(),
+            )),
+            Some(area) => {
+                let filter = match area {
+                    Area::Preposition => AreaFilter::Preposition,
+                    Area::Pronoun => AreaFilter::Pronoun,
+                    Area::Adjective => AreaFilter::Adjective,
+                    Area::Adverb => AreaFilter::Adverb,
+                    Area::Verb | Area::Other => {
+                        return Err(WisecrowError::InvalidInput(
+                            "other is not a practice area".into(),
+                        ));
+                    }
+                };
+                VocabularyQuery::ranked_area_candidates(
+                    pool,
+                    native_lang,
+                    foreign_lang,
+                    remaining,
+                    IncludeCarded::No,
+                    PhraseFilter::Exclude,
+                    filter,
+                )
+                .await
+            }
+            None => {
+                let words = VocabularyQuery::ranked_candidates(
+                    pool,
+                    native_lang,
+                    foreign_lang,
+                    remaining,
+                    IncludeCarded::No,
+                    PhraseFilter::Exclude,
+                )
+                .await?;
+                let phrases = VocabularyQuery::ranked_candidates(
+                    pool,
+                    native_lang,
+                    foreign_lang,
+                    remaining / 5,
+                    IncludeCarded::No,
+                    PhraseFilter::Only,
+                )
+                .await?;
+                let size = usize::try_from(remaining).map_err(|_| {
+                    WisecrowError::InvalidInput("remaining deck is too large".into())
+                })?;
+                Ok(crate::vocabulary::interleave_deck(words, phrases, size))
+            }
+        }
     }
 
-    async fn insert_session(
-        pool: &PgPool,
-        user_id: i32,
-        native_lang: &str,
-        foreign_lang: &str,
-        deck_size: i32,
-        speed_ms: i32,
-    ) -> Result<i32, WisecrowError> {
+    async fn insert_session(pool: &PgPool, session: NewSession<'_>) -> Result<i32, WisecrowError> {
         Ok(sqlx::query_scalar(
-            "INSERT INTO sessions (user_id, native_lang, foreign_lang, deck_size, speed_ms)
-             VALUES ($1, $2, $3, $4, $5) RETURNING id",
+            "INSERT INTO sessions
+                 (user_id, native_lang, foreign_lang, deck_size, speed_ms, area, deck_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
         )
-        .bind(user_id)
-        .bind(native_lang)
-        .bind(foreign_lang)
-        .bind(deck_size)
-        .bind(speed_ms)
+        .bind(session.user_id)
+        .bind(session.native_lang)
+        .bind(session.foreign_lang)
+        .bind(session.deck_size)
+        .bind(session.speed_ms)
+        .bind(session.area)
+        .bind(session.deck_id)
         .fetch_one(pool)
         .await?)
     }
@@ -188,17 +304,21 @@ impl SessionManager {
         user_id: i32,
         native_lang: &str,
         foreign_lang: &str,
-    ) -> Result<Option<(i32, i32, i32)>, WisecrowError> {
+        deck_id: Option<i32>,
+    ) -> Result<Option<(i32, i32, i32, Option<i32>)>, WisecrowError> {
         Ok(sqlx::query_as(
-            "SELECT id, deck_size, speed_ms
+            "SELECT id, deck_size, speed_ms, deck_id
              FROM sessions
              WHERE native_lang = $1 AND foreign_lang = $2 AND user_id = $3
                AND completed_at IS NULL AND paused_at IS NOT NULL
+               AND deck_id IS NOT DISTINCT FROM $4
+               AND area IS NULL
              ORDER BY paused_at DESC LIMIT 1",
         )
         .bind(native_lang)
         .bind(foreign_lang)
         .bind(user_id)
+        .bind(deck_id)
         .fetch_optional(pool)
         .await?)
     }
@@ -213,10 +333,12 @@ impl SessionManager {
         user_id: i32,
         native_lang: &str,
         foreign_lang: &str,
+        deck_id: Option<i32>,
     ) -> Result<Option<Session>, WisecrowError> {
-        let row = Self::latest_paused_session(pool, user_id, native_lang, foreign_lang).await?;
+        let row =
+            Self::latest_paused_session(pool, user_id, native_lang, foreign_lang, deck_id).await?;
 
-        let Some((session_id, deck_size, speed_ms)) = row else {
+        let Some((session_id, deck_size, speed_ms, stored_deck)) = row else {
             return Ok(None);
         };
 
@@ -245,8 +367,48 @@ impl SessionManager {
             deck_size,
             speed_ms,
             current_index,
+            deck_id: stored_deck,
             cards,
         }))
+    }
+
+    async fn require_deck_owner(
+        pool: &PgPool,
+        user_id: i32,
+        deck_id: i32,
+    ) -> Result<(), WisecrowError> {
+        let owner: Option<i32> = sqlx::query_scalar("SELECT user_id FROM decks WHERE id = $1")
+            .bind(deck_id)
+            .fetch_optional(pool)
+            .await?;
+        if owner != Some(user_id) {
+            return Err(WisecrowError::InvalidInput("that deck is not yours".into()));
+        }
+        Ok(())
+    }
+
+    async fn unlearned_deck_cards(
+        pool: &PgPool,
+        deck_id: i32,
+        user_id: i32,
+        remaining: u32,
+    ) -> Result<Vec<i32>, WisecrowError> {
+        Ok(sqlx::query_scalar(
+            "SELECT dc.translation_id
+             FROM deck_cards dc
+             WHERE dc.deck_id = $1
+               AND NOT EXISTS (
+                   SELECT 1 FROM cards c
+                   WHERE c.translation_id = dc.translation_id AND c.user_id = $2
+               )
+             ORDER BY dc.added_at, dc.translation_id
+             LIMIT $3",
+        )
+        .bind(deck_id)
+        .bind(user_id)
+        .bind(i64::from(remaining))
+        .fetch_all(pool)
+        .await?)
     }
 
     /// Pauses an active session, recording the current position.
@@ -411,7 +573,19 @@ mod tests {
         let pool = PgPoolOptions::new()
             .connect_lazy("postgres://wisecrow:wisecrow@127.0.0.1:1/unreachable")
             .expect("lazy pool");
-        let result = SessionManager::create(&pool, 1, "en", "fr", size, 1_000).await;
+        let result = SessionManager::create(
+            &pool,
+            1,
+            "en",
+            "fr",
+            size,
+            1_000,
+            SessionChoice {
+                area: None,
+                deck_id: None,
+            },
+        )
+        .await;
         assert!(matches!(result, Err(WisecrowError::InvalidInput(_))));
     }
 }

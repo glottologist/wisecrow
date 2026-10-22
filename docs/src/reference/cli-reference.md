@@ -1,6 +1,6 @@
 # CLI reference
 
-The `wisecrow` binary ships with thirty-six subcommands. Most have a short alias
+The `wisecrow` binary ships with forty subcommands. Most have a short alias
 (in parentheses below) for shell ergonomics.
 
 ## Synopsis
@@ -22,6 +22,10 @@ list.
 | [`frequency`](#frequency) | `fr` | yes | Rank stored translations from a word-frequency list. |
 | [`prepare-corpus`](#prepare-corpus) | — | yes | Unsettled archives, stale ranks, one phrase mine, then gloss, phrase speech, or word audio. |
 | [`grammar-status`](#grammar-status) | — | yes | Report whether grammar import or example audio is still unfinished. |
+| [`prepare-readers`](#prepare-readers) | — | yes + LLM | Store, translate, gloss, or voice one piece of a cleared reader. |
+| [`reader-status`](#reader-status) | — | yes | Report unfinished reader work and runs that failed twice. |
+| [`check-reader-pdf`](#check-reader-pdf) | — | no | Report whether a reader PDF has a usable text layer. |
+| [`classify-rules`](#practice-areas) | — | yes + LLM | Label rules and words, then store verb paradigms. Refuses Gaelic paradigms. |
 | [`learn`](#learn) | `r` | yes | Open the SRS flashcard TUI. |
 | [`nback`](#nback) | `nb` | yes | Run an adaptive dual n-back session. |
 | [`list-languages`](#list-languages) | `l` | no | Print the supported-language table. |
@@ -230,6 +234,82 @@ progress row for an older file hash or importer version does not count.
 |------|--------:|-------------|
 | `--config` | `deploy/language-pairs.toml` | Pair file whose foreign languages are checked. |
 | `--shelf` | `/app/grammar` | Grammar shelf whose `SOURCES.md` is the schedule. |
+
+---
+
+## `prepare-readers`
+
+```sh
+wisecrow prepare-readers [--config PATH] [--shelf PATH]
+```
+
+Does one piece of reader work and prints `worked` or `idle`. The order is
+fixed: store one cleared book, else translate one run, else gloss one batch,
+else voice one sentence batch, else voice one word batch. A ledger row is
+cleared only when its `Translate` cell reads `yes`. There is no --force.
+A run the model refuses twice is recorded and not retried. When the model
+cannot be reached the command exits 75 and does not move the cursor.
+
+| Flag | Default | Description |
+|------|--------:|-------------|
+| `--config` | `deploy/language-pairs.toml` | Pair file. |
+| `--shelf` | `/app/readers` | Reader shelf whose `SOURCES.md` is the ledger. |
+
+---
+
+## `reader-status`
+
+```sh
+wisecrow reader-status [--config PATH] [--shelf PATH]
+```
+
+Prints `failed`, the file, the language code, and the run starts for every
+import that failed twice, then `work` or `idle`. Exits 10 when work remains
+and 0 when the shelf is idle. It does not call a model. A failed run by
+itself is not more work.
+
+| Flag | Default | Description |
+|------|--------:|-------------|
+| `--config` | `deploy/language-pairs.toml` | Pair file whose books are checked. |
+| `--shelf` | `/app/readers` | Reader shelf whose `SOURCES.md` is the ledger. |
+
+---
+
+## `check-reader-pdf`
+
+```sh
+wisecrow check-reader-pdf --file PATH [--file PATH...]
+```
+
+Prints the path, the characters per page, and `ok` or `thin`. A thin file
+has no text layer dense enough to segment. The command does not read the
+ledger and does not write to the database.
+
+| Flag | Default | Description |
+|------|--------:|-------------|
+| `--file` | — | PDF to measure. Repeat the flag for several files. |
+
+---
+
+## Practice areas
+
+```sh
+wisecrow classify-rules --lang <CODE>
+wisecrow classify-words --native <CODE> --foreign <CODE>
+wisecrow generate-paradigms --native <CODE> --foreign <CODE>
+```
+
+Each command stores one batch and prints how many rows that call wrote, then repeats. It stops when a call stores nothing.
+
+`classify-rules` sets `grammar_rules.area` to `verb`, `preposition`, `pronoun`, `adjective`, `adverb` or `other`. `classify-words` stores the same classes on frequent forms. A practice session offers All, Verbs, Prepositions, Pronouns, Adjectives and Adverbs. `other` stays on the rule and is not a session choice.
+
+`generate-paradigms` writes one verb's forms, with a native face such as `we go · present`. `generate-paradigms --foreign gd` exits with `confirm the Gaelic slot table before generating forms` and writes nothing.
+
+| Flag | Default | Description |
+|------|--------:|-------------|
+| `--lang` | _required_ | Foreign language for `classify-rules`. |
+| `--native` | _required_ | Language the learner already speaks. |
+| `--foreign` | _required_ | Language being classified or conjugated. |
 
 ---
 

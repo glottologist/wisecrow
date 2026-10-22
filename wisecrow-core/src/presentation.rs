@@ -39,11 +39,13 @@ impl PresentationRepository {
     ) -> Result<Option<PresentedTranslation>, WisecrowError> {
         let presentation = sqlx::query_as::<_, PresentedTranslation>(
             "SELECT translation_id, from_phrase, to_phrase, native_lang, foreign_lang,
-                    teachable, image_query, is_phrase, presentation_version
+                    teachable, image_query, is_phrase,
+                    CASE WHEN owner IS NOT NULL THEN $2 ELSE presentation_version END
              FROM translation_presentations
              WHERE translation_id = $1",
         )
         .bind(translation_id)
+        .bind(CURRENT_PRESENTATION_VERSION)
         .fetch_optional(pool)
         .await?;
         Ok(presentation)
@@ -72,7 +74,8 @@ impl PresentationRepository {
             .await?;
         let rows = sqlx::query_as::<_, PresentedTranslation>(
             "SELECT p.translation_id, p.from_phrase, p.to_phrase, p.native_lang, p.foreign_lang,
-                    p.teachable, p.image_query, p.is_phrase, p.presentation_version
+                    p.teachable, p.image_query, p.is_phrase,
+                    CASE WHEN p.owner IS NOT NULL THEN $4 ELSE p.presentation_version END
              FROM unnest($1::INTEGER[]) WITH ORDINALITY AS requested(id, position)
              JOIN translation_presentations p ON p.translation_id = requested.id
              WHERE p.native_lang = $2 AND p.foreign_lang = $3
@@ -81,6 +84,7 @@ impl PresentationRepository {
         .bind(ids)
         .bind(native_lang)
         .bind(foreign_lang)
+        .bind(CURRENT_PRESENTATION_VERSION)
         .fetch_all(&mut *transaction)
         .await?;
         if rows.len() != ids.len() {

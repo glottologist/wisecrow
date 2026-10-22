@@ -697,6 +697,7 @@ mod gloss_state_tests {
             deck_size: 1,
             speed_ms: 3000,
             current_index: 0,
+            deck_id: None,
             cards: vec![CardState {
                 card_id: 1,
                 translation_id: 1,

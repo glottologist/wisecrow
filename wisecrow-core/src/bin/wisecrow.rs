@@ -12,14 +12,16 @@ use tokio::{
 use tracing::{error, info, warn};
 use wisecrow::{
     cli::{
-        is_supported_language, CheckPdfArgs, Cli, Command, DownloadAllArgs, EnsureSyllabusArgs,
-        ExportGrammarArgs, ExtractPhrasesArgs, ExtractWordsArgs, FrequencyArgs,
-        GenerateExercisesArgs, GenerateItemsArgs, GlossArgs, GlossDeckArgs, GradedReaderArgs,
+        is_supported_language, CheckPdfArgs, CheckReaderPdfArgs, ClassifyRulesArgs,
+        ClassifyWordsArgs, Cli, Command, DownloadAllArgs, EnsureSyllabusArgs, ExportGrammarArgs,
+        ExtractPhrasesArgs, ExtractWordsArgs, FrequencyArgs, GenerateExercisesArgs,
+        GenerateItemsArgs, GenerateParadigmsArgs, GlossArgs, GlossDeckArgs, GradedReaderArgs,
         GradedReaderFormat, GrammarStatusArgs, ImportGrammarArgs, ImportPdfArgs, IngestArgs,
         LanguageArgs, LearnArgs, NbackArgs, PrefetchGrammarAudioArgs, PrefetchMediaArgs,
-        PrepareCorpusArgs, PreviewArgs, PromoteItemsArgs, PromoteMode, PromoteWordsArgs, PruneArgs,
-        QuizArgs, RefreshSyllabusArgs, ScoreSentencesArgs, SeedGrammarArgs, SentenceCardArgs,
-        SyncArgs, SyncClientCmd, TranslatePhrasesArgs, UserCmd, SUPPORTED_LANGUAGE_INFO,
+        PrepareCorpusArgs, PrepareReadersArgs, PreviewArgs, PromoteItemsArgs, PromoteMode,
+        PromoteWordsArgs, PruneArgs, QuizArgs, ReaderStatusArgs, RefreshSyllabusArgs,
+        ScoreSentencesArgs, SeedGrammarArgs, SentenceCardArgs, SyncArgs, SyncClientCmd,
+        TranslatePhrasesArgs, UserCmd, SUPPORTED_LANGUAGE_INFO,
     },
     config::Config,
     downloader::DownloadConfig,
@@ -1540,13 +1542,16 @@ const EXIT_GRAMMAR_PENDING: u8 = 10;
 enum Finish {
     Done,
     GrammarPending,
+    ReaderPending,
 }
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
     match run().await {
         Ok(Finish::Done) => std::process::ExitCode::SUCCESS,
-        Ok(Finish::GrammarPending) => std::process::ExitCode::from(EXIT_GRAMMAR_PENDING),
+        Ok(Finish::GrammarPending | Finish::ReaderPending) => {
+            std::process::ExitCode::from(EXIT_GRAMMAR_PENDING)
+        }
         Err(error) => {
             eprintln!("Error: {error:?}");
             if matches!(
@@ -1578,6 +1583,7 @@ async fn run() -> Result<Finish, Error> {
         Command::ImportGrammar(args) => handle_import_grammar(args).await?,
         Command::ImportPdf(args) => handle_import_pdf(args).await?,
         Command::CheckPdf(args) => handle_check_pdf(&args)?,
+        Command::CheckReaderPdf(args) => handle_check_reader_pdf(&args)?,
         Command::Ingest(args) => handle_ingest(args).await?,
         Command::Learn(args) => handle_learn(args).await?,
         Command::Nback(args) => handle_nback(args).await?,
@@ -1591,11 +1597,20 @@ async fn run() -> Result<Finish, Error> {
         Command::PrefetchMedia(args) => handle_prefetch_media(args).await?,
         Command::PrefetchGrammarAudio(args) => handle_prefetch_grammar_audio(args).await?,
         Command::PrepareCorpus(args) => handle_prepare_corpus(args).await?,
+        Command::PrepareReaders(args) => handle_prepare_readers(args).await?,
         Command::GrammarStatus(args) => {
             if handle_grammar_status(args).await? {
                 return Ok(Finish::GrammarPending);
             }
         }
+        Command::ReaderStatus(args) => {
+            if handle_reader_status(args).await? {
+                return Ok(Finish::ReaderPending);
+            }
+        }
+        Command::ClassifyRules(args) => handle_classify_rules(args).await?,
+        Command::ClassifyWords(args) => handle_classify_words(args).await?,
+        Command::GenerateParadigms(args) => handle_generate_paradigms(args).await?,
         Command::ExtractPhrases(args) => handle_extract_phrases(args).await?,
         Command::TranslatePhrases(args) => handle_translate_phrases(args).await?,
         Command::ExtractWords(args) => handle_extract_words(args).await?,
@@ -1619,6 +1634,82 @@ async fn run() -> Result<Finish, Error> {
     Ok(Finish::Done)
 }
 
+async fn handle_prepare_readers(args: PrepareReadersArgs) -> Result<(), Error> {
+    use wisecrow::pipeline::{prepare_reader_step, CorpusStep};
+
+    let (config, pool) = load_config_and_pool().await?;
+    let pairs = wisecrow::pipeline::load_pairs(std::path::Path::new(&args.config))?;
+    let provider = wisecrow::llm::create_provider(&config)?;
+    let model = wisecrow::llm::cache::CachedLlm::new(provider.as_ref(), Some(&pool));
+    let shelf = std::path::Path::new(&args.shelf);
+    #[cfg(feature = "tts")]
+    let speaker = wisecrow::media::grammar_audio::TtsSpeaker::new(
+        wisecrow::media::cereproc::CereprocClient::from_config(&config),
+    );
+    #[cfg(feature = "tts")]
+    let speaker = Some(&speaker as &dyn wisecrow::media::grammar_audio::SentenceSpeaker);
+    #[cfg(not(feature = "tts"))]
+    let speaker: Option<&dyn wisecrow::media::grammar_audio::SentenceSpeaker> = None;
+    match prepare_reader_step(&pool, shelf, &pairs, &model, speaker).await? {
+        CorpusStep::Worked => println!("worked"),
+        CorpusStep::Idle => println!("idle"),
+        CorpusStep::Retry => println!("retry"),
+    }
+    Ok(())
+}
+
+async fn handle_reader_status(args: ReaderStatusArgs) -> Result<bool, Error> {
+    let (_config, pool) = load_config_and_pool().await?;
+    let pairs = wisecrow::pipeline::load_pairs(std::path::Path::new(&args.config))?;
+    let failed: Vec<(String, String, Vec<i32>)> = sqlx::query_as(
+        "SELECT b.file, l.code, p.failed_runs
+         FROM book_import_progress p
+         JOIN books b ON b.id = p.book_id
+         JOIN languages l ON l.id = p.language_id
+         WHERE cardinality(p.failed_runs) > 0
+         ORDER BY b.file, l.code",
+    )
+    .fetch_all(&pool)
+    .await?;
+    for (file, code, starts) in &failed {
+        let listed = starts
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        println!("failed {file} {code} {listed}");
+    }
+    let work = wisecrow::pipeline::reader_has_work(
+        &pool,
+        std::path::Path::new(&args.shelf),
+        &pairs,
+        cfg!(feature = "tts"),
+    )
+    .await?;
+    if work {
+        println!("work");
+    } else {
+        println!("idle");
+    }
+    Ok(work)
+}
+
+fn handle_check_reader_pdf(args: &CheckReaderPdfArgs) -> Result<(), Error> {
+    use wisecrow::grammar::pdf_text::{density, layout_pages, MIN_CHARS_PER_PAGE};
+
+    for file in &args.file {
+        let pages = layout_pages(std::path::Path::new(file))?;
+        let chars = density(&pages);
+        let verdict = if chars < MIN_CHARS_PER_PAGE {
+            "thin"
+        } else {
+            "ok"
+        };
+        println!("{file} {chars} {verdict}");
+    }
+    Ok(())
+}
+
 async fn handle_prepare_corpus(args: PrepareCorpusArgs) -> Result<(), Error> {
     use wisecrow::pipeline::{prepare_one_step, CorpusStep};
 
@@ -1632,9 +1723,67 @@ async fn handle_prepare_corpus(args: PrepareCorpusArgs) -> Result<(), Error> {
     Ok(())
 }
 
+async fn handle_classify_rules(args: ClassifyRulesArgs) -> Result<(), Error> {
+    let (config, pool) = load_config_and_pool().await?;
+    let provider = wisecrow::llm::create_provider(&config)?;
+    let model = wisecrow::llm::cache::CachedLlm::new(provider.as_ref(), Some(&pool));
+    loop {
+        let stored = wisecrow::grammar::areas::classify_rules(&pool, &model, &args.lang).await?;
+        println!("{stored}");
+        if stored == 0 {
+            break;
+        }
+    }
+    Ok(())
+}
+
+async fn handle_classify_words(args: ClassifyWordsArgs) -> Result<(), Error> {
+    let (config, pool) = load_config_and_pool().await?;
+    let provider = wisecrow::llm::create_provider(&config)?;
+    let model = wisecrow::llm::cache::CachedLlm::new(provider.as_ref(), Some(&pool));
+    loop {
+        let stored =
+            wisecrow::words::classes::classify_words(&pool, &model, &args.native, &args.foreign)
+                .await?;
+        println!("{stored}");
+        if stored == 0 {
+            break;
+        }
+    }
+    Ok(())
+}
+
+async fn handle_generate_paradigms(args: GenerateParadigmsArgs) -> Result<(), Error> {
+    if args.foreign == "gd" {
+        return Err(WisecrowError::InvalidInput(
+            "confirm the Gaelic slot table before generating forms".into(),
+        )
+        .into());
+    }
+    let (config, pool) = load_config_and_pool().await?;
+    let provider = wisecrow::llm::create_provider(&config)?;
+    let model = wisecrow::llm::cache::CachedLlm::new(provider.as_ref(), Some(&pool));
+    loop {
+        let stored = wisecrow::grammar::paradigms::generate_paradigms(
+            &pool,
+            &model,
+            &args.native,
+            &args.foreign,
+        )
+        .await?;
+        println!("{stored}");
+        if stored == 0 {
+            break;
+        }
+    }
+    Ok(())
+}
+
 async fn handle_grammar_status(args: GrammarStatusArgs) -> Result<bool, Error> {
     use wisecrow::media::cache::MediaCache;
-    use wisecrow::pipeline::{grammar_audio_idle, grammar_import_idle, load_pairs};
+    use wisecrow::pipeline::{
+        grammar_areas_idle, grammar_audio_idle, grammar_import_idle, load_pairs,
+    };
 
     let (config, pool) = load_config_and_pool().await?;
     let pairs = load_pairs(std::path::Path::new(&args.config))?;
@@ -1653,7 +1802,8 @@ async fn handle_grammar_status(args: GrammarStatusArgs) -> Result<bool, Error> {
         let audio_idle = grammar_audio_idle(&pool, &pair.foreign, &cache, Some(&speaker)).await?;
         #[cfg(not(feature = "tts"))]
         let audio_idle = grammar_audio_idle(&pool, &pair.foreign, &cache, None).await?;
-        if !import_idle || !audio_idle {
+        let areas_idle = grammar_areas_idle(&pool, &pair.native, &pair.foreign).await?;
+        if !import_idle || !audio_idle || !areas_idle {
             pending.push(pair.foreign.as_str());
         }
     }
@@ -2075,8 +2225,14 @@ async fn resolve_learn_session(
     pool: &PgPool,
     args: &LearnArgs,
 ) -> Result<wisecrow::srs::session::Session, WisecrowError> {
-    if let Some(session) =
-        SessionManager::resume(pool, args.user_id, &args.native_lang, &args.foreign_lang).await?
+    if let Some(session) = SessionManager::resume(
+        pool,
+        args.user_id,
+        &args.native_lang,
+        &args.foreign_lang,
+        None,
+    )
+    .await?
     {
         info!(
             "Resuming session {} at card {}/{}",
@@ -2097,6 +2253,10 @@ async fn resolve_learn_session(
             &args.foreign_lang,
             args.deck_size,
             args.speed_ms,
+            wisecrow::srs::session::SessionChoice {
+                area: None,
+                deck_id: None,
+            },
         )
         .await
     }

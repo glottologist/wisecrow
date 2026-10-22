@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 
+use crate::components::dashboard::DashboardPage;
 use crate::components::fast::FastPage;
 use crate::components::grammar::{BrainmapPage, GrammarPage, PlacementPage};
 use crate::components::home::Home;
@@ -8,6 +9,7 @@ use crate::components::learn::LearnPage;
 use crate::components::login::LoginPage;
 use crate::components::nback::NbackPage;
 use crate::components::not_found::NotFound;
+use crate::components::reader::{LibraryPage, ReaderPage};
 
 #[derive(Clone, Routable, Debug, PartialEq, Eq)]
 #[rustfmt::skip]
@@ -32,6 +34,12 @@ pub enum Route {
         BrainmapPage { native: String, foreign: String },
         #[route("/grammar/:native/:foreign")]
         GrammarPage { native: String, foreign: String },
+        #[route("/dashboard")]
+        DashboardPage {},
+        #[route("/read/:native/:foreign")]
+        LibraryPage { native: String, foreign: String },
+        #[route("/read/:native/:foreign/:book")]
+        ReaderPage { native: String, foreign: String, book: i32 },
         // Must stay last: the router tries variants in order and this matches
         // anything. Inside the layout so a wrong URL keeps the site's chrome
         // rather than dropping the reader onto a bare page.
@@ -71,6 +79,41 @@ mod tests {
             Route::BrainmapPage {
                 native: String::from("en"),
                 foreign: String::from("es"),
+            }
+        );
+    }
+
+    #[test]
+    fn the_dashboard_has_a_route_of_its_own() {
+        assert_eq!(parse("/dashboard"), Route::DashboardPage {});
+    }
+
+    #[test]
+    fn read_routes_parse_a_library_and_a_numeric_book() {
+        assert_eq!(
+            parse("/read/en/es"),
+            Route::LibraryPage {
+                native: String::from("en"),
+                foreign: String::from("es"),
+            }
+        );
+        assert_eq!(
+            parse("/read/en/es/4"),
+            Route::ReaderPage {
+                native: String::from("en"),
+                foreign: String::from("es"),
+                book: 4,
+            }
+        );
+        assert_eq!(
+            parse("/read/en/es/nope"),
+            Route::NotFound {
+                segments: vec![
+                    String::from("read"),
+                    String::from("en"),
+                    String::from("es"),
+                    String::from("nope"),
+                ],
             }
         );
     }

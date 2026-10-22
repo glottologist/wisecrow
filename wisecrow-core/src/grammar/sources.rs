@@ -291,26 +291,15 @@ fn find_record(document: &Path) -> Option<(PathBuf, String)> {
 #[must_use]
 pub fn entries(markdown: &str) -> Vec<SourceEntry> {
     let mut found = Vec::new();
-    let mut columns: Option<Columns> = None;
-
-    for line in markdown.lines() {
-        let Some(cells) = table_cells(line) else {
-            columns = None;
+    for table in crate::markdown_table::tables(markdown) {
+        // The record has always taken the first line naming `File` as the
+        // header, so a table whose opening line lacks one keeps looking.
+        let mut lines = std::iter::once(&table.header).chain(table.rows.iter());
+        let Some(layout) = lines.by_ref().find_map(|cells| Columns::from_header(cells)) else {
             continue;
         };
-        if is_separator(&cells) {
-            continue;
-        }
-        match columns {
-            None => columns = Columns::from_header(&cells),
-            Some(ref layout) => {
-                if let Some(entry) = layout.entry(&cells) {
-                    found.push(entry);
-                }
-            }
-        }
+        found.extend(lines.filter_map(|cells| layout.entry(cells)));
     }
-
     found
 }
 
@@ -358,20 +347,6 @@ impl Columns {
             levels,
         })
     }
-}
-
-/// The cells of a table line, or `None` for a line that is not one.
-fn table_cells(line: &str) -> Option<Vec<&str>> {
-    let trimmed = line.trim();
-    let inner = trimmed.strip_prefix('|')?;
-    let inner = inner.strip_suffix('|').unwrap_or(inner);
-    Some(inner.split('|').map(str::trim).collect())
-}
-
-fn is_separator(cells: &[&str]) -> bool {
-    cells
-        .iter()
-        .all(|cell| !cell.is_empty() && cell.chars().all(|c| matches!(c, '-' | ':')))
 }
 
 #[cfg(test)]

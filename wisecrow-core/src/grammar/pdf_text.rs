@@ -75,6 +75,20 @@ pub fn pages(path: &Path) -> Result<PageText, WisecrowError> {
     prefer(native_pages(path), || poppler_pages(path))
 }
 
+/// Reads the document with poppler's `-layout`, one string per page.
+///
+/// The graded-reader importer needs the indentation that marks a paragraph,
+/// which only poppler's layout mode keeps, so it reads every book this way
+/// rather than through [`pages`].
+///
+/// # Errors
+///
+/// Returns [`WisecrowError::PdfExtractionError`] when `pdftotext` is missing
+/// or cannot read the document.
+pub fn layout_pages(path: &Path) -> Result<Vec<String>, WisecrowError> {
+    poppler_pages(path).map_err(WisecrowError::PdfExtractionError)
+}
+
 /// Settles which reading of a document to use.
 ///
 /// `fallback` is taken lazily because it starts a child process, and a document
@@ -192,7 +206,10 @@ fn split_pages(text: &str) -> Vec<String> {
     pages
 }
 
-fn density(pages: &[String]) -> usize {
+/// Characters per page of a reading, the measure [`MIN_CHARS_PER_PAGE`] is
+/// compared with.
+#[must_use]
+pub fn density(pages: &[String]) -> usize {
     let characters = pages
         .iter()
         .map(|page| page.chars().count())

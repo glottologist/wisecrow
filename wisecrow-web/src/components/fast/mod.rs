@@ -6,6 +6,7 @@ use wisecrow_dto::{FastDeckDto, SpeedController};
 
 use crate::api::learn::{create_fast_deck, fast_available_words};
 use crate::api::media::{get_audio_data, get_image_data};
+use crate::components::area::{requested_area, AreaSelect};
 use crate::components::learn::preload::{self, CardChannels, ImageReady};
 
 use self::playback::{Command, Event as PlaybackEvent, PlayStatus, RunMode};
@@ -94,22 +95,35 @@ pub fn FastPage(native: String, foreign: String) -> Element {
     let mut custom_size = use_signal(String::new);
     let mut available: Signal<Option<u32>> = use_signal(|| None);
     let mut size_loading = use_signal(|| true);
+    let area = use_signal(|| String::from("all"));
+    let mut count_generation = use_signal(|| 0u64);
     // Signals rather than the props themselves so the start handler stays
     // `Copy` and can serve both buttons.
     let native = use_signal(|| native);
     let foreign = use_signal(|| foreign);
 
-    use_future(move || async move {
-        match fast_available_words(native(), foreign()).await {
-            Ok(count) => {
-                if count > 0 {
-                    preset_size.set(count.min(FAST_DECK_SIZE));
-                }
-                available.set(Some(count));
+    use_effect(move || {
+        let chosen = area();
+        let generation = count_generation.peek().saturating_add(1);
+        count_generation.set(generation);
+        size_loading.set(true);
+        error_msg.set(None);
+        spawn(async move {
+            let outcome = fast_available_words(native(), foreign(), requested_area(&chosen)).await;
+            if generation != *count_generation.peek() {
+                return;
             }
-            Err(error) => error_msg.set(Some(format!("Failed to count words: {error}"))),
-        }
-        size_loading.set(false);
+            match outcome {
+                Ok(count) => {
+                    if count > 0 {
+                        preset_size.set(count.min(FAST_DECK_SIZE));
+                    }
+                    available.set(Some(count));
+                }
+                Err(error) => error_msg.set(Some(format!("Failed to count words: {error}"))),
+            }
+            size_loading.set(false);
+        });
     });
 
     let start_run = move |event: PlaybackEvent| {
@@ -119,9 +133,10 @@ pub fn FastPage(native: String, foreign: String) -> Element {
         let Ok(size) = requested_size(&custom_size.read(), preset_size(), maximum) else {
             return;
         };
+        let chosen = requested_area(&area());
         loading.set(true);
         spawn(async move {
-            match create_fast_deck(native(), foreign(), size).await {
+            match create_fast_deck(native(), foreign(), size, chosen).await {
                 Ok(d) => {
                     deck.set(Some(d));
                     apply_playback(playback_state, event);
@@ -237,8 +252,11 @@ pub fn FastPage(native: String, foreign: String) -> Element {
         };
         if maximum == 0 {
             return rsx! {
-                div { class: "text-center text-gray-400 text-xl py-20",
-                    "No words available for this language."
+                div { class: "max-w-2xl mx-auto space-y-6",
+                    AreaSelect { value: area }
+                    div { class: "text-center text-gray-400 text-xl py-20",
+                        "No words available for this language."
+                    }
                 }
             };
         }
@@ -257,6 +275,7 @@ pub fn FastPage(native: String, foreign: String) -> Element {
                     p { class: "text-sm text-gray-400",
                         "Choose how many words to include, most common first. Phrases are mixed in and do not replace those words."
                     }
+                    AreaSelect { value: area }
                     div { class: "flex flex-wrap justify-center gap-3",
                         for preset in presets {
                             button {

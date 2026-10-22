@@ -168,9 +168,20 @@ fn assert_selected_cards(session: &wisecrow::srs::session::Session, fixture: &Fi
 async fn session_uses_due_once_and_exact_ordered_new_cards() {
     let pool = test_pool().await;
     let fixture = seed_fixture(&pool).await;
-    let session = SessionManager::create(&pool, fixture.user_id, "en", "br", 4, 3_000)
-        .await
-        .expect("session creation");
+    let session = SessionManager::create(
+        &pool,
+        fixture.user_id,
+        "en",
+        "br",
+        4,
+        3_000,
+        wisecrow::srs::session::SessionChoice {
+            area: None,
+            deck_id: None,
+        },
+    )
+    .await
+    .expect("session creation");
     assert_selected_cards(&session, &fixture);
     let counts: (i64, i64) = sqlx::query_as(
         "SELECT count(*), count(DISTINCT card_id)
@@ -198,7 +209,7 @@ async fn session_uses_due_once_and_exact_ordered_new_cards() {
     SessionManager::pause(&pool, session.id, fixture.user_id)
         .await
         .expect("pause");
-    let resumed = SessionManager::resume(&pool, fixture.user_id, "en", "br")
+    let resumed = SessionManager::resume(&pool, fixture.user_id, "en", "br", None)
         .await
         .expect("resume")
         .expect("paused session");

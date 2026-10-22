@@ -82,6 +82,7 @@ const MEDIA_ROUTES: &[(&str, &str)] = &[
     ("/api/media/audio", r#"{"translation_id":1}"#),
     ("/api/media/image", r#"{"translation_id":1}"#),
 ];
+const DASHBOARD_ROUTES: &[(&str, &str)] = &[("/api/dashboard", "{}")];
 
 async fn post_status(path: &str, body: &str) -> StatusCode {
     let request = Request::post(path)
@@ -120,7 +121,8 @@ async fn stable_protected_routes_are_registered() {
         .chain(LEARN_ROUTES)
         .chain(NBACK_ROUTES)
         .chain(GRAMMAR_ROUTES)
-        .chain(MEDIA_ROUTES);
+        .chain(MEDIA_ROUTES)
+        .chain(DASHBOARD_ROUTES);
     for &(path, body) in routes {
         assert_eq!(
             post_status(path, body).await,

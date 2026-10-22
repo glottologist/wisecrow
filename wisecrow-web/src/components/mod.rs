@@ -1,4 +1,6 @@
+pub mod area;
 pub mod brand;
+pub mod dashboard;
 pub mod fast;
 pub mod grammar;
 pub mod home;
@@ -7,4 +9,5 @@ pub mod learn;
 pub mod login;
 pub mod nback;
 pub mod not_found;
+pub mod reader;
 pub mod theme;

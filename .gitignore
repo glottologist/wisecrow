@@ -114,5 +114,9 @@ wisecrow-mobile/android/platform/build/
 grammar/*
 !grammar/SOURCES.md
 
+# Graded reader PDFs (third-party books, not project source)
+readers/*
+!readers/SOURCES.md
+
 # Logs and shared lock for the grammar maintenance scripts.
 /logs/

@@ -8,6 +8,7 @@ use wisecrow_learning::srs::{
     ReviewRating as LearningReviewRating, Scheduler,
 };
 
+use crate::decks::DeckFilter;
 use crate::errors::WisecrowError;
 
 pub(crate) const CARD_SELECT_COLUMNS: &str =
@@ -353,12 +354,31 @@ impl CardManager {
         foreign_lang: &str,
         user_id: i32,
         limit: u32,
+        area: Option<&str>,
+        deck: DeckFilter,
     ) -> Result<Vec<CardState>, WisecrowError> {
+        let trim = crate::frequency::MATCH_TRIM_SQL;
         let query = format!(
             "SELECT {CARD_SELECT_COLUMNS} \
              FROM cards c {CARD_PRESENTATION_JOINS} \
              WHERE p.native_lang = $1 AND p.foreign_lang = $2 \
                AND p.teachable AND c.user_id = $3 AND c.due <= NOW() \
+               AND ($5::text IS NULL OR NOT p.is_phrase) \
+               AND ($5::text IS NULL \
+                    OR ($5 = 'verb' AND EXISTS ( \
+                         SELECT 1 FROM verb_form_translations vft \
+                         JOIN verb_forms vf ON vf.id = vft.verb_form_id \
+                         JOIN languages fl ON fl.id = vf.language_id \
+                         JOIN languages nl ON nl.id = vft.native_language_id \
+                         WHERE vft.translation_id = c.translation_id \
+                           AND nl.code = $1 AND fl.code = $2)) \
+                    OR ($5 <> 'verb' AND EXISTS ( \
+                         SELECT 1 FROM word_classes wc \
+                         JOIN languages fl ON fl.id = wc.language_id \
+                         WHERE fl.code = $2 AND wc.class = $5 \
+                           AND wc.word = lower(btrim(t.to_phrase, '{trim}'))))) \
+               AND ($6::int IS NULL OR c.translation_id IN ( \
+                    SELECT translation_id FROM deck_cards WHERE deck_id = $6)) \
              ORDER BY \
                 CASE c.state \
                     WHEN 3 THEN 0 \
@@ -375,6 +395,8 @@ impl CardManager {
             .bind(foreign_lang)
             .bind(user_id)
             .bind(i64::from(limit))
+            .bind(area)
+            .bind(deck.id())
             .fetch_all(pool)
             .await?;
 

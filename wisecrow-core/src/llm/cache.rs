@@ -1,4 +1,8 @@
-//! Durable reuse of validated PDF model responses, independent of rule commits.
+//! Durable reuse of validated model responses, independent of the caller's commits.
+//!
+//! The table keeps the name it was created with, `grammar_llm_cache`, and its
+//! key scheme, so answers cached by grammar imports before the cache served
+//! other passes are still found.
 
 use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -12,34 +16,35 @@ const CACHE_VERSION: u32 = 1;
 const EXCERPT: usize = 240;
 
 #[derive(Debug, thiserror::Error)]
-pub(super) enum PdfLlmError {
+pub enum CachedLlmError {
     #[error(transparent)]
     Response(WisecrowError),
     #[error(transparent)]
     Request(#[from] WisecrowError),
 }
 
-impl From<sqlx::Error> for PdfLlmError {
+impl From<sqlx::Error> for CachedLlmError {
     fn from(error: sqlx::Error) -> Self {
         Self::Request(error.into())
     }
 }
 
-impl From<PdfLlmError> for WisecrowError {
-    fn from(error: PdfLlmError) -> Self {
+impl From<CachedLlmError> for WisecrowError {
+    fn from(error: CachedLlmError) -> Self {
         match error {
-            PdfLlmError::Request(error) | PdfLlmError::Response(error) => error,
+            CachedLlmError::Request(error) | CachedLlmError::Response(error) => error,
         }
     }
 }
 
-pub(super) struct PdfLlm<'a> {
+pub struct CachedLlm<'a> {
     provider: &'a dyn LlmProvider,
     cache: Option<(PgPool, String)>,
 }
 
-impl<'a> PdfLlm<'a> {
-    pub(super) fn new(provider: &'a dyn LlmProvider, pool: Option<&PgPool>) -> Self {
+impl<'a> CachedLlm<'a> {
+    #[must_use]
+    pub fn new(provider: &'a dyn LlmProvider, pool: Option<&PgPool>) -> Self {
         let cache = pool.zip(provider.cache_identity()).map(|(pool, identity)| {
             // Independent commits preserve paid results after a rule rollback. A
             // separate pool also works when the importer owns its only connection.
@@ -52,23 +57,34 @@ impl<'a> PdfLlm<'a> {
         Self { provider, cache }
     }
 
-    pub(super) fn name(&self) -> &str {
+    #[must_use]
+    pub fn name(&self) -> &str {
         self.provider.name()
     }
 
-    pub(super) fn cache_context(&self) -> Option<(&PgPool, &str)> {
+    pub(crate) fn cache_context(&self) -> Option<(&PgPool, &str)> {
         self.cache
             .as_ref()
             .map(|(pool, identity)| (pool, identity.as_str()))
     }
 
-    pub(super) async fn generate<T>(
+    /// Returns the parsed answer to `prompt`, from the cache when a reusable
+    /// answer is stored and from the provider otherwise.
+    ///
+    /// An answer is stored only when `reusable` accepts it, so a refused or
+    /// partial answer is asked for again next time.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CachedLlmError::Response`] when `parse` rejects the answer and
+    /// [`CachedLlmError::Request`] when the provider or the cache fails.
+    pub async fn generate<T>(
         &self,
         prompt: &str,
         max_tokens: u32,
         parse: impl Fn(&str) -> Result<T, WisecrowError>,
         reusable: impl Fn(&T) -> bool,
-    ) -> Result<T, PdfLlmError> {
+    ) -> Result<T, CachedLlmError> {
         let Some((pool, identity)) = &self.cache else {
             let response = self.provider.generate(prompt, max_tokens).await?;
             return parse(&response).map_err(|error| self.unusable(error, &response));
@@ -91,18 +107,18 @@ impl<'a> PdfLlm<'a> {
             if let Ok(parsed) = parse(&response) {
                 if reusable(&parsed) {
                     transaction.commit().await?;
-                    info!("PDF LLM cache hit; skipped {} request", self.name());
+                    info!("LLM cache hit; skipped {} request", self.name());
                     return Ok(parsed);
                 }
             }
-            warn!("Discarding invalid cached PDF LLM response");
+            warn!("Discarding invalid cached LLM response");
             sqlx::query("DELETE FROM grammar_llm_cache WHERE request_sha256 = $1")
                 .bind(key.as_slice())
                 .execute(&mut *transaction)
                 .await?;
         }
 
-        info!("PDF LLM cache miss; calling {}", self.name());
+        info!("LLM cache miss; calling {}", self.name());
         let response = self.provider.generate(prompt, max_tokens).await?;
         let parsed = parse(&response).map_err(|error| self.unusable(error, &response))?;
         if reusable(&parsed) {
@@ -123,13 +139,13 @@ impl<'a> PdfLlm<'a> {
 
     /// An answer the caller cannot use is worth seeing: nothing else keeps it,
     /// and every rejection reads alike in an import log without it.
-    fn unusable(&self, error: WisecrowError, response: &str) -> PdfLlmError {
+    fn unusable(&self, error: WisecrowError, response: &str) -> CachedLlmError {
         warn!(
             "{} answered unusably: {error}; answer began {}",
             self.name(),
             excerpt(response)
         );
-        PdfLlmError::Response(error)
+        CachedLlmError::Response(error)
     }
 }
 
@@ -151,7 +167,7 @@ fn request_key(
     digest(&(CACHE_VERSION, provider, identity, prompt, max_tokens))
 }
 
-pub(super) fn digest(value: &impl serde::Serialize) -> Result<[u8; 32], WisecrowError> {
+pub(crate) fn digest(value: &impl serde::Serialize) -> Result<[u8; 32], WisecrowError> {
     let request = serde_json::to_vec(value)
         .map_err(|error| WisecrowError::ConfigurationError(error.to_string()))?;
     Ok(Sha256::digest(request).into())
@@ -206,7 +222,11 @@ mod tests {
         crate::llm::parse_fenced_json(answer, "cache fixture")
     }
 
-    async fn generate(model: &PdfLlm<'_>, prompt: &str, tokens: u32) -> Result<i32, WisecrowError> {
+    async fn generate(
+        model: &CachedLlm<'_>,
+        prompt: &str,
+        tokens: u32,
+    ) -> Result<i32, WisecrowError> {
         model
             .generate(prompt, tokens, parse, |n| *n >= 0)
             .await
@@ -232,7 +252,7 @@ mod tests {
                     identity: Some(identity),
                     ..Model::default()
                 };
-                let model = PdfLlm::new(&provider, Some(&pool));
+                let model = CachedLlm::new(&provider, Some(&pool));
                 assert_eq!(generate(&model, prompt, tokens).await?, 42);
                 assert_eq!(provider.calls.load(Ordering::SeqCst), expected_calls);
             }
@@ -248,7 +268,7 @@ mod tests {
                 answer,
                 ..Model::default()
             };
-            let model = PdfLlm::new(&provider, Some(&pool));
+            let model = CachedLlm::new(&provider, Some(&pool));
             let result = generate(&model, "retry", 256).await;
             match answer {
                 Ok("-1") => assert_eq!(result?, -1),
@@ -260,7 +280,7 @@ mod tests {
             assert_eq!(count, 0);
         }
         let repaired = Model::default();
-        let model = PdfLlm::new(&repaired, Some(&pool));
+        let model = CachedLlm::new(&repaired, Some(&pool));
         assert_eq!(generate(&model, "retry", 256).await?, 42);
         assert_eq!(generate(&model, "retry", 256).await?, 42);
         assert_eq!(repaired.calls.load(Ordering::SeqCst), 1);
@@ -273,8 +293,8 @@ mod tests {
         pool: PgPool,
     ) -> TestResult {
         let provider = Model::default();
-        let first = PdfLlm::new(&provider, Some(&pool));
-        let second = PdfLlm::new(&provider, Some(&pool));
+        let first = CachedLlm::new(&provider, Some(&pool));
+        let second = CachedLlm::new(&provider, Some(&pool));
         let (left, right) = tokio::try_join!(
             generate(&first, "concurrent", 256),
             generate(&second, "concurrent", 256),
@@ -315,7 +335,7 @@ mod tests {
         }
 
         let waiting = WaitingModel(tokio::sync::Notify::new());
-        let model = PdfLlm::new(&waiting, Some(&pool));
+        let model = CachedLlm::new(&waiting, Some(&pool));
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
             tokio::select! {
                 result = generate(&model, "cancel", 256) => {
@@ -327,7 +347,7 @@ mod tests {
         .await??;
 
         let resumed = Model::default();
-        let model = PdfLlm::new(&resumed, Some(&pool));
+        let model = CachedLlm::new(&resumed, Some(&pool));
         assert_eq!(
             tokio::time::timeout(
                 std::time::Duration::from_secs(5),
@@ -343,7 +363,7 @@ mod tests {
     #[tokio::test]
     async fn calls_without_database_or_provider_identity_bypass_persistence() -> TestResult {
         let provider = Model::default();
-        let model = PdfLlm::new(&provider, None);
+        let model = CachedLlm::new(&provider, None);
         assert_eq!(generate(&model, "uncached", 256).await?, 42);
         assert_eq!(generate(&model, "uncached", 256).await?, 42);
         assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
@@ -353,7 +373,7 @@ mod tests {
             identity: None,
             ..Model::default()
         };
-        let model = PdfLlm::new(&anonymous, Some(&pool));
+        let model = CachedLlm::new(&anonymous, Some(&pool));
         assert_eq!(generate(&model, "uncached", 256).await?, 42);
         assert_eq!(generate(&model, "uncached", 256).await?, 42);
         assert_eq!(anonymous.calls.load(Ordering::SeqCst), 2);

@@ -25,6 +25,9 @@ pub fn Layout() -> Element {
                         Link { to: Route::Home {}, class: "px-3 py-2 rounded hover:bg-gray-700 transition",
                             "Home"
                         }
+                        Link { to: Route::DashboardPage {}, class: "px-3 py-2 rounded hover:bg-gray-700 transition",
+                            "Progress"
+                        }
                         a {
                             href: "https://github.com/glottologist/wisecrow",
                             target: "_blank",
@@ -67,5 +70,23 @@ pub fn Layout() -> Element {
                 Outlet::<Route> {}
             }
         }
+    }
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use dioxus::prelude::*;
+
+    #[tokio::test]
+    async fn the_navigation_offers_progress_beside_home() {
+        let mut dom = VirtualDom::new(crate::app);
+        dom.rebuild_in_place();
+        dom.wait_for_suspense().await;
+        let html = dioxus::ssr::render(&dom);
+
+        let home = html.find(">Home<").expect("Home link");
+        let progress = html.find("href=\"/dashboard\"").expect("Progress link");
+        assert!(home < progress, "Progress sits after Home");
+        assert!(html.contains(">Progress<"));
     }
 }

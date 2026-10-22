@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, QueryBuilder};
 use tracing::{info, warn};
 
-use super::pdf_cache::{digest, PdfLlm, PdfLlmError};
 use super::rules::NewGrammarRule;
 use crate::errors::WisecrowError;
+use crate::llm::cache::{digest, CachedLlm, CachedLlmError};
 
 const REVIEW_VERSION: u32 = 1;
 const REVIEW_TOKENS: u32 = 2048;
@@ -63,7 +63,7 @@ struct Comparison {
 }
 
 pub(super) async fn distinct_rules<'a>(
-    model: &PdfLlm<'_>,
+    model: &CachedLlm<'_>,
     language: &str,
     proposed: &'a [NewGrammarRule],
     existing: &[ExistingRule],
@@ -199,7 +199,7 @@ pub(super) async fn distinct_rules<'a>(
 }
 
 async fn review(
-    model: &PdfLlm<'_>,
+    model: &CachedLlm<'_>,
     language: &str,
     existing: &[&RuleText<'_>],
     candidates: &[CandidateReview<'_>],
@@ -239,7 +239,7 @@ async fn review(
         Ok(decisions) => Ok(decisions),
         // Failing closed here abandons the whole document, so the fault itself
         // goes back to the model once before the import gives up on it.
-        Err(PdfLlmError::Response(fault)) => {
+        Err(CachedLlmError::Response(fault)) => {
             warn!(
                 "{fault}; asking {} once more for one decision per candidate",
                 model.name()

@@ -438,6 +438,44 @@ impl MediaCache {
         Ok(tx)
     }
 
+    /// Points `translation_id`'s audio row at the sentence clip for `fingerprint`.
+    ///
+    /// Returns `false` when no audio row has that fingerprint. The file is
+    /// not read and nothing is synthesised.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the cache query or the row write fails.
+    pub async fn attach_shared_audio(
+        &self,
+        translation_id: i32,
+        fingerprint: &MediaFingerprint,
+    ) -> Result<bool, WisecrowError> {
+        let path: Option<String> = sqlx::query_scalar(
+            "SELECT file_path FROM sentence_media
+             WHERE fingerprint = $1 AND media_type = 'audio'",
+        )
+        .bind(fingerprint.as_str())
+        .fetch_optional(&self.pool)
+        .await?;
+        let Some(path) = path else {
+            return Ok(false);
+        };
+        sqlx::query(
+            "INSERT INTO media_cache (translation_id, media_type, file_path, source_fingerprint)
+             VALUES ($1, 'audio', $2, $3)
+             ON CONFLICT (translation_id, media_type)
+             DO UPDATE SET file_path = EXCLUDED.file_path,
+                           source_fingerprint = EXCLUDED.source_fingerprint",
+        )
+        .bind(translation_id)
+        .bind(&path)
+        .bind(fingerprint.as_str())
+        .execute(&self.pool)
+        .await?;
+        Ok(true)
+    }
+
     /// Points `translation_id` at the picture already stored for `fingerprint`.
     ///
     /// Returns `false` when nothing live uses that fingerprint, so the caller
@@ -867,7 +905,7 @@ impl MediaCache {
     }
 }
 
-fn default_cache_dir() -> PathBuf {
+pub(crate) fn default_cache_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("wisecrow")
@@ -885,4 +923,104 @@ fn temp_path_for(final_path: &Path) -> Result<PathBuf, WisecrowError> {
         .and_then(|name| name.to_str())
         .ok_or_else(|| WisecrowError::InvalidInput(NON_UTF8_CACHE_PATH.to_owned()))?;
     Ok(final_path.with_file_name(format!("{file_name}.{}.tmp", uuid::Uuid::new_v4())))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn pool() -> PgPool {
+        let url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://wisecrow:wisecrow@localhost:5432/wisecrow_test".to_owned()
+        });
+        let pool = PgPool::connect(&url).await.expect("test database");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("migrations");
+        pool
+    }
+
+    #[tokio::test]
+    async fn attach_shared_audio_points_at_the_sentence_clip() {
+        let pool = pool().await;
+        let cache_dir = tempfile::tempdir().expect("cache dir");
+        let clip = cache_dir.path().join("sentence-clip.wav");
+        let clip_path = clip.to_str().expect("utf8 clip path");
+        // `for_audio` is 64 hex. The fingerprint string is private, so the
+        // stored row uses that value rather than sixty-four `a` characters.
+        let fingerprint = MediaFingerprint::for_audio("Hola.", "es", "test", "test", 1);
+        assert_eq!(fingerprint.as_str().len(), 64);
+
+        sqlx::query(
+            "INSERT INTO languages (code, name) VALUES ('en', 'English'), ('es', 'Spanish')
+             ON CONFLICT (code) DO NOTHING",
+        )
+        .execute(&pool)
+        .await
+        .expect("languages");
+        sqlx::query(
+            "INSERT INTO sentence_media (fingerprint, media_type, language_code, sentence, file_path)
+             VALUES ($1, 'audio', 'es', 'Hola.', $2)
+             ON CONFLICT (fingerprint) DO UPDATE SET file_path = EXCLUDED.file_path",
+        )
+        .bind(fingerprint.as_str())
+        .bind(clip_path)
+        .execute(&pool)
+        .await
+        .expect("sentence clip");
+        let translation_id: i32 = sqlx::query_scalar(
+            "INSERT INTO translations (from_language_id, to_language_id, from_phrase, to_phrase)
+             SELECT fl.id, tl.id, $1, 'hello'
+             FROM languages fl, languages tl
+             WHERE fl.code = 'en' AND tl.code = 'es'
+             ON CONFLICT (from_language_id, from_phrase, to_language_id, to_phrase)
+             DO UPDATE SET from_phrase = EXCLUDED.from_phrase
+             RETURNING id",
+        )
+        .bind(format!("attach-shared-audio-{}", uuid::Uuid::new_v4()))
+        .fetch_one(&pool)
+        .await
+        .expect("translation");
+        sqlx::query("DELETE FROM media_cache WHERE translation_id = $1")
+            .bind(translation_id)
+            .execute(&pool)
+            .await
+            .expect("clear card audio");
+
+        let cache = MediaCache::open_existing_at(pool.clone(), cache_dir.path()); // clone: the cache shares the pool
+        let attached = cache
+            .attach_shared_audio(translation_id, &fingerprint)
+            .await
+            .expect("attach");
+        assert!(attached);
+
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT file_path, source_fingerprint FROM media_cache
+             WHERE translation_id = $1 AND media_type = 'audio'",
+        )
+        .bind(translation_id)
+        .fetch_all(&pool)
+        .await
+        .expect("card audio");
+        assert_eq!(
+            rows,
+            vec![(clip_path.to_owned(), fingerprint.as_str().to_owned())]
+        );
+
+        let unknown = MediaFingerprint::for_audio("other", "es", "test", "test", 1);
+        let missed = cache
+            .attach_shared_audio(translation_id, &unknown)
+            .await
+            .expect("missing clip");
+        assert!(!missed);
+        let still: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM media_cache WHERE translation_id = $1 AND media_type = 'audio'",
+        )
+        .bind(translation_id)
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+        assert_eq!(still, 1);
+    }
 }

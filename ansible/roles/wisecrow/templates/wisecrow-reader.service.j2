@@ -1,0 +1,15 @@
+[Unit]
+Description=Wisecrow reader translation
+After=docker.service
+Requires=docker.service
+
+[Service]
+# systemd 257 rejects a success restart on a one-shot service. The script loops.
+Type=simple
+WorkingDirectory={{ deploy_dir }}
+ExecStart=/bin/bash {{ deploy_dir }}/scripts/prepare-readers.sh
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

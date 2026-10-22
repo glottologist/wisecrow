@@ -5,6 +5,7 @@ use wisecrow_dto::GrammarItemDto;
 use super::{gloss_for, selected_phrase, submission_for};
 use crate::api::grammar::{complete_grammar_session, start_grammar_session, submit_grammar_answer};
 use crate::api::media::{get_answer_audio_data, get_example_audio_data};
+use crate::components::area::{requested_area, AreaSelect};
 
 /// What the learner is doing with the item in front of them.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -29,6 +30,12 @@ pub fn GrammarPage(native: String, foreign: String) -> Element {
     let mut error_msg: Signal<Option<String>> = use_signal(|| None);
     let mut playing: Signal<Option<(i32, String)>> = use_signal(|| None);
     let mut audio_failed: Signal<Option<i32>> = use_signal(|| None);
+    let area = use_signal(|| String::from("all"));
+
+    use_effect(move || {
+        let _chosen = area();
+        empty_bank.set(false);
+    });
 
     if session_id().is_none() {
         let native_code = native.clone(); // clone: moved into the async start handler
@@ -39,6 +46,7 @@ pub fn GrammarPage(native: String, foreign: String) -> Element {
                 p { class: "text-gray-400 text-center",
                     "Points chosen by what you are due to revisit and what you keep getting wrong."
                 }
+                AreaSelect { value: area }
 
                 if empty_bank() {
                     div { class: "bg-gray-800 rounded-xl p-6 text-center space-y-2 border border-gray-700",
@@ -57,10 +65,13 @@ pub fn GrammarPage(native: String, foreign: String) -> Element {
                         onclick: move |_| {
                             let native_code = native_code.clone(); // clone: moved into the async block
                             let foreign_code = foreign_code.clone(); // clone: moved into the async block
+                            let chosen = requested_area(&area());
                             async move {
                                 loading.set(true);
                                 error_msg.set(None);
-                                match start_grammar_session(native_code, foreign_code, None).await {
+                                match start_grammar_session(native_code, foreign_code, None, chosen)
+                                    .await
+                                {
                                     Ok(Some(session)) => {
                                         items.set(session.items);
                                         session_id.set(Some(session.session_id));

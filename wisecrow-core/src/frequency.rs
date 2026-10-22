@@ -431,7 +431,9 @@ impl FrequencyUpdater {
         // what stops an ingest collision count reaching a deck — see migration
         // 017 for what that cost the Irish deck. Rows a word promotion
         // generated carry their own evidence rank, and promoted phrases their
-        // own review, so neither is re-ranked here.
+        // own review, so neither is re-ranked here. A verb form this generator
+        // owns is not corpus text, and a row reused with `owns_translation`
+        // false still is.
         let statement = format!(
             "UPDATE translations SET corpus_frequency = t.freq
              FROM unnest($1::text[], $2::int[]) AS t(phrase, freq)
@@ -442,7 +444,10 @@ impl FrequencyUpdater {
                AND NOT EXISTS (SELECT 1 FROM word_promotions p
                                WHERE p.translation_id = translations.id AND p.owns_translation)
                AND NOT EXISTS (SELECT 1 FROM phrase_translations p
-                               WHERE p.translation_id = translations.id)"
+                               WHERE p.translation_id = translations.id)
+               AND NOT EXISTS (SELECT 1 FROM verb_form_translations v
+                               WHERE v.translation_id = translations.id
+                                 AND v.owns_translation)"
         );
 
         for chunk in entries.chunks(BATCH_SIZE) {

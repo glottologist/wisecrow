@@ -671,3 +671,127 @@ a {
 @media (min-width: 768px) {
     .md\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* Progress dashboard.
+ *
+ * The review strip is thirty plain bars scaled to the busiest day; the counts
+ * live in each bar's title and in a visually hidden list, so nothing depends
+ * on a chart library or on colour alone. Every colour is a theme token, so
+ * both palettes hold without rules of their own.
+ */
+.dash-card {
+    background-color: var(--surface-bg);
+    border: 1px solid var(--border-default);
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+}
+
+.dash-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.dash-tile {
+    background-color: var(--control-bg);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    text-align: center;
+}
+
+.dash-tile-value {
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.dash-tile-label {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.review-strip {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 4rem;
+    border-bottom: 1px solid var(--border-default);
+}
+
+.review-bar {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 2px;
+    background-color: var(--emerald-600);
+    border-radius: 2px 2px 0 0;
+}
+
+.review-bar-empty {
+    background-color: var(--border-default);
+}
+
+.dash-bands {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.dash-band {
+    padding: 0.125rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Five tiles fit one row once there is room for them. */
+@media (min-width: 768px) {
+    .dash-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+
+:root[data-theme="dark"] .reader-source {
+    display: block;
+    color: var(--text-muted);
+}
+
+:root[data-theme="dark"] .reader-token {
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+:root[data-theme="dark"] .reader-popover {
+    position: absolute;
+    padding: 0.75rem;
+    color: var(--text-primary);
+    background-color: var(--surface-bg);
+    border: 1px solid var(--border-default);
+}
+
+:root[data-theme="light"] .reader-source {
+    display: block;
+    color: var(--text-muted);
+}
+
+:root[data-theme="light"] .reader-token {
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+:root[data-theme="light"] .reader-popover {
+    position: absolute;
+    padding: 0.75rem;
+    color: var(--text-primary);
+    background-color: var(--surface-bg);
+    border: 1px solid var(--border-default);
+}

@@ -29,10 +29,23 @@ pub async fn start_grammar_session(
     native: String,
     foreign: String,
     level: Option<String>,
+    area: Option<String>,
 ) -> Result<Option<GrammarSessionDto>, ServerFnError> {
     let user = crate::server::auth::current_user().await?;
     crate::server::validate_lang(&native)?;
     crate::server::validate_lang(&foreign)?;
+    let area = match wisecrow::grammar::areas::parse_practice_area(area.as_deref()) {
+        Ok(area) => area,
+        Err(wisecrow::errors::WisecrowError::InvalidInput(message)) => {
+            return Err(crate::server::client_error(
+                axum::http::StatusCode::BAD_REQUEST,
+                &message,
+            ));
+        }
+        Err(error) => {
+            return Err(crate::server::internal_error("grammar area", &error));
+        }
+    };
 
     let session = wisecrow::grammar::session::GrammarSessionManager::create(
         crate::server::pool()?,
@@ -41,6 +54,7 @@ pub async fn start_grammar_session(
         level.as_deref(),
         wisecrow::grammar::session::SessionKind::Practice,
         wisecrow::grammar::session::SESSION_LENGTH,
+        area,
     )
     .await
     .map_err(|error| crate::server::internal_error("grammar session creation", &error))?;

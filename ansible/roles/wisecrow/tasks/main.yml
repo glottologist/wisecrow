@@ -214,6 +214,13 @@
     mode: "0644"
   become: true
 
+- name: Install the reader unit
+  ansible.builtin.template:
+    src: wisecrow-reader.service.j2
+    dest: /etc/systemd/system/wisecrow-reader.service
+    mode: "0644"
+  become: true
+
 - name: Enable the corpus and grammar units
   ansible.builtin.systemd:
     name: "{{ item }}"
@@ -222,6 +229,7 @@
   loop:
     - wisecrow-corpus.service
     - wisecrow-grammar.service
+    - wisecrow-reader.service
   become: true
   failed_when: false
 

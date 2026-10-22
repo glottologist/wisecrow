@@ -19,6 +19,7 @@
 - [Subtitle preview](./guides/preview-subtitles.md)
 - [Dual n-back](./guides/dual-n-back.md)
 - [Grammar workflows](./guides/grammar-workflows.md)
+- [Story reader](./guides/story-reader.md)
 - [Sync workflow](./guides/sync-workflow.md)
 - [Library integration](./guides/library-integration.md)
 

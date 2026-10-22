@@ -17,11 +17,11 @@ use sqlx::PgPool;
 use tracing::{debug, info, warn};
 
 use super::pdf::GrammarPassage;
-use super::pdf_cache::{PdfLlm, PdfLlmError};
 use super::rules::{
     slugify, NewGrammarRule, NewRuleExample, RulePlacement, RuleRepository, RuleSource,
 };
 use crate::errors::WisecrowError;
+use crate::llm::cache::{CachedLlm, CachedLlmError};
 use crate::llm::prompts::{pdf_rules_prompt, pdf_source_rules_prompt, PassageExcerpt};
 use crate::llm::LlmProvider;
 
@@ -324,7 +324,7 @@ pub async fn synthesise(
 
     let covered: Vec<&str> = covered.iter().map(String::as_str).collect();
     synthesise_excerpts(
-        &PdfLlm::new(provider, None),
+        &CachedLlm::new(provider, None),
         document,
         language_name,
         cefr_level,
@@ -341,7 +341,7 @@ pub(super) enum Coverage<'a> {
 }
 
 pub(super) async fn synthesise_excerpts(
-    model: &PdfLlm<'_>,
+    model: &CachedLlm<'_>,
     document: &str,
     language_name: &str,
     cefr_level: &str,
@@ -368,7 +368,7 @@ pub(super) async fn synthesise_excerpts(
         .await
     {
         Ok(round) => Ok(round),
-        Err(PdfLlmError::Response(reason)) => {
+        Err(CachedLlmError::Response(reason)) => {
             warn!(
                 "{reason}; asking {} once more for the array alone",
                 model.name()

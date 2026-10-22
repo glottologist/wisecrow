@@ -7,6 +7,7 @@
 //! context; storage links each candidate to a translation row under a stable
 //! ID. Generated rows are never counted as corpus evidence again.
 
+pub mod classes;
 mod extract;
 mod promote;
 mod store;

@@ -1,12 +1,14 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 pub mod grammar;
 pub mod mobile;
+pub mod reader;
 
 pub use grammar::*;
 pub use mobile::*;
+pub use reader::*;
 
 /// Fraction `correct / total` in `[0.0, 1.0]`, returning `0.0` when `total` is
 /// zero. Shared by the web and mobile n-back views so the guarded division and
@@ -88,6 +90,8 @@ pub struct SessionDto {
     pub deck_size: i32,
     pub speed_ms: i32,
     pub current_index: i32,
+    #[serde(default)]
+    pub deck_id: Option<i32>,
     pub cards: Vec<CardDto>,
 }
 
@@ -296,6 +300,121 @@ pub struct DnbSessionResultsDto {
     pub interval_ms_end: u32,
 }
 
+/// Everything the progress dashboard shows, one entry per foreign language.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DashboardDto {
+    pub languages: Vec<LanguageProgressDto>,
+}
+
+/// One foreign language's progress.
+///
+/// Grammar and placement belong to the language as a whole, because grammar is
+/// recorded without a native language. Vocabulary and n-back are grouped by the
+/// native language they were practised from, so two native languages learning
+/// one target are both shown and neither is assumed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LanguageProgressDto {
+    pub foreign: String,
+    pub foreign_name: String,
+    pub vocabulary: Vec<PairVocabularyDto>,
+    pub grammar: Vec<LevelBandsDto>,
+    pub placement: Option<PlacementSummaryDto>,
+    pub nback: Vec<PairNbackDto>,
+    /// Books the learner has opened in this language. Absent when the reader
+    /// tables could not be counted; zeros still count as present.
+    #[serde(default)]
+    pub books: Option<BookProgressDto>,
+}
+
+/// One native language's flashcard progress in a foreign language.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairVocabularyDto {
+    pub native: String,
+    pub counts: VocabularyCountsDto,
+    /// One entry per UTC day, oldest first, ending today.
+    pub reviews: Vec<DailyCountDto>,
+    /// Conjugated forms stored for this pair. Zeros when the pair has none.
+    pub verb_forms: VerbFormProgressDto,
+}
+
+/// Stored verb forms for one language pair.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerbFormProgressDto {
+    pub lemmas: i64,
+    pub forms: i64,
+    pub attested: i64,
+    pub voiced: i64,
+}
+
+/// Cards per FSRS state, with those due before the end of the UTC day.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VocabularyCountsDto {
+    pub new: i64,
+    pub learning: i64,
+    pub review: i64,
+    pub relearning: i64,
+    pub due_today: i64,
+}
+
+/// Reviews made on one UTC day.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DailyCountDto {
+    pub day: NaiveDate,
+    pub count: i64,
+}
+
+/// Grammar points of one CEFR level per brainmap band.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LevelBandsDto {
+    pub level: String,
+    pub unseen: u32,
+    pub red: u32,
+    pub amber: u32,
+    pub green: u32,
+    pub provisional_red: u32,
+    pub provisional_amber: u32,
+    pub provisional_green: u32,
+}
+
+impl LevelBandsDto {
+    /// Each band with its count, settled bands before provisional ones and
+    /// unseen last, which is the order the dashboard draws them in.
+    #[must_use]
+    pub const fn counts(&self) -> [(MasteryBandDto, u32); 7] {
+        [
+            (MasteryBandDto::Green, self.green),
+            (MasteryBandDto::Amber, self.amber),
+            (MasteryBandDto::Red, self.red),
+            (MasteryBandDto::ProvisionalGreen, self.provisional_green),
+            (MasteryBandDto::ProvisionalAmber, self.provisional_amber),
+            (MasteryBandDto::ProvisionalRed, self.provisional_red),
+            (MasteryBandDto::Unseen, self.unseen),
+        ]
+    }
+}
+
+/// The latest finished placement run for a language.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlacementSummaryDto {
+    pub completed_at: DateTime<Utc>,
+    /// `None` where the run passed no level, which is a result rather than an
+    /// absence of one.
+    pub level_reached: Option<String>,
+    pub tested: Vec<String>,
+    /// Levels whose bank was too thin to test. Untested is not failed.
+    pub skipped: Vec<String>,
+}
+
+/// Dual n-back practised from one native language.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairNbackDto {
+    pub native: String,
+    /// The highest n reached in a finished session with answered trials: a
+    /// ceiling the learner touched, not a level they have mastered.
+    pub highest_n: i16,
+    pub sessions: i64,
+}
+
 const MIN_SPEED_MS: u32 = 500;
 const MAX_SPEED_MS: u32 = 10_000;
 const SPEED_STEP_MS: u32 = 500;
@@ -379,7 +498,12 @@ impl SpeedController {
 
 #[cfg(test)]
 mod tests {
-    use super::channel_ratio;
+    use super::{
+        channel_ratio, DailyCountDto, DashboardDto, LanguageProgressDto, LevelBandsDto,
+        MasteryBandDto, PairNbackDto, PairVocabularyDto, PlacementSummaryDto, VerbFormProgressDto,
+        VocabularyCountsDto,
+    };
+    use chrono::{DateTime, NaiveDate, Utc};
 
     #[test]
     fn channel_ratio_guards_zero_and_computes_fraction() {
@@ -387,5 +511,66 @@ mod tests {
         assert!((channel_ratio(3, 0) - 0.0).abs() < f32::EPSILON);
         assert!((channel_ratio(1, 2) - 0.5).abs() < f32::EPSILON);
         assert!((channel_ratio(4, 4) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn a_dashboard_survives_the_wire() {
+        let dashboard = DashboardDto {
+            languages: vec![LanguageProgressDto {
+                foreign: "es".into(),
+                foreign_name: "Spanish".into(),
+                vocabulary: vec![PairVocabularyDto {
+                    native: "en".into(),
+                    counts: VocabularyCountsDto {
+                        new: 1,
+                        ..VocabularyCountsDto::default()
+                    },
+                    reviews: vec![DailyCountDto {
+                        day: NaiveDate::from_ymd_opt(2026, 10, 20).expect("date"),
+                        count: 3,
+                    }],
+                    verb_forms: VerbFormProgressDto::default(),
+                }],
+                grammar: vec![LevelBandsDto {
+                    level: "A1".into(),
+                    green: 2,
+                    ..LevelBandsDto::default()
+                }],
+                placement: Some(PlacementSummaryDto {
+                    completed_at: DateTime::<Utc>::from_timestamp(1_760_918_400, 0).expect("time"),
+                    level_reached: None,
+                    tested: vec!["A1".into()],
+                    skipped: vec!["A2".into()],
+                }),
+                nback: vec![PairNbackDto {
+                    native: "en".into(),
+                    highest_n: 4,
+                    sessions: 1,
+                }],
+                books: None,
+            }],
+        };
+
+        let json = serde_json::to_string(&dashboard).expect("serialise");
+        let back: DashboardDto = serde_json::from_str(&json).expect("deserialise");
+        assert_eq!(back, dashboard);
+    }
+
+    #[test]
+    fn level_bands_list_every_band_once_settled_first() {
+        let level = LevelBandsDto {
+            level: "B1".into(),
+            unseen: 1,
+            red: 2,
+            amber: 3,
+            green: 4,
+            provisional_red: 5,
+            provisional_amber: 6,
+            provisional_green: 7,
+        };
+        let counts = level.counts();
+        assert_eq!(counts.iter().map(|(_, count)| count).sum::<u32>(), 28);
+        assert_eq!(counts[0], (MasteryBandDto::Green, 4));
+        assert_eq!(counts[6], (MasteryBandDto::Unseen, 1));
     }
 }

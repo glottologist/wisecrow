@@ -389,9 +389,20 @@ async fn srs_seeding_interleaves_words_and_phrases() {
         .await
         .expect("promote");
 
-    let session = SessionManager::create(&pool, user_id, "en", "gd", 10, 3000)
-        .await
-        .expect("session");
+    let session = SessionManager::create(
+        &pool,
+        user_id,
+        "en",
+        "gd",
+        10,
+        3000,
+        wisecrow::srs::session::SessionChoice {
+            area: None,
+            deck_id: None,
+        },
+    )
+    .await
+    .expect("session");
 
     let phrase_positions: Vec<usize> = session
         .cards

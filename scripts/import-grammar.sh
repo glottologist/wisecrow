@@ -3,10 +3,10 @@ set -euo pipefail
 
 if [[ ${1:-} == --help ]]; then
     cat <<'HELP'
-Usage: scripts/import-grammar.sh [gd fr it ga cy es]
+Usage: scripts/import-grammar.sh [languages listed in deploy/language-pairs.toml]
 
 Import unfinished portions of eligible PDFs in the selected languages on calypso.
-With no arguments, process gd fr it ga cy es. SOURCES.md controls documents
+With no arguments, process the languages listed in deploy/language-pairs.toml. SOURCES.md controls documents
 and levels. There is no total rule limit; existing rules are preserved and
 new proposals are checked for duplicates. PostgreSQL records progress by
 file contents and level, so reruns skip completed work and resume failures.
@@ -24,16 +24,15 @@ HELP
     exit 0
 fi
 
-languages=("$@")
-if (( ${#languages[@]} == 0 )); then
-    languages=(gd fr it ga cy es)
+requested=("$@")
+if (( ${#requested[@]} > 0 )); then
+    for language in "${requested[@]}"; do
+        case "$language" in
+            gd|fr|it|ga|cy|es) ;;
+            *) printf 'Unsupported language: %s\n' "$language" >&2; exit 2 ;;
+        esac
+    done
 fi
-for language in "${languages[@]}"; do
-    case "$language" in
-        gd|fr|it|ga|cy|es) ;;
-        *) printf 'Unsupported language: %s\n' "$language" >&2; exit 2 ;;
-    esac
-done
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 cd -- "$script_dir/.."
@@ -47,6 +46,40 @@ log="logs/grammar-import-$(date -u +%Y%m%dT%H%M%SZ)-$$.log"
 printf 'Full import log: %s/%s\n' "$PWD" "$log"
 trap 'printf "Import stopped. See %s; rerun this script to resume.\n" "$log" >&2' ERR
 compose=(docker compose -f docker-compose.deploy.yml)
+
+pairs=()
+native=
+while IFS= read -r line; do
+    case "$line" in
+        native\ =\ \"*\") native=${line#native = \"} ; native=${native%\"} ;;
+        foreign\ =\ \"*\") foreign=${line#foreign = \"} ; foreign=${foreign%\"} ; pairs+=("$native $foreign") ;;
+    esac
+done < deploy/language-pairs.toml
+for pair in "${pairs[@]}"; do
+    read -r _native foreign <<<"$pair"
+    case "$foreign" in
+        gd|fr|it|ga|cy|es) ;;
+        *) printf 'Unsupported language: %s\n' "$foreign" >&2; exit 2 ;;
+    esac
+done
+if (( ${#requested[@]} == 0 )); then
+    languages=()
+    for pair in "${pairs[@]}"; do
+        read -r _native foreign <<<"$pair"
+        seen=0
+        for language in ${languages[@]+"${languages[@]}"}; do
+            if [[ $language == "$foreign" ]]; then
+                seen=1
+                break
+            fi
+        done
+        if (( seen == 0 )); then
+            languages+=("$foreign")
+        fi
+    done
+else
+    languages=("${requested[@]}")
+fi
 
 # Validate the whole selection before spending model calls on any language.
 "${compose[@]}" exec -T wisecrow-web test -r /app/grammar/SOURCES.md
@@ -176,6 +209,21 @@ for language in "${languages[@]}"; do
         fi
         break
     done
+    if (( status == 0 )); then
+        for pair in "${pairs[@]}"; do
+            read -r native foreign <<<"$pair"
+            if [[ $foreign != "$language" ]]; then
+                continue
+            fi
+            "${compose[@]}" exec -T wisecrow-web wisecrow classify-rules --lang "$foreign"
+            "${compose[@]}" exec -T wisecrow-web wisecrow classify-words --native "$native" --foreign "$foreign"
+            if [[ $foreign == gd ]]; then
+                printf 'Skipping Gaelic paradigms until the slot table is confirmed\n'
+            else
+                "${compose[@]}" exec -T wisecrow-web wisecrow generate-paradigms --native "$native" --foreign "$foreign"
+            fi
+        done
+    fi
 done
 
 printf '\nCoverage after import (zero rows included; no rule ceiling):\n' | tee -a "$log"

@@ -26,6 +26,52 @@ pub enum PhraseFilter {
     Exclude,
 }
 
+/// Which grammar area a ranked word deck draws from.
+///
+/// `All` is every admitted word except a translation a verb form owns.
+/// The four classes are `word_classes.class`. A verb deck is not a class
+/// filter: its cards are conjugated forms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AreaFilter {
+    All,
+    Preposition,
+    Pronoun,
+    Adjective,
+    Adverb,
+}
+
+impl AreaFilter {
+    const fn label(self) -> Option<&'static str> {
+        match self {
+            Self::All => None,
+            Self::Preposition => Some("preposition"),
+            Self::Pronoun => Some("pronoun"),
+            Self::Adjective => Some("adjective"),
+            Self::Adverb => Some("adverb"),
+        }
+    }
+
+    fn predicate(self) -> String {
+        self.label().map_or_else(String::new, |label| {
+            format!(
+                "AND lower(btrim(t.to_phrase, '{trim}')) IN (
+                     SELECT wc.word FROM word_classes wc
+                     WHERE wc.language_id = t.to_language_id
+                       AND wc.class = '{label}'
+                 )",
+                trim = crate::frequency::MATCH_TRIM_SQL
+            )
+        })
+    }
+}
+
+/// Generated verb forms are not corpus rows. A reused row has
+/// `owns_translation` false and is not named here.
+const OWNED_VERB_FORM: &str = "AND NOT EXISTS (
+             SELECT 1 FROM verb_form_translations v
+             WHERE v.translation_id = t.id AND v.owns_translation
+         )";
+
 /// A cold covering-index read of a large pair measured 2.7s, and the previous
 /// two-second budget cancelled the first Fast start. Eight seconds still
 /// releases the connection when the plan is wrong.
@@ -158,6 +204,7 @@ fn ranked_statement(
     policy: SelectionPolicy,
     projection: CandidateProjection,
     band: FrequencyBand,
+    class_sql: &str,
 ) -> String {
     let carded_sql = carded.predicate();
     let phrase = phrase_filter.predicate();
@@ -174,7 +221,9 @@ fn ranked_statement(
             trim = crate::frequency::MATCH_TRIM_SQL
         ),
     };
-    let selected_presentation = format!("{presentation}{exclusion}");
+    let area_cut = format!("{OWNED_VERB_FORM}\n{class_sql}");
+    let selected_presentation = format!("{presentation}{exclusion}\n{area_cut}");
+    let scored_presentation = format!("{presentation}\n{area_cut}");
     let chosen = selected_words_cte(
         "chosen_words",
         carded_sql,
@@ -184,7 +233,7 @@ fn ranked_statement(
         "ORDER BY max_frequency DESC, norm_to\n           LIMIT $3",
         frequency_sql,
     );
-    let scored = scored_candidates_ctes(carded_sql, phrase, &presentation, frequency_sql);
+    let scored = scored_candidates_ctes(carded_sql, phrase, &scored_presentation, frequency_sql);
     format!(
         "{MEMBERSHIP_CTES},\n{chosen},\n{scored}\n{}\n{FINAL_SELECTION}",
         projection.columns()
@@ -199,10 +248,13 @@ fn ranked_statement(
 /// only that predicate, so a single `>= 1` scan cannot use them and heap-fetches
 /// every ranked row. A frequency of one is counted separately and only adds a
 /// word the bulk count does not already contain.
-fn learning_word_count_statement() -> String {
+fn learning_word_count_statement(class_sql: &str) -> String {
     let phrase = PhraseFilter::Exclude.predicate();
     let teachable = PhraseFilter::Exclude.teachable_predicate();
-    let presentation = presentation_predicate(PhraseFilter::Exclude, SelectionPolicy::Learning);
+    let presentation = format!(
+        "{}\n{OWNED_VERB_FORM}\n{class_sql}",
+        presentation_predicate(PhraseFilter::Exclude, SelectionPolicy::Learning)
+    );
     let above = selected_words_cte(
         "above",
         "",
@@ -403,6 +455,35 @@ impl VocabularyQuery {
         carded: IncludeCarded,
         phrase_filter: PhraseFilter,
     ) -> Result<Vec<VocabularyEntry>, WisecrowError> {
+        Self::ranked_area_candidates(
+            pool,
+            native_lang,
+            foreign_lang,
+            limit,
+            carded,
+            phrase_filter,
+            AreaFilter::All,
+        )
+        .await
+    }
+
+    /// Same admission as [`Self::ranked_candidates`], restricted to `area`.
+    ///
+    /// The class predicate is inside the statement that orders and limits.
+    /// A translation owned by a verb form is absent from every area.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    pub async fn ranked_area_candidates(
+        pool: &PgPool,
+        native_lang: &str,
+        foreign_lang: &str,
+        limit: u32,
+        carded: IncludeCarded,
+        phrase_filter: PhraseFilter,
+        area: AreaFilter,
+    ) -> Result<Vec<VocabularyEntry>, WisecrowError> {
         if limit == 0 {
             return Ok(Vec::new());
         }
@@ -423,6 +504,7 @@ impl VocabularyQuery {
             policy: SelectionPolicy::Learning,
             band: FrequencyBand::AboveOne,
             excluded: &[],
+            area,
         };
         let (mut entries, norms) = fetch_learning_band(&mut transaction, &request).await?;
         if let Some(remaining) = shortfall(entries.len(), limit)? {
@@ -484,7 +566,25 @@ impl VocabularyQuery {
         native_lang: &str,
         foreign_lang: &str,
     ) -> Result<u32, WisecrowError> {
-        let statement = learning_word_count_statement();
+        Self::available_area_count(pool, native_lang, foreign_lang, AreaFilter::All).await
+    }
+
+    /// How many distinct words a fast deck can draw for this pair and area.
+    ///
+    /// Same admission as [`Self::ranked_area_candidates`] for included cards
+    /// and excluded phrases. An owned verb form is not counted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails or the count does not fit
+    /// in `u32`.
+    pub async fn available_area_count(
+        pool: &PgPool,
+        native_lang: &str,
+        foreign_lang: &str,
+        area: AreaFilter,
+    ) -> Result<u32, WisecrowError> {
+        let statement = learning_word_count_statement(&area.predicate());
         let mut transaction = pool.begin().await?;
         sqlx::query("SET TRANSACTION READ ONLY")
             .execute(&mut *transaction)
@@ -587,6 +687,78 @@ impl VocabularyQuery {
             })
             .collect())
     }
+
+    /// Conjugated forms for a pair, most frequent lemma first, then slot order.
+    ///
+    /// `slot_order` is that language's current table. A stored slot the table
+    /// no longer names stays available and sorts after the named slots.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    pub async fn verb_form_candidates(
+        pool: &PgPool,
+        native_lang: &str,
+        foreign_lang: &str,
+        limit: u32,
+        carded: IncludeCarded,
+        slot_order: &[&str],
+    ) -> Result<Vec<VocabularyEntry>, WisecrowError> {
+        if limit == 0 || slot_order.is_empty() {
+            return Ok(Vec::new());
+        }
+        let carded_sql = match carded {
+            IncludeCarded::Yes => "",
+            IncludeCarded::No => "AND t.id NOT IN (SELECT translation_id FROM carded_ids)",
+        };
+        let trim = crate::frequency::MATCH_TRIM_SQL;
+        let statement = format!(
+            "WITH carded_ids AS MATERIALIZED (
+                 SELECT DISTINCT translation_id FROM cards WHERE translation_id IS NOT NULL
+             ),
+             lemma_freq AS MATERIALIZED (
+                 SELECT wc.lemma, max(t.corpus_frequency) AS freq
+                 FROM word_classes wc
+                 JOIN corpus_evidence_translations t
+                   ON t.to_language_id = wc.language_id
+                  AND lower(btrim(t.to_phrase, '{trim}')) = wc.word
+                 WHERE wc.language_id = (SELECT id FROM languages WHERE code = $2)
+                   AND wc.class = 'verb'
+                 GROUP BY wc.lemma
+             )
+             SELECT t.id, p.from_phrase, p.to_phrase, COALESCE(lf.freq, 0)
+             FROM verb_form_translations vft
+             JOIN verb_forms vf ON vf.id = vft.verb_form_id
+             JOIN languages nl ON nl.id = vft.native_language_id
+             JOIN languages fl ON fl.id = vf.language_id
+             JOIN translations t ON t.id = vft.translation_id
+             JOIN translation_presentations p ON p.translation_id = t.id
+             LEFT JOIN lemma_freq lf ON lf.lemma = vf.lemma
+             WHERE nl.code = $1 AND fl.code = $2 AND p.teachable
+             {carded_sql}
+             ORDER BY lf.freq DESC NULLS LAST, vf.lemma,
+                      array_position($4::text[], vf.slot), vf.id
+             LIMIT $3"
+        );
+        let rows = sqlx::query_as::<_, (i32, String, String, i32)>(&statement)
+            .bind(native_lang)
+            .bind(foreign_lang)
+            .bind(i64::from(limit))
+            .bind(slot_order)
+            .fetch_all(pool)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(translation_id, from_phrase, to_phrase, frequency)| VocabularyEntry {
+                    translation_id,
+                    from_phrase,
+                    to_phrase,
+                    frequency,
+                },
+            )
+            .collect())
+    }
 }
 
 struct BandRequest<'a> {
@@ -598,6 +770,7 @@ struct BandRequest<'a> {
     policy: SelectionPolicy,
     band: FrequencyBand,
     excluded: &'a [String],
+    area: AreaFilter,
 }
 
 fn shortfall(fetched: usize, limit: u32) -> Result<Option<u32>, WisecrowError> {
@@ -629,6 +802,7 @@ async fn preparation_page(
         policy: SelectionPolicy::Preparation,
         band: FrequencyBand::AboveOne,
         excluded: &[],
+        area: AreaFilter::All,
     };
     let (mut ids, norms) = fetch_id_band(transaction, &request).await?;
     if let Some(remaining) = shortfall(ids.len(), limit)? {
@@ -651,6 +825,7 @@ async fn fetch_learning_band(
         request.policy,
         CandidateProjection::Learning,
         request.band,
+        &request.area.predicate(),
     );
     let rows = match request.band {
         FrequencyBand::AboveOne => {
@@ -695,6 +870,7 @@ async fn fetch_id_band(
         request.policy,
         CandidateProjection::Id,
         request.band,
+        &request.area.predicate(),
     );
     let rows = match request.band {
         FrequencyBand::AboveOne => {
@@ -762,6 +938,7 @@ mod tests {
             SelectionPolicy::Learning,
             CandidateProjection::Learning,
             FrequencyBand::AboveOne,
+            "",
         );
         assert!(frequent.contains("t.corpus_frequency > 1"));
         assert!(!frequent.contains("t.corpus_frequency = 1"));
@@ -774,6 +951,7 @@ mod tests {
             SelectionPolicy::Learning,
             CandidateProjection::Learning,
             FrequencyBand::One,
+            "",
         );
         assert!(once.contains("t.corpus_frequency = 1"));
         assert!(!once.contains("t.corpus_frequency > 1"));
