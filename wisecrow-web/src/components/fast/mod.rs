@@ -12,7 +12,7 @@ use crate::components::learn::preload::{self, CardChannels, ImageReady};
 use self::playback::{Command, Event as PlaybackEvent, PlayStatus, RunMode};
 
 const FAST_DECK_SIZE: u32 = 100;
-const FAST_SIZE_PRESETS: [u32; 4] = [25, 50, 100, 250];
+pub(crate) const DECK_SIZE_PRESETS: [u32; 4] = [25, 50, 100, 250];
 const FAST_SPEED_MS: u32 = 2000;
 const TICK_INTERVAL_MS: u64 = 100;
 const PRELOAD_WINDOW: usize = 10;
@@ -38,7 +38,7 @@ async fn async_sleep(ms: u64) {
     std::thread::sleep(std::time::Duration::from_millis(ms));
 }
 
-fn requested_size(custom: &str, preset: u32, maximum: u32) -> Result<u32, String> {
+pub(crate) fn requested_size(custom: &str, preset: u32, maximum: u32) -> Result<u32, String> {
     let typed = custom.trim();
     let chosen = if typed.is_empty() {
         preset
@@ -264,7 +264,7 @@ pub fn FastPage(native: String, foreign: String) -> Element {
         let size_ok = choice.is_ok();
         let size_error = choice.err();
         let typed_custom = !custom_size.read().trim().is_empty();
-        let presets: Vec<u32> = FAST_SIZE_PRESETS
+        let presets: Vec<u32> = DECK_SIZE_PRESETS
             .into_iter()
             .filter(|preset| *preset <= maximum)
             .collect();

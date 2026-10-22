@@ -5,7 +5,7 @@ mod timer;
 
 use dioxus::prelude::*;
 
-use wisecrow_dto::{DeckDto, ReviewRatingDto, SessionDto, SpeedController};
+use wisecrow_dto::{DeckDto, ReviewRatingDto, SessionDto, SpeedController, MAX_DECK_SIZE};
 
 use crate::api::decks::list_decks;
 use crate::api::learn::{
@@ -13,6 +13,7 @@ use crate::api::learn::{
 };
 use crate::api::media::{get_audio_data, get_image_data};
 use crate::components::area::{requested_area, AreaSelect};
+use crate::components::fast::{requested_size, DECK_SIZE_PRESETS};
 
 const DEFAULT_DECK_SIZE: u32 = 50;
 const DEFAULT_SPEED_MS: u32 = 3000;
@@ -77,6 +78,48 @@ fn DeckSelect(
 }
 
 #[component]
+fn DeckSizeFields(mut preset_size: Signal<u32>, mut custom_size: Signal<String>) -> Element {
+    let size_error = requested_size(&custom_size.read(), preset_size(), MAX_DECK_SIZE).err();
+    let typed_custom = !custom_size.read().trim().is_empty();
+    let presets: Vec<u32> = DECK_SIZE_PRESETS
+        .into_iter()
+        .filter(|preset| *preset <= MAX_DECK_SIZE)
+        .collect();
+    rsx! {
+        div { class: "flex flex-wrap justify-center gap-3",
+            for preset in presets {
+                button {
+                    key: "{preset}",
+                    aria_pressed: preset == preset_size() && !typed_custom,
+                    class: if preset == preset_size() && !typed_custom { "bg-emerald-700 rounded px-5 py-2 font-semibold" } else { "bg-gray-700 hover:bg-gray-600 rounded px-5 py-2 transition" },
+                    onclick: move |_| {
+                        preset_size.set(preset);
+                        custom_size.set(String::new());
+                    },
+                    "{preset}"
+                }
+            }
+        }
+        div { class: "flex items-center justify-center gap-2",
+            label { r#for: "learn-size", class: "text-sm text-gray-400", "or choose" }
+            input {
+                id: "learn-size",
+                r#type: "number",
+                min: "1",
+                max: "{MAX_DECK_SIZE}",
+                placeholder: "1–{MAX_DECK_SIZE}",
+                class: "bg-gray-700 rounded px-3 py-2 w-24 text-center",
+                value: "{custom_size}",
+                oninput: move |event| custom_size.set(event.value()),
+            }
+        }
+        if let Some(problem) = size_error {
+            p { class: "text-center text-sm text-red-400", "{problem}" }
+        }
+    }
+}
+
+#[component]
 pub fn LearnPage(native: String, foreign: String) -> Element {
     let mut session: Signal<Option<SessionDto>> = use_signal(|| None);
     let mut current_index = use_signal(|| 0usize);
@@ -87,6 +130,8 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
     let mut error_msg: Signal<Option<String>> = use_signal(|| None);
     let area = use_signal(|| String::from("all"));
     let deck_choice = use_signal(String::new);
+    let preset_size = use_signal(|| DEFAULT_DECK_SIZE);
+    let custom_size = use_signal(String::new);
     let mut decks: Signal<Vec<DeckDto>> = use_signal(Vec::new);
     let mut media: Signal<std::collections::HashMap<usize, preload::CardChannels>> =
         use_signal(std::collections::HashMap::new);
@@ -127,6 +172,9 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
     });
 
     let on_pick = move |deck_id: Option<i32>| {
+        let Ok(size) = requested_size(&custom_size.read(), preset_size(), MAX_DECK_SIZE) else {
+            return;
+        };
         let native_code = pick_native.clone(); // clone: each change needs its own copy
         let foreign_code = pick_foreign.clone(); // clone: each change needs its own copy
         loading.set(true);
@@ -152,7 +200,7 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
                     match create_session(
                         native_code,
                         foreign_code,
-                        DEFAULT_DECK_SIZE,
+                        size,
                         DEFAULT_SPEED_MS,
                         None,
                         deck_id,
@@ -243,6 +291,7 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
     let Some(sess) = session() else {
         let native_code = native.clone(); // clone: moved into the async start handler
         let foreign_code = foreign.clone(); // clone: moved into the async start handler
+        let size_ok = requested_size(&custom_size.read(), preset_size(), MAX_DECK_SIZE).is_ok();
         return rsx! {
             div { class: "max-w-lg mx-auto space-y-6",
                 h1 { class: "text-3xl font-bold text-center", "Learn" }
@@ -252,8 +301,10 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
                     value: deck_choice,
                     on_pick,
                 }
+                DeckSizeFields { preset_size, custom_size }
                 button {
                     class: "w-full bg-emerald-600 hover:bg-emerald-500 rounded-xl px-6 py-3 font-semibold transition",
+                    disabled: !size_ok,
                     onclick: move |_| {
                         let native_code = native_code.clone(); // clone: each click needs its own copy
                         let foreign_code = foreign_code.clone(); // clone: each click needs its own copy
@@ -263,13 +314,16 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
                         } else {
                             requested_area(&area())
                         };
+                        let Ok(size) = requested_size(&custom_size.read(), preset_size(), MAX_DECK_SIZE) else {
+                            return;
+                        };
                         loading.set(true);
                         error_msg.set(None);
                         spawn(async move {
                             match create_session(
                                 native_code,
                                 foreign_code,
-                                DEFAULT_DECK_SIZE,
+                                size,
                                 DEFAULT_SPEED_MS,
                                 chosen,
                                 deck_id,
@@ -429,7 +483,7 @@ pub fn LearnPage(native: String, foreign: String) -> Element {
 #[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
-    use wisecrow_dto::DeckDto;
+    use wisecrow_dto::{DeckDto, MAX_DECK_SIZE};
 
     #[component]
     fn picker_fixture() -> Element {
@@ -458,6 +512,31 @@ mod tests {
     fn at(html: &str, needle: &str) -> usize {
         html.find(needle)
             .unwrap_or_else(|| panic!("missing {needle} in {html}"))
+    }
+
+    #[component]
+    fn size_fixture() -> Element {
+        let preset_size = use_signal(|| DEFAULT_DECK_SIZE);
+        let custom_size = use_signal(String::new);
+        rsx! {
+            DeckSizeFields { preset_size, custom_size }
+        }
+    }
+
+    #[test]
+    fn learn_size_offers_the_same_counts_as_fast_download() {
+        let mut dom = VirtualDom::new(size_fixture);
+        dom.rebuild_in_place();
+        let html = dioxus::ssr::render(&dom);
+        for preset in DECK_SIZE_PRESETS {
+            assert!(
+                html.contains(&format!(">{preset}<")),
+                "missing preset {preset}"
+            );
+        }
+        assert!(html.contains("or choose"));
+        assert!(html.contains("id=\"learn-size\""));
+        assert!(html.contains(&format!("max=\"{MAX_DECK_SIZE}\"")));
     }
 
     #[test]

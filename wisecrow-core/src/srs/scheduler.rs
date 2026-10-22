@@ -17,8 +17,62 @@ pub(crate) const CARD_SELECT_COLUMNS: &str =
      c.last_review, c.due, c.reps, c.lapses, p.is_phrase, \
      p.image_query IS NOT NULL";
 
-pub(crate) const CARD_PRESENTATION_JOINS: &str = "JOIN translations t ON c.translation_id = t.id \
-     JOIN translation_presentations p ON p.translation_id = t.id";
+/// Face of `c`'s translation without joining `translation_presentations`.
+///
+/// That view is defined from the whole translations table. The planner reads
+/// every row to show one card, and the session stays on the loading screen.
+/// The cases are the view's, starting from the card's translation id.
+pub(crate) fn card_presentation_joins() -> String {
+    let trim = crate::frequency::MATCH_TRIM_SQL;
+    format!(
+        "JOIN translations t ON t.id = c.translation_id \
+         JOIN LATERAL ( \
+             SELECT \
+                 CASE \
+                     WHEN owned.translation_id IS NOT NULL THEN owned.native_face \
+                     WHEN linked.is_phrase THEN linked.from_phrase \
+                     ELSE COALESCE(g.translation, t.from_phrase) \
+                 END AS from_phrase, \
+                 CASE \
+                     WHEN owned.translation_id IS NOT NULL THEN t.to_phrase \
+                     WHEN linked.is_phrase THEN linked.to_phrase \
+                     ELSE COALESCE(g.display_form, t.to_phrase) \
+                 END AS to_phrase, \
+                 fl.code AS native_lang, \
+                 tl.code AS foreign_lang, \
+                 CASE \
+                     WHEN owned.translation_id IS NOT NULL THEN owned.teachable \
+                     WHEN linked.is_phrase THEN TRUE \
+                     ELSE COALESCE(g.teachable, TRUE) \
+                 END AS teachable, \
+                 CASE \
+                     WHEN owned.translation_id IS NOT NULL \
+                       OR linked.is_phrase THEN NULL \
+                     ELSE g.image_query \
+                 END AS image_query, \
+                 COALESCE(linked.is_phrase, FALSE) AS is_phrase \
+             FROM languages fl \
+             JOIN languages tl ON tl.id = t.to_language_id \
+             LEFT JOIN owned_presentations owned ON owned.translation_id = t.id \
+             LEFT JOIN LATERAL ( \
+                 SELECT TRUE AS is_phrase, \
+                        pt.translation AS from_phrase, \
+                        phrase.phrase AS to_phrase \
+                 FROM phrase_translations pt \
+                 JOIN phrases phrase ON phrase.id = pt.phrase_id \
+                 WHERE pt.translation_id = t.id \
+                 LIMIT 1 \
+             ) linked ON TRUE \
+             LEFT JOIN word_glosses g \
+               ON owned.translation_id IS NULL \
+              AND NOT COALESCE(linked.is_phrase, FALSE) \
+              AND g.native_lang = fl.code \
+              AND g.lang_code = tl.code \
+              AND g.word = lower(btrim(t.to_phrase, '{trim}')) \
+             WHERE fl.id = t.from_language_id \
+         ) p ON TRUE"
+    )
+}
 
 pub(crate) type CardRow = (
     i32,
@@ -299,12 +353,13 @@ impl CardManager {
                 "selected translation IDs must be unique".into(),
             ));
         }
+        let joins = card_presentation_joins();
         let query = format!(
             "SELECT {CARD_SELECT_COLUMNS} \
              FROM unnest($1::INT[]) WITH ORDINALITY requested(translation_id, position) \
              JOIN cards c ON c.translation_id = requested.translation_id \
                          AND c.user_id = $2 \
-             {CARD_PRESENTATION_JOINS} \
+             {joins} \
              ORDER BY requested.position"
         );
         let rows = sqlx::query_as::<_, CardRow>(&query)
@@ -326,9 +381,10 @@ impl CardManager {
     ///
     /// Returns an error if the database query fails or the card does not exist.
     pub async fn get_card_by_id(pool: &PgPool, card_id: i32) -> Result<CardState, WisecrowError> {
+        let joins = card_presentation_joins();
         let query = format!(
             "SELECT {CARD_SELECT_COLUMNS} \
-             FROM cards c {CARD_PRESENTATION_JOINS} \
+             FROM cards c {joins} \
              WHERE c.id = $1"
         );
         let row = sqlx::query_as::<_, CardRow>(&query)
@@ -358,9 +414,10 @@ impl CardManager {
         deck: DeckFilter,
     ) -> Result<Vec<CardState>, WisecrowError> {
         let trim = crate::frequency::MATCH_TRIM_SQL;
+        let joins = card_presentation_joins();
         let query = format!(
             "SELECT {CARD_SELECT_COLUMNS} \
-             FROM cards c {CARD_PRESENTATION_JOINS} \
+             FROM cards c {joins} \
              WHERE p.native_lang = $1 AND p.foreign_lang = $2 \
                AND p.teachable AND c.user_id = $3 AND c.due <= NOW() \
                AND ($5::text IS NULL OR NOT p.is_phrase) \
@@ -454,9 +511,10 @@ impl CardManager {
         translation_id: i32,
         user_id: i32,
     ) -> Result<Option<CardState>, WisecrowError> {
+        let joins = card_presentation_joins();
         let query = format!(
             "SELECT {CARD_SELECT_COLUMNS} \
-             FROM cards c {CARD_PRESENTATION_JOINS} \
+             FROM cards c {joins} \
              WHERE c.translation_id = $1 AND c.user_id = $2"
         );
         let row = sqlx::query_as::<_, CardRow>(&query)
@@ -473,6 +531,22 @@ impl CardManager {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn card_face_starts_from_the_card_and_skips_the_presentation_view() {
+        let sql = card_presentation_joins();
+        assert!(
+            !sql.contains("translation_presentations"),
+            "joining the view scans the corpus"
+        );
+        assert!(sql.contains("JOIN translations t ON t.id = c.translation_id"));
+        assert!(sql.contains("owned.native_face"));
+        assert!(sql.contains("COALESCE(linked.is_phrase, FALSE) AS is_phrase"));
+        assert!(sql.contains(&format!(
+            "btrim(t.to_phrase, '{}')",
+            crate::frequency::MATCH_TRIM_SQL
+        )));
+    }
 
     proptest! {
         #[test]

@@ -693,9 +693,11 @@ impl VocabularyQuery {
     /// `slot_order` is that language's current table. A stored slot the table
     /// no longer names stays available and sorts after the named slots.
     /// Frequency is the highest corpus count above one among the lemma's
-    /// classified forms. Each form is one lookup on the ranked-word index.
-    /// Joining the evidence view instead reads the whole corpus, and the
-    /// session never starts. A count of one sorts with an unranked lemma.
+    /// classified forms, and only for a lemma that has a stored form. Each
+    /// of those words is one lookup on the ranked-word index. A count of one
+    /// sorts with an unranked lemma. The card face is the stored native face:
+    /// `translation_presentations` is defined from the whole translations
+    /// table, so joining it reads the corpus and the session times out.
     ///
     /// # Errors
     ///
@@ -715,18 +717,37 @@ impl VocabularyQuery {
         }
         let carded_sql = match carded {
             IncludeCarded::Yes => "",
-            IncludeCarded::No => "AND t.id NOT IN (SELECT translation_id FROM carded_ids)",
+            IncludeCarded::No => {
+                "AND forms.translation_id NOT IN (SELECT translation_id FROM carded_ids)"
+            }
         };
         let trim = crate::frequency::MATCH_TRIM_SQL;
         let statement = format!(
             "WITH carded_ids AS MATERIALIZED (
                  SELECT DISTINCT translation_id FROM cards WHERE translation_id IS NOT NULL
              ),
+             forms AS MATERIALIZED (
+                 SELECT t.id AS translation_id,
+                        vft.native_face AS from_phrase,
+                        t.to_phrase,
+                        vf.lemma,
+                        vf.slot,
+                        vf.id AS form_id
+                 FROM verb_form_translations vft
+                 JOIN verb_forms vf ON vf.id = vft.verb_form_id
+                 JOIN languages nl ON nl.id = vft.native_language_id
+                 JOIN languages fl ON fl.id = vf.language_id
+                 JOIN translations t ON t.id = vft.translation_id
+                 LEFT JOIN owned_presentations op ON op.translation_id = t.id
+                 WHERE nl.code = $1 AND fl.code = $2
+                   AND COALESCE(op.teachable, TRUE)
+             ),
              verb_words AS MATERIALIZED (
                  SELECT wc.lemma, wc.word
                  FROM word_classes wc
                  WHERE wc.language_id = (SELECT id FROM languages WHERE code = $2)
                    AND wc.class = 'verb'
+                   AND wc.lemma IN (SELECT lemma FROM forms)
              ),
              lemma_freq AS MATERIALIZED (
                  SELECT vw.lemma, max(hit.freq) AS freq
@@ -761,18 +782,14 @@ impl VocabularyQuery {
                  ) hit ON TRUE
                  GROUP BY vw.lemma
              )
-             SELECT t.id, p.from_phrase, p.to_phrase, COALESCE(lf.freq, 0)
-             FROM verb_form_translations vft
-             JOIN verb_forms vf ON vf.id = vft.verb_form_id
-             JOIN languages nl ON nl.id = vft.native_language_id
-             JOIN languages fl ON fl.id = vf.language_id
-             JOIN translations t ON t.id = vft.translation_id
-             JOIN translation_presentations p ON p.translation_id = t.id
-             LEFT JOIN lemma_freq lf ON lf.lemma = vf.lemma
-             WHERE nl.code = $1 AND fl.code = $2 AND p.teachable
+             SELECT forms.translation_id, forms.from_phrase, forms.to_phrase,
+                    COALESCE(lf.freq, 0)
+             FROM forms
+             LEFT JOIN lemma_freq lf ON lf.lemma = forms.lemma
+             WHERE TRUE
              {carded_sql}
-             ORDER BY lf.freq DESC NULLS LAST, vf.lemma,
-                      array_position($4::text[], vf.slot), vf.id
+             ORDER BY lf.freq DESC NULLS LAST, forms.lemma,
+                      array_position($4::text[], forms.slot), forms.form_id
              LIMIT $3"
         );
         let mut transaction = pool.begin().await?;

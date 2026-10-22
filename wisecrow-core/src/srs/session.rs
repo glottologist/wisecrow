@@ -527,15 +527,15 @@ impl SessionManager {
         pool: &PgPool,
         session_id: i32,
     ) -> Result<Vec<CardState>, WisecrowError> {
+        let joins = super::scheduler::card_presentation_joins();
+        let columns = super::scheduler::CARD_SELECT_COLUMNS;
         let query = format!(
-            "SELECT {} \
+            "SELECT {columns} \
              FROM session_cards sc \
              JOIN cards c ON sc.card_id = c.id \
-             {} \
+             {joins} \
              WHERE sc.session_id = $1 \
-             ORDER BY sc.position",
-            super::scheduler::CARD_SELECT_COLUMNS,
-            super::scheduler::CARD_PRESENTATION_JOINS
+             ORDER BY sc.position"
         );
         let rows = sqlx::query_as::<_, super::scheduler::CardRow>(&query)
             .bind(session_id)
