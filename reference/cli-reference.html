@@ -37,7 +37,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-64b22a47.js";
+            window.path_to_searchindex_js = "../searchindex-5df2db5c.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-09a90448.js"></script>
@@ -200,7 +200,7 @@ list.</p>
 <tr><td><a href="#frequency"><code>frequency</code></a></td><td><code>fr</code></td><td style="text-align: center">yes</td><td>Rank stored translations from a word-frequency list.</td></tr>
 <tr><td><a href="#prepare-corpus"><code>prepare-corpus</code></a></td><td>—</td><td style="text-align: center">yes</td><td>Unsettled archives, stale ranks, one phrase mine, then gloss, phrase speech, or word audio.</td></tr>
 <tr><td><a href="#grammar-status"><code>grammar-status</code></a></td><td>—</td><td style="text-align: center">yes</td><td>Report whether grammar import or example audio is still unfinished.</td></tr>
-<tr><td><a href="#prepare-readers"><code>prepare-readers</code></a></td><td>—</td><td style="text-align: center">yes + LLM</td><td>Store, translate, gloss, or voice one piece of a cleared reader.</td></tr>
+<tr><td><a href="#prepare-readers"><code>prepare-readers</code></a></td><td>—</td><td style="text-align: center">yes + LLM</td><td>Store, translate, gloss, or voice one piece of a shelf book.</td></tr>
 <tr><td><a href="#reader-status"><code>reader-status</code></a></td><td>—</td><td style="text-align: center">yes</td><td>Report unfinished reader work and runs that failed twice.</td></tr>
 <tr><td><a href="#check-reader-pdf"><code>check-reader-pdf</code></a></td><td>—</td><td style="text-align: center">no</td><td>Report whether a reader PDF has a usable text layer.</td></tr>
 <tr><td><a href="#practice-areas"><code>classify-rules</code></a></td><td>—</td><td style="text-align: center">yes + LLM</td><td>Label rules and words, then store verb paradigms. Refuses Gaelic paradigms.</td></tr>
@@ -424,9 +424,11 @@ progress row for an older file hash or importer version does not count.</p>
 <pre><code class="language-sh">wisecrow prepare-readers [--config PATH] [--shelf PATH]
 </code></pre>
 <p>Does one piece of reader work and prints <code>worked</code> or <code>idle</code>. The order is
-fixed: store one cleared book, else translate one run, else gloss one batch,
-else voice one sentence batch, else voice one word batch. A ledger row is
-cleared only when its <code>Translate</code> cell reads <code>yes</code>. There is no –force.
+fixed: store one available book, else translate one run, else gloss one batch,
+else voice one sentence batch, else voice one word batch. The shelf is
+English. Each pair’s target language is what that English is translated
+into. A PDF on the shelf is available when its level maps
+to a CEFR level and its <code>Translate</code> cell is not <code>no</code>.
 A run the model refuses twice is recorded and not retried. When the model
 cannot be reached the command exits 75 and does not move the cursor.</p>
 <div class="table-wrapper">
