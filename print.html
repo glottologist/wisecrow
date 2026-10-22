@@ -38,7 +38,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5df2db5c.js";
+            window.path_to_searchindex_js = "searchindex-f49a9433.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-09a90448.js"></script>
@@ -1833,10 +1833,13 @@ to the ledger. It does not translate anything.</p>
 <p>A tapped word can be added to a named deck. A translation this job creates
 for that word sets <code>owns_translation</code>, so the word does not enter the
 evidence view. A translation that already existed stays in the view.</p>
-<p>On the home page, stage 4 is Read. It opens <code>/read/{native}/{foreign}</code>. A
-book is linked only when every sentence is translated and no run has failed.
-The page can show the English under each sentence, play a sentence or a
-word, and resume the saved place.</p>
+<p>On the home page, stage 4 is Read. It opens <code>/read/{native}/{foreign}</code>.
+Books are tiles in level order, A1 before A2 before B1 and so on, with the
+cover taken from the first page of the PDF. A book you can open is light
+green and linked. A book still being translated is light red, greyed out,
+and not a link: every sentence has to be translated, and no run may have
+failed, before it opens. The page can show the English under each sentence,
+play a sentence or a word, and resume the saved place.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="sync-workflow"><a class="header" href="#sync-workflow">Sync workflow</a></h1>
 <p>The <code>sync</code> command pulls <code>languages</code>, <code>translations</code>, and <code>grammar_rules</code>
