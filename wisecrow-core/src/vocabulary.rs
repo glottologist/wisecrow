@@ -692,10 +692,16 @@ impl VocabularyQuery {
     ///
     /// `slot_order` is that language's current table. A stored slot the table
     /// no longer names stays available and sorts after the named slots.
+    /// Frequency is the highest corpus count above one among the lemma's
+    /// classified forms. Each form is one lookup on the ranked-word index.
+    /// Joining the evidence view instead reads the whole corpus, and the
+    /// session never starts. A count of one sorts with an unranked lemma.
     ///
     /// # Errors
     ///
-    /// Returns an error if the database query fails.
+    /// Returns an error if the database query fails. A plan that does not
+    /// finish within the ranked-word budget does too, so a bad plan cannot
+    /// leave the learner on a loading screen.
     pub async fn verb_form_candidates(
         pool: &PgPool,
         native_lang: &str,
@@ -716,15 +722,44 @@ impl VocabularyQuery {
             "WITH carded_ids AS MATERIALIZED (
                  SELECT DISTINCT translation_id FROM cards WHERE translation_id IS NOT NULL
              ),
-             lemma_freq AS MATERIALIZED (
-                 SELECT wc.lemma, max(t.corpus_frequency) AS freq
+             verb_words AS MATERIALIZED (
+                 SELECT wc.lemma, wc.word
                  FROM word_classes wc
-                 JOIN corpus_evidence_translations t
-                   ON t.to_language_id = wc.language_id
-                  AND lower(btrim(t.to_phrase, '{trim}')) = wc.word
                  WHERE wc.language_id = (SELECT id FROM languages WHERE code = $2)
                    AND wc.class = 'verb'
-                 GROUP BY wc.lemma
+             ),
+             lemma_freq AS MATERIALIZED (
+                 SELECT vw.lemma, max(hit.freq) AS freq
+                 FROM verb_words vw
+                 JOIN LATERAL (
+                     SELECT t.corpus_frequency AS freq
+                     FROM translations t
+                     WHERE t.from_language_id = (SELECT id FROM languages WHERE code = $1)
+                       AND t.to_language_id = (SELECT id FROM languages WHERE code = $2)
+                       AND lower(btrim(t.to_phrase, '{trim}')) = vw.word
+                       AND t.corpus_frequency > 1
+                       AND LENGTH(t.from_phrase) BETWEEN 1 AND 200
+                       AND LENGTH(t.to_phrase) BETWEEN 1 AND 200
+                       AND NOT EXISTS (
+                           SELECT 1 FROM word_promotions owned
+                           WHERE owned.translation_id = t.id AND owned.owns_translation
+                       )
+                       AND NOT EXISTS (
+                           SELECT 1 FROM phrase_translations owned
+                           WHERE owned.translation_id = t.id AND owned.owns_translation
+                       )
+                       AND NOT EXISTS (
+                           SELECT 1 FROM verb_form_translations owned
+                           WHERE owned.translation_id = t.id AND owned.owns_translation
+                       )
+                       AND NOT EXISTS (
+                           SELECT 1 FROM reader_translations owned
+                           WHERE owned.translation_id = t.id AND owned.owns_translation
+                       )
+                     ORDER BY t.corpus_frequency DESC
+                     LIMIT 1
+                 ) hit ON TRUE
+                 GROUP BY vw.lemma
              )
              SELECT t.id, p.from_phrase, p.to_phrase, COALESCE(lf.freq, 0)
              FROM verb_form_translations vft
@@ -740,13 +775,22 @@ impl VocabularyQuery {
                       array_position($4::text[], vf.slot), vf.id
              LIMIT $3"
         );
+        let mut transaction = pool.begin().await?;
+        sqlx::query("SET TRANSACTION READ ONLY")
+            .execute(&mut *transaction)
+            .await?;
+        sqlx::query("SELECT set_config('statement_timeout', $1, true)")
+            .bind(RANKED_QUERY_TIMEOUT)
+            .execute(&mut *transaction)
+            .await?;
         let rows = sqlx::query_as::<_, (i32, String, String, i32)>(&statement)
             .bind(native_lang)
             .bind(foreign_lang)
             .bind(i64::from(limit))
             .bind(slot_order)
-            .fetch_all(pool)
+            .fetch_all(&mut *transaction)
             .await?;
+        transaction.commit().await?;
         Ok(rows
             .into_iter()
             .map(

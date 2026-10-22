@@ -73,7 +73,12 @@ pub async fn create_session(
         wisecrow::srs::session::SessionChoice { area, deck_id },
     )
     .await
-    .map_err(|error| crate::server::internal_error("learning session creation", &error))?;
+    .map_err(|error| match error {
+        wisecrow::errors::WisecrowError::InvalidInput(message) => {
+            crate::server::client_error(axum::http::StatusCode::BAD_REQUEST, &message)
+        }
+        other => crate::server::internal_error("learning session creation", &other),
+    })?;
     Ok(SessionDto::from(&session))
 }
 

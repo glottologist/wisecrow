@@ -1602,6 +1602,41 @@ async fn verb_session_orders_forms_by_lemma_then_slot() -> TestResult {
     Ok(())
 }
 
+#[tokio::test]
+#[ignore = "requires PostgreSQL"]
+async fn verb_session_without_forms_is_refused() -> TestResult {
+    let pool = reset_pool().await?;
+    let (_english, _french) = seed_languages(&pool).await?;
+    let user_id = area_user(&pool, "area-verb-empty@localhost.test").await?;
+
+    let error = SessionManager::create(
+        &pool,
+        user_id,
+        "en",
+        "fr",
+        3,
+        3_000,
+        wisecrow::srs::session::SessionChoice {
+            area: Some(Area::Verb),
+            deck_id: None,
+        },
+    )
+    .await
+    .expect_err("an empty verb shelf is not a session");
+
+    assert!(
+        error
+            .to_string()
+            .contains("No verb forms are ready to practise yet"),
+        "{error}"
+    );
+    let sessions: i64 = sqlx::query_scalar("SELECT count(*) FROM sessions")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(sessions, 0);
+    Ok(())
+}
+
 use wisecrow::grammar::selection::select_area_practice;
 use wisecrow::grammar::session::{GrammarSessionManager, SessionKind};
 

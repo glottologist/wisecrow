@@ -106,6 +106,11 @@ impl SessionManager {
             deck_id,
         )
         .await?;
+        if cards.is_empty() && matches!(area, Some(crate::grammar::areas::Area::Verb)) {
+            return Err(WisecrowError::InvalidInput(
+                "No verb forms are ready to practise yet.".into(),
+            ));
+        }
         let stored_deck_size = i32::try_from(cards.len())
             .map_err(|_| WisecrowError::InvalidInput("session deck is too large".into()))?;
         let stored_speed = i32::try_from(speed_ms).unwrap_or(i32::MAX);
