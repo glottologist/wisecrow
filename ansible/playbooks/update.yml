@@ -67,3 +67,21 @@
         cmd: docker compose -f {{ compose_file }} up -d --build
         chdir: "{{ deploy_dir }}"
       become: true
+
+    # The install enables this unit and does not start it. update.yml is the
+    # deploy that actually ships, so the English shelf stays unread unless
+    # this play starts the job.
+    - name: Install the reader unit
+      ansible.builtin.template:
+        src: ../roles/wisecrow/templates/wisecrow-reader.service.j2
+        dest: /etc/systemd/system/wisecrow-reader.service
+        mode: "0644"
+      become: true
+
+    - name: Start the reader unit
+      ansible.builtin.systemd:
+        name: wisecrow-reader.service
+        enabled: true
+        state: started
+        daemon_reload: true
+      become: true

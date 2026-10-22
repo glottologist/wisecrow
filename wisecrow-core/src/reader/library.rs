@@ -5,12 +5,13 @@ use wisecrow_dto::{BookDto, ChapterDto, GlossDto, ParagraphDto, SentenceDto, Tok
 
 use crate::errors::WisecrowError;
 
-/// Ready books for one language.
+/// Ready books for one language, in level order.
 ///
 /// `readable` is true only when the book has sentences, every one of them has
 /// a translation into `foreign`, and no run into that language has failed.
-/// A book still being stored is listed and is not a link. The place is the
-/// learner's row for the book's file.
+/// A book still being stored is listed and is not a link. Order is
+/// `cefr_levels.sort_order`, then title, then id. The place is the learner's
+/// row for the book's file.
 ///
 /// # Errors
 ///
@@ -40,7 +41,7 @@ pub async fn library_books(
            ON rp.user_id = $2 AND rp.file = b.file
           AND rp.language_id = b.source_language_id
          WHERE b.status = 'ready'
-         ORDER BY b.title, b.id",
+         ORDER BY c.sort_order, b.title, b.id",
     )
     .bind(foreign)
     .bind(user_id)

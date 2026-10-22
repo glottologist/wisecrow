@@ -38,7 +38,10 @@ A tapped word can be added to a named deck. A translation this job creates
 for that word sets `owns_translation`, so the word does not enter the
 evidence view. A translation that already existed stays in the view.
 
-On the home page, stage 4 is Read. It opens `/read/{native}/{foreign}`. A
-book is linked only when every sentence is translated and no run has failed.
-The page can show the English under each sentence, play a sentence or a
-word, and resume the saved place.
+On the home page, stage 4 is Read. It opens `/read/{native}/{foreign}`.
+Books are tiles in level order, A1 before A2 before B1 and so on, with the
+cover taken from the first page of the PDF. A book you can open is light
+green and linked. A book still being translated is light red, greyed out,
+and not a link: every sentence has to be translated, and no run may have
+failed, before it opens. The page can show the English under each sentence,
+play a sentence or a word, and resume the saved place.

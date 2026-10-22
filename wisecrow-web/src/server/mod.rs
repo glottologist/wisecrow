@@ -1,5 +1,6 @@
 pub mod acquisition;
 pub mod auth;
+pub mod covers;
 pub mod ratelimit;
 pub mod sync;
 pub mod tls;
@@ -95,6 +96,7 @@ const MAX_REQUEST_BYTES: usize = 32 * 1024 * 1024;
 pub fn build_router() -> axum::Router {
     dioxus::server::router(crate::app)
         .merge(sync::sync_routes())
+        .merge(covers::cover_routes())
         .layer(axum::middleware::from_fn(auth::auth_enrich_layer))
         .layer(axum::extract::DefaultBodyLimit::max(MAX_REQUEST_BYTES))
 }
