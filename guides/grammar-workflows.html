@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-3e17b29a.js";
+            window.path_to_searchindex_js = "../searchindex-64b22a47.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-a32f9be8.js"></script>
+        <script src="../toc-09a90448.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -318,6 +318,14 @@ Dry runs and legacy top-up imports do not use these caches.</p>
 <p>A point that reads badly is edited like any other: export the level with
 <code>export-grammar</code>, correct it, and re-import via <code>import-grammar</code> – <code>manual</code>
 overrides <code>pdf</code> on the next upsert.</p>
+<h2 id="classify-areas-and-conjugate-verbs"><a class="header" href="#classify-areas-and-conjugate-verbs">Classify areas and conjugate verbs</a></h2>
+<p>After a language’s PDF import, three commands prepare practice by area. Each stores one batch, prints how many rows that call wrote, and stops when a call stores nothing.</p>
+<pre><code class="language-sh">wisecrow classify-rules --lang fr
+wisecrow classify-words --native en --foreign fr
+wisecrow generate-paradigms --native en --foreign fr
+</code></pre>
+<p><code>classify-rules</code> labels a rule <code>verb</code>, <code>preposition</code>, <code>pronoun</code>, <code>adjective</code>, <code>adverb</code> or <code>other</code>. <code>classify-words</code> labels frequent forms with those classes. A practice session offers All, Verbs, Prepositions, Pronouns, Adjectives and Adverbs. <code>other</code> is kept on the rule and is not one of those choices.</p>
+<p><code>generate-paradigms</code> writes one verb at a time. <code>generate-paradigms --foreign gd</code> exits with <code>confirm the Gaelic slot table before generating forms</code> and writes nothing. Gaelic forms are not generated.</p>
 <h2 id="voice-the-examples"><a class="header" href="#voice-the-examples">Voice the examples</a></h2>
 <p>Grammar practice on the web plays the phrase the learner just got right, and
 after a wrong answer shows the point’s correct examples, each with a play
@@ -369,7 +377,7 @@ WHERE language_id = (SELECT id FROM languages WHERE code = 'es');
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../guides/sync-workflow.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../guides/story-reader.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -383,7 +391,7 @@ WHERE language_id = (SELECT id FROM languages WHERE code = 'es');
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../guides/sync-workflow.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../guides/story-reader.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

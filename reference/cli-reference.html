@@ -37,10 +37,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-3e17b29a.js";
+            window.path_to_searchindex_js = "../searchindex-64b22a47.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-a32f9be8.js"></script>
+        <script src="../toc-09a90448.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -180,7 +180,7 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="cli-reference"><a class="header" href="#cli-reference">CLI reference</a></h1>
-<p>The <code>wisecrow</code> binary ships with thirty-six subcommands. Most have a short alias
+<p>The <code>wisecrow</code> binary ships with forty subcommands. Most have a short alias
 (in parentheses below) for shell ergonomics.</p>
 <h2 id="synopsis"><a class="header" href="#synopsis">Synopsis</a></h2>
 <pre><code class="language-text">wisecrow &lt;COMMAND&gt; [ARGS...]
@@ -200,6 +200,10 @@ list.</p>
 <tr><td><a href="#frequency"><code>frequency</code></a></td><td><code>fr</code></td><td style="text-align: center">yes</td><td>Rank stored translations from a word-frequency list.</td></tr>
 <tr><td><a href="#prepare-corpus"><code>prepare-corpus</code></a></td><td>—</td><td style="text-align: center">yes</td><td>Unsettled archives, stale ranks, one phrase mine, then gloss, phrase speech, or word audio.</td></tr>
 <tr><td><a href="#grammar-status"><code>grammar-status</code></a></td><td>—</td><td style="text-align: center">yes</td><td>Report whether grammar import or example audio is still unfinished.</td></tr>
+<tr><td><a href="#prepare-readers"><code>prepare-readers</code></a></td><td>—</td><td style="text-align: center">yes + LLM</td><td>Store, translate, gloss, or voice one piece of a cleared reader.</td></tr>
+<tr><td><a href="#reader-status"><code>reader-status</code></a></td><td>—</td><td style="text-align: center">yes</td><td>Report unfinished reader work and runs that failed twice.</td></tr>
+<tr><td><a href="#check-reader-pdf"><code>check-reader-pdf</code></a></td><td>—</td><td style="text-align: center">no</td><td>Report whether a reader PDF has a usable text layer.</td></tr>
+<tr><td><a href="#practice-areas"><code>classify-rules</code></a></td><td>—</td><td style="text-align: center">yes + LLM</td><td>Label rules and words, then store verb paradigms. Refuses Gaelic paradigms.</td></tr>
 <tr><td><a href="#learn"><code>learn</code></a></td><td><code>r</code></td><td style="text-align: center">yes</td><td>Open the SRS flashcard TUI.</td></tr>
 <tr><td><a href="#nback"><code>nback</code></a></td><td><code>nb</code></td><td style="text-align: center">yes</td><td>Run an adaptive dual n-back session.</td></tr>
 <tr><td><a href="#list-languages"><code>list-languages</code></a></td><td><code>l</code></td><td style="text-align: center">no</td><td>Print the supported-language table.</td></tr>
@@ -412,6 +416,84 @@ progress row for an older file hash or importer version does not count.</p>
 <tbody>
 <tr><td><code>--config</code></td><td style="text-align: right"><code>deploy/language-pairs.toml</code></td><td>Pair file whose foreign languages are checked.</td></tr>
 <tr><td><code>--shelf</code></td><td style="text-align: right"><code>/app/grammar</code></td><td>Grammar shelf whose <code>SOURCES.md</code> is the schedule.</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<h2 id="prepare-readers"><a class="header" href="#prepare-readers"><code>prepare-readers</code></a></h2>
+<pre><code class="language-sh">wisecrow prepare-readers [--config PATH] [--shelf PATH]
+</code></pre>
+<p>Does one piece of reader work and prints <code>worked</code> or <code>idle</code>. The order is
+fixed: store one cleared book, else translate one run, else gloss one batch,
+else voice one sentence batch, else voice one word batch. A ledger row is
+cleared only when its <code>Translate</code> cell reads <code>yes</code>. There is no –force.
+A run the model refuses twice is recorded and not retried. When the model
+cannot be reached the command exits 75 and does not move the cursor.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th style="text-align: right">Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--config</code></td><td style="text-align: right"><code>deploy/language-pairs.toml</code></td><td>Pair file.</td></tr>
+<tr><td><code>--shelf</code></td><td style="text-align: right"><code>/app/readers</code></td><td>Reader shelf whose <code>SOURCES.md</code> is the ledger.</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<h2 id="reader-status"><a class="header" href="#reader-status"><code>reader-status</code></a></h2>
+<pre><code class="language-sh">wisecrow reader-status [--config PATH] [--shelf PATH]
+</code></pre>
+<p>Prints <code>failed</code>, the file, the language code, and the run starts for every
+import that failed twice, then <code>work</code> or <code>idle</code>. Exits 10 when work remains
+and 0 when the shelf is idle. It does not call a model. A failed run by
+itself is not more work.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th style="text-align: right">Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--config</code></td><td style="text-align: right"><code>deploy/language-pairs.toml</code></td><td>Pair file whose books are checked.</td></tr>
+<tr><td><code>--shelf</code></td><td style="text-align: right"><code>/app/readers</code></td><td>Reader shelf whose <code>SOURCES.md</code> is the ledger.</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<h2 id="check-reader-pdf"><a class="header" href="#check-reader-pdf"><code>check-reader-pdf</code></a></h2>
+<pre><code class="language-sh">wisecrow check-reader-pdf --file PATH [--file PATH...]
+</code></pre>
+<p>Prints the path, the characters per page, and <code>ok</code> or <code>thin</code>. A thin file
+has no text layer dense enough to segment. The command does not read the
+ledger and does not write to the database.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th style="text-align: right">Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--file</code></td><td style="text-align: right">—</td><td>PDF to measure. Repeat the flag for several files.</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<h2 id="practice-areas"><a class="header" href="#practice-areas">Practice areas</a></h2>
+<pre><code class="language-sh">wisecrow classify-rules --lang &lt;CODE&gt;
+wisecrow classify-words --native &lt;CODE&gt; --foreign &lt;CODE&gt;
+wisecrow generate-paradigms --native &lt;CODE&gt; --foreign &lt;CODE&gt;
+</code></pre>
+<p>Each command stores one batch and prints how many rows that call wrote, then repeats. It stops when a call stores nothing.</p>
+<p><code>classify-rules</code> sets <code>grammar_rules.area</code> to <code>verb</code>, <code>preposition</code>, <code>pronoun</code>, <code>adjective</code>, <code>adverb</code> or <code>other</code>. <code>classify-words</code> stores the same classes on frequent forms. A practice session offers All, Verbs, Prepositions, Pronouns, Adjectives and Adverbs. <code>other</code> stays on the rule and is not a session choice.</p>
+<p><code>generate-paradigms</code> writes one verb’s forms, with a native face such as <code>we go · present</code>. <code>generate-paradigms --foreign gd</code> exits with <code>confirm the Gaelic slot table before generating forms</code> and writes nothing.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th style="text-align: right">Default</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--lang</code></td><td style="text-align: right"><em>required</em></td><td>Foreign language for <code>classify-rules</code>.</td></tr>
+<tr><td><code>--native</code></td><td style="text-align: right"><em>required</em></td><td>Language the learner already speaks.</td></tr>
+<tr><td><code>--foreign</code></td><td style="text-align: right"><em>required</em></td><td>Language being classified or conjugated.</td></tr>
 </tbody>
 </table>
 </div>
