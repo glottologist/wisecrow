@@ -1,8 +1,8 @@
 //! Graded readers: the shelf and its ledger, extraction, segmentation,
 //! translation, word notes, audio and the reading library.
 //!
-//! The books are English graded readers held on an operator-managed shelf.
-//! Nothing here reads a book that its ledger row has not cleared.
+//! The books are the PDFs on the shelf. The pair file chooses the languages.
+//! A `Translate` cell of `no` is the only hold.
 
 pub mod audio;
 pub mod extract;

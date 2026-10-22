@@ -22,7 +22,7 @@ list.
 | [`frequency`](#frequency) | `fr` | yes | Rank stored translations from a word-frequency list. |
 | [`prepare-corpus`](#prepare-corpus) | — | yes | Unsettled archives, stale ranks, one phrase mine, then gloss, phrase speech, or word audio. |
 | [`grammar-status`](#grammar-status) | — | yes | Report whether grammar import or example audio is still unfinished. |
-| [`prepare-readers`](#prepare-readers) | — | yes + LLM | Store, translate, gloss, or voice one piece of a cleared reader. |
+| [`prepare-readers`](#prepare-readers) | — | yes + LLM | Store, translate, gloss, or voice one piece of a shelf book. |
 | [`reader-status`](#reader-status) | — | yes | Report unfinished reader work and runs that failed twice. |
 | [`check-reader-pdf`](#check-reader-pdf) | — | no | Report whether a reader PDF has a usable text layer. |
 | [`classify-rules`](#practice-areas) | — | yes + LLM | Label rules and words, then store verb paradigms. Refuses Gaelic paradigms. |
@@ -244,9 +244,11 @@ wisecrow prepare-readers [--config PATH] [--shelf PATH]
 ```
 
 Does one piece of reader work and prints `worked` or `idle`. The order is
-fixed: store one cleared book, else translate one run, else gloss one batch,
-else voice one sentence batch, else voice one word batch. A ledger row is
-cleared only when its `Translate` cell reads `yes`. There is no --force.
+fixed: store one available book, else translate one run, else gloss one batch,
+else voice one sentence batch, else voice one word batch. The shelf is
+English. Each pair's target language is what that English is translated
+into. A PDF on the shelf is available when its level maps
+to a CEFR level and its `Translate` cell is not `no`.
 A run the model refuses twice is recorded and not retried. When the model
 cannot be reached the command exits 75 and does not move the cursor.
 

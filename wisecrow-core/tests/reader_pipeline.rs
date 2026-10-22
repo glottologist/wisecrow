@@ -38,6 +38,7 @@ fn entry(file: &str) -> ReaderEntry {
         cefr: Ok("A2"),
         pages: Ok(None),
         translate: true,
+        withheld: false,
     }
 }
 
@@ -506,15 +507,16 @@ fn gloss_notes(forms: &[(&str, &str)]) -> String {
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL"]
-async fn prepare_reader_step_translates_then_idles_and_skips_an_uncleared_book() -> TestResult {
+async fn prepare_reader_step_leaves_a_book_marked_no_unread() -> TestResult {
     let pool = reset_pool().await?;
     let shelf = tempfile::tempdir()?;
+    std::fs::write(shelf.path().join("secret.pdf"), b"%PDF-1.4\n")?;
     std::fs::write(
         shelf.path().join("SOURCES.md"),
         "\
 | Series | Level | Title | File | CEFR | Pages | Translate | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Penguin Readers | 2 | Secret | `secret.pdf` | A2 |  |  |  |
+| Penguin Readers | 2 | Secret | `secret.pdf` | A2 |  | no |  |
 ",
     )?;
     let provider = Scripted {
@@ -528,10 +530,10 @@ async fn prepare_reader_step_translates_then_idles_and_skips_an_uncleared_book()
 
     assert_eq!(skipped, wisecrow::pipeline::CorpusStep::Idle);
     assert_eq!(provider.answers.lock().expect("script").len(), 0);
-    let translations: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM book_translations")
+    let books: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM books")
         .fetch_one(&pool)
         .await?;
-    assert_eq!(translations, 0, "a blank Translate cell is not sent");
+    assert_eq!(books, 0, "Translate no is not stored");
     Ok(())
 }
 

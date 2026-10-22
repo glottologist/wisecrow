@@ -5,11 +5,12 @@ generated from a public-domain retelling, and a scanned page is out of scope.
 
 ## Ledger
 
-`readers/SOURCES.md` is the authority. A row names the series, level, title,
-file, CEFR, pages, and `Translate`. The job reads a book only when
-`Translate` is `yes`. There is no --force, and a local model may not skip
-the ledger. A table with a `File` column and no `Translate` column is an
-error.
+The PDFs under `readers/` are English. The job stores each book once, then
+translates that English into the target language of every pair in
+`deploy/language-pairs.toml`. `readers/SOURCES.md` can name pages or a CEFR level
+for a file, and a `Translate` cell of `no` holds that file back. A blank
+cell does not. A PDF with no row is still read when its folder names a
+mapped level.
 
 Penguin levels map as 0–1 to A1, 2 to A2, 3–4 to B1, and 5–6 to B2. A row's
 own CEFR cell overrides that map.
@@ -18,7 +19,7 @@ own CEFR cell overrides that map.
 
 `prepare-readers` does one piece of work and stops. The order is:
 
-1. Store one cleared book whose text layer is dense enough.
+1. Store one available book whose text layer is dense enough.
 2. Translate one run of sentences.
 3. Gloss one batch of words.
 4. Voice one batch of sentences, then one batch of word notes.

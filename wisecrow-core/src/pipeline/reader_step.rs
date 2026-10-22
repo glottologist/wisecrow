@@ -1,8 +1,10 @@
 //! One wake of `prepare-readers`.
 //!
-//! The order is fixed: extract one cleared book, else translate one run,
+//! The order is fixed: store one available book, else translate one run,
 //! else gloss one batch, else voice one sentence batch, else voice one word
-//! batch. A row whose `Translate` cell is not `yes` is never selected.
+//! batch. The shelf is English. Each pair's target language is what that
+//! English is translated into. A PDF on the shelf is
+//! available when its level maps to CEFR and its `Translate` cell is not `no`.
 
 use std::path::Path;
 
@@ -22,7 +24,7 @@ use crate::reader::import::{
     AUTO_PAGES,
 };
 use crate::reader::segment::{segment, SegmentedSentence, SEGMENTER_VERSION};
-use crate::reader::shelf::{read_ledger, ReaderEntry};
+use crate::reader::shelf::{shelf_entries, ReaderEntry};
 
 /// Does one piece of reader work and returns what it was.
 ///
@@ -58,10 +60,7 @@ pub async fn prepare_reader_step(
 }
 
 async fn extract_one(pool: &PgPool, shelf: &Path) -> Result<bool, WisecrowError> {
-    for entry in read_ledger(shelf)? {
-        if !entry.cleared() {
-            continue;
-        }
+    for entry in shelf_entries(shelf)? {
         let Some(&cefr) = entry.cefr.as_ref().ok() else {
             continue;
         };
@@ -230,7 +229,7 @@ async fn voice_one(
 
 /// Whether one `prepare-readers` wake would find work, without calling a model.
 ///
-/// The order matches [`prepare_reader_step`]: an unstored cleared book, a
+/// The order matches [`prepare_reader_step`]: an unstored available book, a
 /// ready book whose cursor is behind its sentences, a missing gloss, then a
 /// null audio fingerprint when `voice` is set. A failed run by itself is not
 /// work.
@@ -244,10 +243,7 @@ pub async fn reader_has_work(
     pairs: &[PairSpec],
     voice: bool,
 ) -> Result<bool, WisecrowError> {
-    for entry in read_ledger(shelf)? {
-        if !entry.cleared() {
-            continue;
-        }
+    for entry in shelf_entries(shelf)? {
         let pages_label = match &entry.pages {
             Ok(Some(range)) => range.label(),
             Ok(None) => AUTO_PAGES.to_owned(),

@@ -5,17 +5,18 @@ and [`check-reader-pdf`](../docs/src/reference/cli-reference.md#check-reader-pdf
 Each book sits at `readers/<series>/<level>/<title>.pdf`, and the `File` cell
 is its path relative to this directory.
 
-The `Translate` column is read by `prepare-readers`, not merely by people.
-Importing a book sends its text to the configured model and serves a
-translation of it to learners; for a commercial reader both are
-reproductions, so a book is extracted and translated only when its row here
-says `yes`. A book with no row, or with any other value, is never read, and
-there is no flag that overrides the cell.
+Every PDF here is English. The job stores that text once, then translates
+it into each target language in `deploy/language-pairs.toml`. There is no
+PDF per language. A row here is optional: it can name the
+body's pages or a CEFR level. A `Translate` cell of `no` holds that file
+back. A blank cell does not, and a PDF with no row is still read when its
+folder names a mapped level. Answer keys, factsheets, tests, worksheets
+and teacher's notes are not books.
 
 The `Level` column is the publisher's level. For Penguin Readers it maps to
 a CEFR level (0 and 1 to A1, 2 to A2, 3 and 4 to B1, 5 and 6 to B2); a value
-in the `CEFR` column replaces the mapped one, and an unlevelled title must
-state one before it can be cleared. The `Pages` column, as `6-33` or `6–33`,
+in the `CEFR` column replaces the mapped one. An unlevelled folder does not
+map, so those titles are not read. The `Pages` column, as `6-33` or `6–33`,
 names the body of the book when the importer cannot find it by its
 `Chapter 1` heading; changing it makes a new revision of the book, and the
 learner's place is kept.

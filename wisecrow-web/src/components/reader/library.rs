@@ -43,6 +43,16 @@ pub fn LibraryPage(native: String, foreign: String) -> Element {
 
 #[component]
 pub fn LibraryList(native: String, foreign: String, books: Vec<BookDto>) -> Element {
+    if books.is_empty() {
+        return rsx! {
+            div { class: "text-center space-y-2 py-20",
+                h1 { class: "text-2xl font-bold", "No books for this language yet" }
+                p { class: "text-gray-400",
+                    "They show up here as the reader job stores them."
+                }
+            }
+        };
+    }
     rsx! {
         ul { class: "space-y-3",
             for book in books {
@@ -60,10 +70,59 @@ pub fn LibraryList(native: String, foreign: String, books: Vec<BookDto>) -> Elem
                             }
                         }
                     } else {
-                        span { "{book.title} {book.cefr} {book.sentences}" }
+                        span { "{book.title} · {book.cefr} · not ready yet" }
                     }
                 }
             }
         }
+    }
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use dioxus::prelude::*;
+
+    use super::*;
+
+    fn book(id: i32, title: &str, readable: bool) -> BookDto {
+        BookDto {
+            id,
+            title: title.into(),
+            series: "Penguin Readers".into(),
+            cefr: "A2".into(),
+            sentences: 12,
+            readable,
+            chapter: None,
+            paragraph: None,
+            sentence: None,
+        }
+    }
+
+    fn render(books: Vec<BookDto>) -> String {
+        let mut dom = VirtualDom::new_with_props(
+            LibraryList,
+            LibraryListProps {
+                native: "en".into(),
+                foreign: "es".into(),
+                books,
+            },
+        );
+        dom.rebuild_in_place();
+        dioxus::ssr::render(&dom)
+    }
+
+    #[test]
+    fn an_empty_shelf_says_there_are_no_books_yet() {
+        let html = render(Vec::new());
+
+        assert!(html.contains("No books for this language yet"), "{html}");
+    }
+
+    #[test]
+    fn a_book_still_being_stored_is_named_and_not_linked() {
+        let html = render(vec![book(5, "Waiting", false)]);
+
+        assert!(html.contains("Waiting · A2 · not ready yet"), "{html}");
+        assert!(!html.contains("href="), "{html}");
     }
 }

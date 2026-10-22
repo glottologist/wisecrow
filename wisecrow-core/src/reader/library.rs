@@ -5,11 +5,12 @@ use wisecrow_dto::{BookDto, ChapterDto, GlossDto, ParagraphDto, SentenceDto, Tok
 
 use crate::errors::WisecrowError;
 
-/// Ready books that have at least one translation into `foreign`.
+/// Ready books for one language.
 ///
-/// `readable` is true only when every sentence has a translation and no run
-/// into that language has failed. The place is the learner's row for the
-/// book's file.
+/// `readable` is true only when the book has sentences, every one of them has
+/// a translation into `foreign`, and no run into that language has failed.
+/// A book still being stored is listed and is not a link. The place is the
+/// learner's row for the book's file.
 ///
 /// # Errors
 ///
@@ -39,12 +40,6 @@ pub async fn library_books(
            ON rp.user_id = $2 AND rp.file = b.file
           AND rp.language_id = b.source_language_id
          WHERE b.status = 'ready'
-           AND EXISTS (
-               SELECT 1 FROM book_translations t
-               JOIN book_sentences s ON s.id = t.sentence_id
-               JOIN languages fl ON fl.id = t.language_id
-               WHERE s.book_id = b.id AND fl.code = $1
-           )
          ORDER BY b.title, b.id",
     )
     .bind(foreign)
@@ -317,7 +312,7 @@ impl LibraryRow {
             series: self.series,
             cefr: self.cefr,
             sentences,
-            readable: self.translated == self.sentences && self.failed == 0,
+            readable: self.sentences > 0 && self.translated == self.sentences && self.failed == 0,
             chapter: self.chapter,
             paragraph: self.paragraph,
             sentence: self.sentence,

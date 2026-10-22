@@ -229,9 +229,18 @@
   loop:
     - wisecrow-corpus.service
     - wisecrow-grammar.service
-    - wisecrow-reader.service
   become: true
   failed_when: false
+
+# The pair file is the only switch. Deploy starts the reader so a shelf PDF
+# is stored without a separate systemctl start.
+- name: Start the reader unit
+  ansible.builtin.systemd:
+    name: wisecrow-reader.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
 
 - name: Smoke test — wisecrow list-languages via the running container
   ansible.builtin.command:
